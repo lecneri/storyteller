@@ -225,6 +225,15 @@
         if (confirm('Tirar a mídia desta página?')) { delete pag.midia; mudou(); desenhar(); }
       } }, 'remover'));
   }
+  // Imagem/GIF ou vídeo (mudo, em loop) da página.
+  function midiaEl(m) {
+    if (!m) return null;
+    const src = '/midia/' + m.id;
+    if (!m.tipo.startsWith('video/')) return el('img', { src, alt: '' });
+    const v = el('video', { src, autoplay: true, loop: true, muted: true, playsinline: true });
+    v.muted = true;
+    return v;
+  }
   function areaEnvio(pag) {
     const input = el('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime', hidden: true,
       onchange: (e) => e.target.files[0] && enviarArquivo(pag, e.target.files[0]) });
@@ -289,8 +298,7 @@
             el('a', { href: '/midia/' + r.ref, download: (r.num + '-' + r.nome).replace(/\s+/g, '-') }, '⬇')))
       : el('figure', { class: 'mini sem' }, el('div', { class: 'mini-desc' }, '📝'), el('figcaption', {}, r.nome, el('br'), el('small', { class: 'suave' }, 'só descrição'))));
 
-    const palco = el('div', { class: 'palco' + (pag.midia ? '' : ' vazio') },
-      pag.midia && pag.midia.tipo.startsWith('image/') ? el('img', { src: '/midia/' + pag.midia.id, alt: '' }) : el('span', {}, '🖼️'));
+    const palco = el('div', { class: 'palco' + (pag.midia ? '' : ' vazio') }, midiaEl(pag.midia) || el('span', {}, '🖼️'));
 
     const prompt = promptImagem(pag);
     const caixaPrompt = el('textarea', { rows: 6, readonly: true, class: 'prompt' });
@@ -356,7 +364,7 @@
     const ir = (i) => { atual = Math.max(0, Math.min(total - 1, i)); desenhar(); window.scrollTo({ top: raiz.offsetTop, behavior: 'smooth' }); };
     const tiras = estado.paginas.map((p, i) => el('button', { type: 'button', title: 'Página ' + (i + 1),
       class: 'tira ' + cor(i) + (i === atual ? ' ativa' : ''), onclick: () => ir(i) },
-      p.midia && p.midia.tipo.startsWith('image/') ? el('img', { src: '/midia/' + p.midia.id, alt: '' }) : null,
+      midiaEl(p.midia),
       el('span', {}, String(i + 1))));
     return el('div', { class: 'carrossel-nav' },
       el('button', { type: 'button', class: 'secundario', disabled: atual === 0, onclick: () => ir(atual - 1) }, '◀'),

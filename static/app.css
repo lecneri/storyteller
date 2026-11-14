@@ -93,7 +93,7 @@ textarea.prompt { font-size:.82em; font-family: ui-monospace, monospace; backgro
 .previa-box { display:grid; gap:4px; justify-items:center; }
 .previa { width:100%; max-height:320px; object-fit:contain; border-radius:10px; background:#000; }
 .palco { container-type:inline-size; position:relative; overflow:hidden; border-radius:10px; aspect-ratio:3/4; width:100%; max-width:180px; background:linear-gradient(160deg,#9bd3ff,#ffe3a3); display:grid; place-items:center; margin:0 auto; }
-.palco img { width:100%; height:100%; object-fit:cover; }
+.palco img, .palco video { width:100%; height:100%; object-fit:cover; display:block; }
 .palco.vazio span { font-size:40px; opacity:.5; }
 .fx-camada { position:absolute; inset:0; pointer-events:none; }
 .fx { position:absolute; animation-iteration-count:infinite; }
@@ -172,7 +172,7 @@ body.crianca { background:linear-gradient(180deg,#ffe9c7,#fff8ef 40%); min-heigh
 .carrossel-nav { display:flex; gap:8px; align-items:center; margin:8px 0; position:sticky; top:0; z-index:5; background:var(--fundo); padding:6px 0; }
 .carrossel-nav .tiras { display:flex; gap:6px; overflow-x:auto; flex:1; padding:2px; }
 .tira { position:relative; flex:0 0 auto; width:52px; height:52px; padding:0; border-radius:10px; background:color-mix(in srgb, var(--cartao) 75%, var(--pg)); border:3px solid transparent; overflow:hidden; color:var(--texto); }
-.tira img { width:100%; height:100%; object-fit:cover; }
+.tira img, .tira video { width:100%; height:100%; object-fit:cover; pointer-events:none; }
 .tira span { position:absolute; right:2px; bottom:2px; background:var(--pg); color:#fff; font-size:.75em; border-radius:6px; padding:0 5px; }
 .tira.ativa { border-color:var(--pg); box-shadow:0 0 0 2px var(--cartao), 0 0 0 4px var(--pg); }
 .carrossel-nav button:disabled { opacity:.35; cursor:default; }
