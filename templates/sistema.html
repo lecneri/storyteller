@@ -49,7 +49,7 @@
           <span class="suave">· {{ situ }}</span></span>
         <span class="linha">
           <button type="button" class="pequeno" data-acao="iniciar">🔌 Conectar</button>
-          {% if nome != "codex" %}<button type="button" class="pequeno secundario" data-acao="testar">🧪 Testar</button>{% endif %}
+          <button type="button" class="pequeno secundario" data-acao="testar">🧪 Testar</button>
         </span>
       </div>
       <div class="cli-fluxo" hidden></div>
@@ -65,8 +65,9 @@
         <input name="URL_PUBLICA" value="{{ self.cfg("URL_PUBLICA") }}" placeholder="https://historias.seudominio.com.br"></label>
       <label>CLI para escrever histórias
         <select name="CLI_TEXTO">
-          <option value="claude"{% if self.cfg("CLI_TEXTO") != "agy" %} selected{% endif %}>Claude</option>
+          <option value="claude"{% if self.cfg("CLI_TEXTO") != "agy" && self.cfg("CLI_TEXTO") != "codex" %} selected{% endif %}>Claude</option>
           <option value="agy"{% if self.cfg("CLI_TEXTO") == "agy" %} selected{% endif %}>Gemini (agy)</option>
+          <option value="codex"{% if self.cfg("CLI_TEXTO") == "codex" %} selected{% endif %}>ChatGPT (Codex)</option>
         </select></label>
       <label>Token do Claude <small class="suave">{% if self.tem("CLAUDE_CODE_OAUTH_TOKEN") %}✅ {{ self.origem("CLAUDE_CODE_OAUTH_TOKEN") }}{% else %}ou use “Conectar” acima{% endif %}</small>
         <input name="CLAUDE_CODE_OAUTH_TOKEN" type="password" autocomplete="off" placeholder="sk-ant-oat… (opcional)"></label>

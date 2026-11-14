@@ -257,6 +257,7 @@ pub async fn gerar_texto(st: &crate::AppState, familia: uuid::Uuid, p: &PedidoTe
     if cli && dentro_do_limite {
         let r = match crate::config::get("CLI_TEXTO").as_deref() {
             Some("agy") => agy_cli(p).await,
+            Some("codex") => codex_cli(p).await,
             _ => claude_cli(p).await,
         };
         match r {
@@ -305,6 +306,47 @@ pub async fn gerar_texto(st: &crate::AppState, familia: uuid::Uuid, p: &PedidoTe
         bail!("Esta família ainda não tem IA de texto configurada (sem CLI e sem chave de API). Peça ao admin, ou crie a história manualmente.");
     }
     bail!("Nenhuma IA conseguiu gerar: {}", erros.join(" | "))
+}
+
+/// Codex CLI (assinatura do ChatGPT): somente leitura, sem pedir aprovação, resposta no formato do schema.
+pub async fn codex_cli(p: &PedidoTexto) -> anyhow::Result<Value> {
+    let dir = std::env::temp_dir().join(format!("st-ia-{}", uuid::Uuid::new_v4()));
+    tokio::fs::create_dir_all(&dir).await?;
+    let schema = dir.join("schema.json");
+    let resposta = dir.join("resposta.json");
+    tokio::fs::write(&schema, p.schema.to_string()).await?;
+    let prompt = format!("{}\nNão use ferramentas nem crie arquivos: responda só com o JSON.\n\n{}", p.sistema, p.prompt);
+    let mut cmd = Command::new("codex");
+    cmd.args(["exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only", "-c", "approval_policy=\"never\""])
+        .arg("--output-schema")
+        .arg(&schema)
+        .arg("-o")
+        .arg(&resposta)
+        .arg("-C")
+        .arg(&dir)
+        .arg(&prompt)
+        .current_dir(&dir)
+        .env_clear()
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    for var in ["HOME", "PATH", "LANG"] {
+        if let Ok(v) = std::env::var(var) {
+            cmd.env(var, v);
+        }
+    }
+    let saida = tokio::time::timeout(TEMPO_MAXIMO, cmd.output()).await;
+    let lido = tokio::fs::read_to_string(&resposta).await;
+    let _ = tokio::fs::remove_dir_all(&dir).await;
+    let saida = saida.map_err(|_| anyhow!("a IA demorou mais de 5 minutos"))??;
+    match lido {
+        Ok(t) if !t.trim().is_empty() => extrair_json(&t).context("o Codex não devolveu JSON válido"),
+        _ => bail!(
+            "codex falhou: {}",
+            resumo(String::from_utf8_lossy(&saida.stderr).lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("sem resposta"))
+        ),
+    }
 }
 
 /// Para o botão "Testar" do sistema.

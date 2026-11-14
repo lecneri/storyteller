@@ -300,7 +300,8 @@ pub async fn cli_testar(s: Sessao, Path(nome): Path<String>) -> Response {
     let r = match nome.as_str() {
         "claude" => crate::ia::claude_cli(&pedido).await,
         "agy" => crate::ia::testar_agy(&pedido).await,
-        _ => Err(anyhow::anyhow!("teste disponível só para claude e agy")),
+        "codex" => crate::ia::codex_cli(&pedido).await,
+        _ => Err(anyhow::anyhow!("CLI desconhecido")),
     };
     match r {
         Ok(v) => axum::Json(serde_json::json!({ "ok": true, "resposta": v["resposta"] })).into_response(),
