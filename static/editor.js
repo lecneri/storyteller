@@ -152,9 +152,16 @@
     return (pag.personagens || []).map((n) => {
       const p = personagem(n.slug) || { nome: n.slug, ficha: {} };
       const v = varianteDe(n);
-      const ref = v && (v.referencias || [])[0];
+      let ref = v && (v.referencias || [])[0];
+      // Variante sem imagem (ex.: transformação): empresta a imagem de outra variante só para rosto e traços.
+      let emprestada = null;
+      if (!ref) {
+        const outra = (p.variantes || []).find((x) => x !== v && (x.referencias || []).length && x.slug === p.variante_atual)
+          || (p.variantes || []).find((x) => x !== v && (x.referencias || []).length);
+        if (outra) { ref = outra.referencias[0]; emprestada = outra.nome; }
+      }
       const desc = [v && v.descricao, (p.ficha || {}).aparencia].filter(Boolean).join('; ');
-      return { nome: p.nome, variante: v ? v.nome : null, estilo: v && v.estilo, ref, num: ref ? ++num : null, desc };
+      return { nome: p.nome, variante: v ? v.nome : null, estilo: v && v.estilo, ref, emprestada, num: ref ? ++num : null, desc };
     });
   }
   function promptImagem(pag) {
@@ -163,6 +170,7 @@
     const estilo = [...new Set(estilos)].join(', ');
     const linhas = refs.map((r) =>
       '- ' + (r.num ? 'Imagem ' + r.num + ': ' : '') + r.nome + (r.variante ? ' (' + r.variante + ')' : '') +
+      (r.emprestada ? ' — use a imagem só para o rosto, cabelo e traços; a roupa e a aparência são as desta variante' : '') +
       (r.desc ? ' — ' + r.desc : '') + (r.num ? '' : ' (sem imagem de referência)'));
     return [
       'Ilustração de livro infantil, página inteira, formato retrato 3:4.',
@@ -293,7 +301,9 @@
     const minis = refs.map((r) => r.ref
       ? el('figure', { class: 'mini' },
           el('img', { src: '/midia/' + r.ref, alt: r.nome, 'data-copiar': true, title: 'Clique para copiar a imagem' }),
-          el('figcaption', {}, 'Imagem ' + r.num + ' · ' + r.nome, el('br'),
+          el('figcaption', {}, 'Imagem ' + r.num + ' · ' + r.nome,
+            r.emprestada ? [el('br'), el('small', { class: 'suave', title: 'Esta variante ainda não tem imagem: a imagem de "' + r.emprestada + '" vai só como referência de rosto e traços.' }, 'rosto de ' + r.emprestada)] : null,
+            el('br'),
             el('button', { type: 'button', class: 'link', 'data-copiar-de': '/midia/' + r.ref }, '📋 Copiar'), ' · ',
             el('a', { href: '/midia/' + r.ref, download: (r.num + '-' + r.nome).replace(/\s+/g, '-') }, '⬇')))
       : el('figure', { class: 'mini sem' }, el('div', { class: 'mini-desc' }, '📝'), el('figcaption', {}, r.nome, el('br'), el('small', { class: 'suave' }, 'só descrição'))));
