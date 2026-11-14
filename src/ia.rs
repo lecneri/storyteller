@@ -316,11 +316,15 @@ pub async fn testar_agy(p: &PedidoTexto) -> anyhow::Result<Value> {
 async fn agy_cli(p: &PedidoTexto) -> anyhow::Result<Value> {
     let dir = std::env::temp_dir().join(format!("st-ia-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&dir).await?;
-    let prompt = format!("{}\n\n{}", p.sistema, p.prompt);
+    let prompt = format!("{}\nNão use ferramentas nem crie arquivos: responda só com o JSON.\n\n{}", p.sistema, p.prompt);
+    // Sem ferramentas: nega todas as permissões (sem isso o agy fica parado pedindo aprovação) e modo plano.
+    // O pedido vai grudado no -p (o agy usa o argumento seguinte ao -p como prompt).
+    let negar = r#"{"permissions":{"allow":[],"deny":["*","command(*)","write_file(*)","edit_file(*)"]}}"#;
     let mut cmd = Command::new("agy");
-    cmd.args(["-p", "--output-format", "json", "--disable-slash-commands"])
+    cmd.args(["--output-format", "json", "--mode", "plan", "--print-timeout", "240s", "--settings", negar])
         .arg("--json-schema")
         .arg(p.schema.to_string())
+        .arg("-p")
         .arg(&prompt)
         .current_dir(&dir)
         .env_clear()
@@ -345,11 +349,14 @@ async fn agy_cli(p: &PedidoTexto) -> anyhow::Result<Value> {
     }
     // A saída json do agy pode vir como envelope {result: "..."} ou direto como o objeto.
     let v: Value = serde_json::from_str(stdout.trim()).or_else(|_| extrair_json(&stdout))?;
-    if let Some(r) = v.get("result").and_then(Value::as_str) {
-        return extrair_json(r);
-    }
     if let Some(r) = v.get("structured_output").filter(|x| !x.is_null()) {
         return Ok(r.clone());
+    }
+    if v.get("status").and_then(Value::as_str).is_some_and(|s| s != "SUCCESS") {
+        bail!("agy não concluiu: {}", resumo(&v.to_string()));
+    }
+    if let Some(r) = v.get("result").or_else(|| v.get("response")).and_then(Value::as_str) {
+        return extrair_json(r);
     }
     Ok(v)
 }
