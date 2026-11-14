@@ -65,7 +65,8 @@
       <label>Nome <input name="nome" required placeholder="Super Léo Rangers"></label>
       <label>Forma <input name="forma" placeholder="normal, super, gigante..."></label>
       <label class="inteiro">Estilo de referência <input name="estilo" placeholder="Power Rangers, Cavaleiros do Zodíaco, Pokémon..."></label>
-      <label class="inteiro">Descrição <textarea name="descricao" rows="2" placeholder="Armadura vermelha com detalhes dourados, capacete com visor..."></textarea></label>
+      <label class="inteiro">Descrição <textarea id="desc-variante" name="descricao" rows="2" placeholder="Armadura vermelha com detalhes dourados, capacete com visor..."></textarea></label>
+      <span class="inteiro" data-descrever data-alvo="desc-variante" data-nome="{{ p.nome }}"></span>
       <label class="inteiro">Imagens de referência <input type="file" name="refs" accept="image/png,image/jpeg,image/webp,image/gif" multiple></label>
       <label class="check"><input type="checkbox" name="atual" value="1"> Tornar a variante atual</label>
       <button type="submit">Criar variante</button>
@@ -86,7 +87,8 @@
         <select name="tipo">{% for (k, v) in tipos %}<option value="{{ k }}"{% if p.tipo == k.to_string() %} selected{% endif %}>{{ v }}</option>{% endfor %}</select>
       </label>
       <label class="inteiro">Apelidos <input name="apelidos" value="{{ p.apelidos() }}"></label>
-      <label class="inteiro">Aparência <textarea name="aparencia" rows="2">{{ p.campo("aparencia") }}</textarea></label>
+      <label class="inteiro">Aparência <textarea id="aparencia-ficha" name="aparencia" rows="2">{{ p.campo("aparencia") }}</textarea></label>
+      <span class="inteiro" data-descrever data-alvo="aparencia-ficha"></span>
       <label class="inteiro">Personalidade <textarea name="personalidade" rows="2">{{ p.campo("personalidade") }}</textarea></label>
       <label class="inteiro">Jeito de falar <textarea name="jeito_falar" rows="2">{{ p.campo("jeito_falar") }}</textarea></label>
       <button type="submit">Salvar ficha</button>
@@ -94,4 +96,5 @@
   </section>
 </main>
 <script src="/vozes.js" defer></script>
+<script src="/descrever.js" defer></script>
 {% endblock %}

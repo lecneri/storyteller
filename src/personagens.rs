@@ -487,9 +487,17 @@ pub async fn criar_com_ia(State(st): State<AppState>, s: Sessao, mp: Multipart) 
         return lista_com(&st, s, Some("Para usar fotos, marque a autorização.".into())).await;
     }
 
-    // 1) Ficha pela IA de texto (a partir da descrição).
+    // 1) Ficha pela IA de texto, olhando a descrição e as fotos.
+    let mut imagens = Vec::new();
+    for bytes in &arquivos {
+        match midia::foto_para_ia(bytes) {
+            Some(f) => imagens.push(f),
+            None => return lista_com(&st, s, Some("Só imagens PNG, JPG ou WebP.".into())).await,
+        }
+    }
     let pedido = crate::ia::PedidoTexto {
         sistema: "Você cria personagens para livros infantis em português do Brasil. Responda só com o JSON pedido.".into(),
+        imagens,
         prompt: format!(
             "Crie a ficha do personagem \"{nome}\" (tipo: {tipo}). Estilo visual de referência: {}.\n\
              Descrição da família: {}\n{}\
@@ -498,7 +506,7 @@ pub async fn criar_com_ia(State(st): State<AppState>, s: Sessao, mp: Multipart) 
              nome_variante: nome curto da aparência atual (ex.: \"Super Léo Rangers\"); forma: normal, super, gigante...",
             if estilo.is_empty() { "livre" } else { &estilo },
             if descricao.is_empty() { "(sem descrição: a família enviou fotos)" } else { &descricao },
-            if arquivos.is_empty() { "" } else { "Há fotos de referência; descreva uma aparência coerente com a descrição.\n" },
+            if arquivos.is_empty() { "" } else { "As fotos anexadas mostram o personagem: descreva a aparência a partir delas (cabelo, olhos, pele, roupa, cores, traços marcantes), coerente com a descrição. Não cite que é uma foto.\n" },
         ),
         schema: serde_json::json!({
             "type": "object", "additionalProperties": false,
@@ -625,5 +633,44 @@ pub async fn gerar_ref(State(st): State<AppState>, s: Sessao, Path((slug, vslug)
             Redirect::to(&format!("/personagens/{slug}")).into_response()
         }
         Err(e) => detalhe_com(&st, s, &slug, Some(format!("{e:#}"))).await,
+    }
+}
+
+/// POST /personagens/descrever-foto (multipart: fotos, nome, estilo): a IA olha as fotos e devolve
+/// a descrição da aparência para preencher o campo. As fotos não são guardadas.
+pub async fn descrever_foto(State(st): State<AppState>, s: Sessao, mp: Multipart) -> Response {
+    let erro = |m: String| (axum::http::StatusCode::UNPROCESSABLE_ENTITY, axum::Json(serde_json::json!({ "erro": m }))).into_response();
+    let (campos, arquivos) = match ler_multipart(mp).await {
+        Ok(x) => x,
+        Err(m) => return erro(m),
+    };
+    if arquivos.is_empty() {
+        return erro("Escolha pelo menos uma foto.".into());
+    }
+    let mut imagens = Vec::new();
+    for b in arquivos.iter().take(4) {
+        match midia::foto_para_ia(b) {
+            Some(f) => imagens.push(f),
+            None => return erro("Só imagens PNG, JPG ou WebP.".into()),
+        }
+    }
+    let texto = |k: &str| campos.get(k).map(|v| v.trim().to_string()).unwrap_or_default();
+    let (nome, estilo) = (texto("nome"), texto("estilo"));
+    let pedido = crate::ia::PedidoTexto {
+        sistema: "Você descreve personagens para ilustradores de livros infantis, em português do Brasil. Responda só com o JSON pedido.".into(),
+        imagens,
+        prompt: format!(
+            "Olhe as imagens anexadas{} e descreva a aparência para um ilustrador manter o personagem igual em todas as páginas: \
+             idade aparente, cabelo, olhos, pele, corpo, roupa e cores, acessórios e traços marcantes.{} \
+             Um parágrafo curto e objetivo (até 70 palavras), sem citar que é uma foto e sem nomes de pessoas reais.",
+            if nome.is_empty() { String::new() } else { format!(" (personagem \"{nome}\")") },
+            if estilo.is_empty() { String::new() } else { format!(" Estilo desejado: {estilo}.") },
+        ),
+        schema: serde_json::json!({ "type": "object", "additionalProperties": false, "required": ["aparencia"],
+                                    "properties": { "aparencia": { "type": "string" } } }),
+    };
+    match crate::ia::gerar_texto(&st, s.familia_id, &pedido).await {
+        Ok(v) => axum::Json(serde_json::json!({ "aparencia": v["aparencia"] })).into_response(),
+        Err(e) => erro(format!("{e:#}")),
     }
 }

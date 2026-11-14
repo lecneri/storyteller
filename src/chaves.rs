@@ -162,6 +162,7 @@ pub async fn testar(State(st): State<AppState>, s: Sessao, Path((esc, provedor))
     let Some((k, modelo)) = chave(&st, familia, &provedor).await else { return erro("Chave não encontrada.") };
     let pedido = crate::ia::PedidoTexto {
         sistema: "Responda só com o JSON pedido.".into(),
+        imagens: Vec::new(),
         prompt: "Diga oi em português.".into(),
         schema: json!({ "type": "object", "additionalProperties": false, "required": ["resposta"],
                         "properties": { "resposta": { "type": "string" } } }),

@@ -293,6 +293,7 @@ pub async fn cli_testar(s: Sessao, Path(nome): Path<String>) -> Response {
     }
     let pedido = crate::ia::PedidoTexto {
         sistema: "Responda só com o JSON pedido.".into(),
+        imagens: Vec::new(),
         prompt: "Diga oi em português.".into(),
         schema: serde_json::json!({ "type": "object", "additionalProperties": false, "required": ["resposta"],
                                     "properties": { "resposta": { "type": "string" } } }),

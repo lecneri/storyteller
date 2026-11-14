@@ -11,6 +11,13 @@ pub struct PedidoTexto {
     pub prompt: String,
     /// JSON Schema da resposta (saída estruturada).
     pub schema: Value,
+    /// Imagens anexadas (mime, bytes), ex.: fotos para a IA descrever o personagem.
+    pub imagens: Vec<(String, Vec<u8>)>,
+}
+
+fn b64(b: &[u8]) -> String {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.encode(b)
 }
 
 const TEMPO_MAXIMO: Duration = Duration::from_secs(300);
@@ -27,7 +34,14 @@ pub async fn claude_cli(p: &PedidoTexto) -> anyhow::Result<Value> {
 
 async fn rodar_claude(p: &PedidoTexto, dir: &std::path::Path) -> anyhow::Result<Value> {
     let mut cmd = Command::new("claude");
-    cmd.args(["-p", "--output-format", "json", "--tools", "", "--no-session-persistence", "--strict-mcp-config"])
+    cmd.args(["-p", "--tools", "", "--no-session-persistence", "--strict-mcp-config"]);
+    // Com imagens, o pedido vai como mensagem stream-json (texto + imagens em base64).
+    if p.imagens.is_empty() {
+        cmd.args(["--output-format", "json"]);
+    } else {
+        cmd.args(["--input-format", "stream-json", "--output-format", "stream-json", "--verbose"]);
+    }
+    cmd
         .arg("--system-prompt")
         .arg(&p.sistema)
         .arg("--json-schema")
@@ -49,14 +63,31 @@ async fn rodar_claude(p: &PedidoTexto, dir: &std::path::Path) -> anyhow::Result<
 
     let mut filho = cmd.spawn().context("não consegui iniciar o claude (CLI instalado?)")?;
     if let Some(mut stdin) = filho.stdin.take() {
-        stdin.write_all(p.prompt.as_bytes()).await?;
+        if p.imagens.is_empty() {
+            stdin.write_all(p.prompt.as_bytes()).await?;
+        } else {
+            let mut partes: Vec<Value> = p
+                .imagens
+                .iter()
+                .map(|(mime, b)| serde_json::json!({ "type": "image", "source": { "type": "base64", "media_type": mime, "data": b64(b) } }))
+                .collect();
+            partes.push(serde_json::json!({ "type": "text", "text": p.prompt }));
+            let msg = serde_json::json!({ "type": "user", "message": { "role": "user", "content": partes } });
+            stdin.write_all(format!("{msg}\n").as_bytes()).await?;
+        }
     }
     let saida = tokio::time::timeout(TEMPO_MAXIMO, filho.wait_with_output())
         .await
         .map_err(|_| anyhow!("a IA demorou mais de 5 minutos"))??;
 
     let stdout = String::from_utf8_lossy(&saida.stdout);
-    let json: Value = serde_json::from_str(stdout.trim()).with_context(|| {
+    // stream-json: uma linha por evento; o resultado final é a linha com type = "result".
+    let linha = if p.imagens.is_empty() {
+        stdout.trim().to_string()
+    } else {
+        stdout.lines().rev().find(|l| l.contains("\"type\":\"result\"")).unwrap_or_default().to_string()
+    };
+    let json: Value = serde_json::from_str(linha.trim()).with_context(|| {
         let stderr = String::from_utf8_lossy(&saida.stderr);
         format!("resposta inesperada do claude: {} {}", resumo(&stdout), resumo(&stderr))
     })?;
@@ -93,6 +124,16 @@ fn http() -> reqwest::Client {
         .unwrap_or_default()
 }
 
+fn conteudo_anthropic(p: &PedidoTexto) -> Value {
+    let mut partes: Vec<Value> = p
+        .imagens
+        .iter()
+        .map(|(mime, b)| serde_json::json!({ "type": "image", "source": { "type": "base64", "media_type": mime, "data": b64(b) } }))
+        .collect();
+    partes.push(serde_json::json!({ "type": "text", "text": p.prompt }));
+    Value::Array(partes)
+}
+
 /// Anthropic Messages API com saída estruturada (output_config.format).
 async fn anthropic_api(chave: &str, modelo: Option<&str>, p: &PedidoTexto) -> anyhow::Result<Value> {
     let modelo = modelo.map(String::from).unwrap_or_else(|| crate::config::get_ou("ANTHROPIC_MODELO", "claude-opus-5-5"));
@@ -100,7 +141,7 @@ async fn anthropic_api(chave: &str, modelo: Option<&str>, p: &PedidoTexto) -> an
         "model": modelo,
         "max_tokens": 16000,
         "system": p.sistema,
-        "messages": [{ "role": "user", "content": p.prompt }],
+        "messages": [{ "role": "user", "content": conteudo_anthropic(p) }],
         "output_config": { "effort": "medium", "format": { "type": "json_schema", "schema": p.schema } },
         // Se o classificador de segurança recusar, o próprio servidor tenta outro modelo.
         "fallbacks": "default",
@@ -136,10 +177,16 @@ async fn anthropic_api(chave: &str, modelo: Option<&str>, p: &PedidoTexto) -> an
 /// Gemini API (generateContent) pedindo JSON.
 async fn gemini_api(chave: &str, modelo: Option<&str>, p: &PedidoTexto) -> anyhow::Result<Value> {
     let modelo = modelo.map(String::from).unwrap_or_else(|| crate::config::get_ou("GEMINI_MODELO", "gemini-2.5-flash"));
+    let mut partes: Vec<Value> = p
+        .imagens
+        .iter()
+        .map(|(mime, b)| serde_json::json!({ "inline_data": { "mime_type": mime, "data": b64(b) } }))
+        .collect();
+    partes.push(serde_json::json!({ "text": format!(
+        "{}\n\nResponda SOMENTE com um JSON que siga este JSON Schema:\n{}", p.prompt, p.schema) }));
     let corpo = serde_json::json!({
         "systemInstruction": { "parts": [{ "text": p.sistema }] },
-        "contents": [{ "role": "user", "parts": [{ "text": format!(
-            "{}\n\nResponda SOMENTE com um JSON que siga este JSON Schema:\n{}", p.prompt, p.schema) }] }],
+        "contents": [{ "role": "user", "parts": partes }],
         "generationConfig": { "responseMimeType": "application/json" },
     });
     let r = http()
@@ -173,11 +220,23 @@ async fn kimi_api(chave: &str, modelo: Option<&str>, p: &PedidoTexto) -> anyhow:
 }
 
 async fn compat_api(base: &str, nome: &str, chave: &str, modelo: &str, p: &PedidoTexto) -> anyhow::Result<Value> {
+    let texto = format!("{}\n\nResponda SOMENTE com um JSON que siga este JSON Schema:\n{}", p.prompt, p.schema);
+    let usuario = if p.imagens.is_empty() {
+        Value::String(texto)
+    } else {
+        let mut partes: Vec<Value> = p
+            .imagens
+            .iter()
+            .map(|(mime, b)| serde_json::json!({ "type": "image_url", "image_url": { "url": format!("data:{mime};base64,{}", b64(b)) } }))
+            .collect();
+        partes.push(serde_json::json!({ "type": "text", "text": texto }));
+        Value::Array(partes)
+    };
     let corpo = serde_json::json!({
         "model": modelo,
         "messages": [
             { "role": "system", "content": p.sistema },
-            { "role": "user", "content": format!("{}\n\nResponda SOMENTE com um JSON que siga este JSON Schema:\n{}", p.prompt, p.schema) },
+            { "role": "user", "content": usuario },
         ],
         "response_format": { "type": "json_object" },
     });
@@ -256,6 +315,11 @@ pub async fn gerar_texto(st: &crate::AppState, familia: uuid::Uuid, p: &PedidoTe
 
     if cli && dentro_do_limite {
         let r = match crate::config::get("CLI_TEXTO").as_deref() {
+            // O agy não aceita imagens anexadas: com fotos, tenta o Claude e depois o Codex.
+            Some("agy") if !p.imagens.is_empty() => match claude_cli(p).await {
+                Ok(v) => Ok(v),
+                Err(_) => codex_cli(p).await.context("o Gemini (agy) não lê fotos, e Claude/Codex não responderam"),
+            },
             Some("agy") => agy_cli(p).await,
             Some("codex") => codex_cli(p).await,
             _ => claude_cli(p).await,
@@ -315,6 +379,13 @@ pub async fn codex_cli(p: &PedidoTexto) -> anyhow::Result<Value> {
     let schema = dir.join("schema.json");
     let resposta = dir.join("resposta.json");
     tokio::fs::write(&schema, p.schema.to_string()).await?;
+    let mut anexos = Vec::new();
+    for (i, (mime, b)) in p.imagens.iter().enumerate() {
+        let ext = mime.rsplit('/').next().unwrap_or("png");
+        let caminho = dir.join(format!("foto-{i}.{ext}"));
+        tokio::fs::write(&caminho, b).await?;
+        anexos.push(caminho);
+    }
     let prompt = format!("{}\nNão use ferramentas nem crie arquivos: responda só com o JSON.\n\n{}", p.sistema, p.prompt);
     let mut cmd = Command::new("codex");
     cmd.args(["exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only", "-c", "approval_policy=\"never\""])
@@ -324,6 +395,8 @@ pub async fn codex_cli(p: &PedidoTexto) -> anyhow::Result<Value> {
         .arg(&resposta)
         .arg("-C")
         .arg(&dir)
+        // "--image=caminho" (com =): a opção aceita vários valores e engoliria o prompt.
+        .args(anexos.iter().map(|a| format!("--image={}", a.display())))
         .arg(&prompt)
         .current_dir(&dir)
         .env_clear()

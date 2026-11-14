@@ -25,7 +25,7 @@
   </section>
   <section class="cartao largo">
     <h2>✨ Criar personagem com IA</h2>
-    <p class="suave">Descreva e/ou envie fotos. A IA cria a ficha e, se houver IA de imagem, o desenho de referência — senão, o kit fica pronto para você gerar no ChatGPT/Gemini.</p>
+    <p class="suave">Descreva e/ou envie fotos: a IA olha as fotos, descreve a aparência, cria a ficha e, se houver IA de imagem, o desenho de referência — senão, o kit fica pronto para você gerar no ChatGPT/Gemini.</p>
     <form method="post" action="/personagens/ia" enctype="multipart/form-data" class="grade-form"
           onsubmit="this.querySelector('button[type=submit]').textContent='⏳ Criando (até 2 min)…'">
       <label>Nome <input name="nome" required placeholder="Léo"></label>
@@ -48,7 +48,8 @@
         <select name="tipo">{% for (k, v) in tipos %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
       </label>
       <label class="inteiro">Apelidos <small class="suave">(separados por vírgula)</small> <input name="apelidos" placeholder="Leozinho, Super Léo"></label>
-      <label class="inteiro">Aparência <textarea name="aparencia" rows="2" placeholder="Menino de 4 anos, cabelo castanho..."></textarea></label>
+      <label class="inteiro">Aparência <textarea id="aparencia-nova" name="aparencia" rows="2" placeholder="Menino de 4 anos, cabelo castanho..."></textarea></label>
+      <span class="inteiro" data-descrever data-alvo="aparencia-nova"></span>
       <label class="inteiro">Personalidade <textarea name="personalidade" rows="2"></textarea></label>
       <label class="inteiro">Jeito de falar <textarea name="jeito_falar" rows="2"></textarea></label>
       <button type="submit">Criar personagem</button>
@@ -56,4 +57,5 @@
   </section>
 </main>
 <script src="/vozes.js" defer></script>
+<script src="/descrever.js" defer></script>
 {% endblock %}

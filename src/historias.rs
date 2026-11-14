@@ -379,6 +379,7 @@ pub async fn executar_geracao(st: &AppState, payload: &Value) -> anyhow::Result<
 
     let pedido = ia::PedidoTexto {
         sistema: SISTEMA.into(),
+        imagens: Vec::new(),
         prompt: montar_prompt(&briefing, &h.faixa, &h.narracao, &citados, &todos, estilo, &memorias),
         schema: schema_historia(),
     };
@@ -457,6 +458,7 @@ pub async fn gerar_memoria(st: &AppState, historia: Uuid) -> anyhow::Result<Stri
         .collect();
     let pedido = ia::PedidoTexto {
         sistema: "Você resume histórias infantis para servir de memória em histórias seguintes. Responda só com o JSON pedido.".into(),
+        imagens: Vec::new(),
         prompt: format!(
             "Resuma a história \"{titulo}\" em 3 a 6 frases curtas com os fatos que importam para continuações: \
              quem participou, o que aconteceu, quem venceu ou o que foi descoberto, objetos e lugares novos, piadas internas.\n\n{}",

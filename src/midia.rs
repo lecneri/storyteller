@@ -101,3 +101,14 @@ pub async fn servir(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>)
         Err(_) => StatusCode::NOT_FOUND.into_response(),
     }
 }
+
+/// Prepara uma foto para mandar à IA: reduz para no máximo 1568 px no lado maior e devolve JPEG
+/// (fotos de celular passam do limite de tamanho das APIs). Não é guardada em lugar nenhum.
+pub fn foto_para_ia(bytes: &[u8]) -> Option<(String, Vec<u8>)> {
+    tipo_imagem(bytes)?;
+    let img = image::load_from_memory(bytes).ok()?;
+    let img = if img.width().max(img.height()) > 1568 { img.resize(1568, 1568, image::imageops::FilterType::Triangle) } else { img };
+    let mut saida = std::io::Cursor::new(Vec::new());
+    img.to_rgb8().write_to(&mut saida, image::ImageFormat::Jpeg).ok()?;
+    Some(("image/jpeg".to_string(), saida.into_inner()))
+}
