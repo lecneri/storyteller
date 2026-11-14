@@ -1,19 +1,10 @@
 // Briefing: autocompletar de @personagem(:variante)(!voz) e #historia, e chips do que foi detectado.
 // Voz extra: "@pedro!ingles" (só nessa voz/língua) ou "@pedro!misto-ingles" (mistura com português).
 (function () {
+  const { el } = window.St;
   const caixas = document.querySelectorAll('textarea[name="briefing"]');
   if (!caixas.length) return;
   const norm = (t) => (t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  const el = (tag, attrs = {}, ...filhos) => {
-    const e = document.createElement(tag);
-    for (const [k, v] of Object.entries(attrs)) {
-      if (k === 'class') e.className = v;
-      else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
-      else e.setAttribute(k, v);
-    }
-    for (const f of filhos.flat()) if (f != null) e.append(f.nodeType ? f : document.createTextNode(f));
-    return e;
-  };
 
   fetch('/mencoes').then((r) => r.json()).then((dados) => caixas.forEach((ta) => ligar(ta, dados)));
 

@@ -6,6 +6,8 @@
   <title>{% block titulo %}Storyteller{% endblock %}</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/app.css?v={{ crate::web::versao() }}">
+  <!-- Antes dos scripts das páginas (defer roda na ordem do documento). -->
+  <script src="/comum.js?v={{ crate::web::versao() }}" defer></script>
 </head>
 <body>
   {% block corpo %}{% endblock %}

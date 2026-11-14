@@ -1,11 +1,6 @@
 // Seção Chaves: carregar modelos do provedor, salvar o escolhido e testar.
 (function () {
-  const aviso = (msg) => {
-    const a = document.getElementById('aviso');
-    if (!a) return;
-    a.textContent = msg; a.hidden = false;
-    clearTimeout(a._t); a._t = setTimeout(() => (a.hidden = true), 4000);
-  };
+  const aviso = (msg) => window.St.aviso(msg, 4000); // resultados de teste: mais tempo para ler
   const post = (url, corpo) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: corpo ? JSON.stringify(corpo) : undefined })
     .then(async (r) => ({ ok: r.ok, j: await r.json().catch(() => ({})) }));
   function preencher(sel, lista) {

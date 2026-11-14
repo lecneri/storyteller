@@ -1,5 +1,6 @@
 // Editor de blocos: páginas → blocos (narrador / fala de personagem). Salva como JSON.
 (function () {
+  const { el, aviso } = window.St;
   const dados = JSON.parse(document.getElementById('dados').textContent);
   const raiz = document.getElementById('editor');
   const estado = {
@@ -19,40 +20,19 @@
   const NCORES = 5;
   const cor = (n) => 'cor-' + (n % NCORES);
 
-  const el = (tag, attrs = {}, ...filhos) => {
-    const e = document.createElement(tag);
-    for (const [k, v] of Object.entries(attrs)) {
-      if (k === 'class') e.className = v;
-      else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
-      else if (v !== undefined && v !== null && v !== false) e.setAttribute(k, v === true ? '' : v);
-    }
-    for (const f of filhos.flat()) if (f !== null && f !== undefined) e.append(f.nodeType ? f : document.createTextNode(f));
-    return e;
-  };
   const ajustar = (t) => { t.style.height = 'auto'; t.style.height = t.scrollHeight + 2 + 'px'; };
   document.addEventListener('input', (e) => { if (e.target.matches('#editor textarea')) ajustar(e.target); });
   const mudou = () => { sujo = true; status.textContent = 'Alterações não salvas'; };
 
   const personagem = (slug) => personagens.find((p) => p.slug === slug);
-  // Miniatura: primeira imagem da variante indicada (ou da atual, ou de qualquer uma).
-  function miniatura(slug, variante) {
-    const p = personagem(slug);
-    if (!p) return null;
-    const vs = p.variantes || [];
-    const v = vs.find((x) => x.slug === (variante || p.variante_atual)) || vs.find((x) => (x.referencias || []).length);
-    const ref = v && (v.referencias || [])[0];
-    return ref ? '/midia/' + ref : null;
-  }
   const vozesSistema = dados.vozes_sistema || [];
-  // Mesma regra do servidor (Bloco::chave_voz): "pedro", "pedro+ingles" ou "voz:<id>|tom|velocidade".
-  function chaveVoz(b) {
-    if (b.quem.startsWith('voz:')) {
-      const t = b.tom || 0, v = b.velocidade || 0;
-      return t || v ? b.quem + '|' + t + '|' + v : b.quem;
-    }
-    return b.voz && b.quem !== 'narrador' ? b.quem + '+' + b.voz : b.quem;
-  }
-  const nomeVoz = (id) => ((vozesSistema.find((v) => v.id === id) || {}).nome || id).split(' · ')[0];
+  // Regras sem tela (static/editor-logica.js), com o contexto desta história.
+  const L = window.EditorLogica;
+  const { chaveVoz, promptAnimacao } = L;
+  const nomeVoz = (id) => L.nomeVoz(vozesSistema, id);
+  const miniatura = (slug, variante) => L.miniatura(personagens, slug, variante);
+  const referencias = (pag) => L.referencias(personagens, pag);
+  const promptImagem = (pag) => L.promptImagem(pag, { personagens, secundarios: estado.secundarios, estilo: dados.estilo, faixa: dados.faixa });
   function avatar(quem) {
     if (quem === 'narrador') return el('div', { class: 'avatar', title: 'Narrador' }, '🎙️');
     if (quem.startsWith('voz:')) return el('div', { class: 'avatar', title: 'Voz do sistema' }, '🎭');
@@ -195,12 +175,6 @@
   }
 
   // ───────────── Kit da imagem ─────────────
-  function aviso(msg) {
-    const a = document.getElementById('aviso');
-    if (!a) return;
-    a.textContent = msg; a.hidden = false;
-    clearTimeout(a._t); a._t = setTimeout(() => (a.hidden = true), 2500);
-  }
   async function copiarTexto(texto) {
     try {
       await navigator.clipboard.writeText(texto);
@@ -211,61 +185,6 @@
       document.execCommand('copy'); t.remove();
     }
     aviso('Prompt copiado! Cole no ChatGPT ou no Gemini.');
-  }
-  function varianteDe(n) {
-    const p = personagem(n.slug);
-    if (!p) return null;
-    const vs = p.variantes || [];
-    return vs.find((v) => v.slug === (n.variante || p.variante_atual)) || null;
-  }
-  // Lista de referências da cena: quem tem imagem vira "Imagem N"; quem não tem vai por descrição.
-  function referencias(pag) {
-    let num = 0;
-    return (pag.personagens || []).map((n) => {
-      const p = personagem(n.slug) || { nome: n.slug, ficha: {} };
-      const v = varianteDe(n);
-      let ref = v && (v.referencias || [])[0];
-      // Variante sem imagem (ex.: transformação): empresta a imagem de outra variante só para rosto e traços.
-      let emprestada = null;
-      if (!ref) {
-        const outra = (p.variantes || []).find((x) => x !== v && (x.referencias || []).length && x.slug === p.variante_atual)
-          || (p.variantes || []).find((x) => x !== v && (x.referencias || []).length);
-        if (outra) { ref = outra.referencias[0]; emprestada = outra.nome; }
-      }
-      const desc = [v && v.descricao, (p.ficha || {}).aparencia].filter(Boolean).join('; ');
-      return { nome: p.nome, variante: v ? v.nome : null, estilo: v && v.estilo, ref, emprestada, num: ref ? ++num : null, desc };
-    });
-  }
-  function promptImagem(pag) {
-    const refs = referencias(pag);
-    const estilos = [dados.estilo, ...refs.map((r) => r.estilo)].filter(Boolean);
-    const estilo = [...new Set(estilos)].join(', ');
-    const linhas = refs.map((r) =>
-      '- ' + (r.num ? 'Imagem ' + r.num + ': ' : '') + r.nome + (r.variante ? ' (' + r.variante + ')' : '') +
-      (r.emprestada ? ' — use a imagem só para o rosto, cabelo e traços; a roupa e a aparência são as desta variante' : '') +
-      (r.desc ? ' — ' + r.desc : '') + (r.num ? '' : ' (sem imagem de referência)'));
-    // Secundários (sem ficha): sempre a mesma descrição, para saírem iguais em todas as páginas.
-    for (const nome of pag.secundarios || []) {
-      const x = secundario(nome);
-      if (x) linhas.push('- ' + x.nome + (x.descricao ? ' — ' + x.descricao : ''));
-    }
-    return [
-      'Ilustração de livro infantil, página inteira, formato retrato 3:4.',
-      'Estilo: ' + (estilo ? estilo + ', ' : '') + 'cores vivas, traço limpo e amigável, para crianças de ' + dados.faixa + ' anos.',
-      '',
-      'Cena: ' + (pag.cena || '(descreva a cena)'),
-      '',
-      linhas.length ? 'Personagens' + (refs.some((r) => r.num) ? ' (siga fielmente as imagens de referência anexadas, na ordem; os sem imagem, pela descrição):' : ' (siga a descrição de cada um):') : null,
-      ...linhas,
-      '',
-      'Não escreva nenhum texto, letra, número ou balão de fala na imagem.',
-    ].filter((l) => l !== null).join('\n');
-  }
-  function promptAnimacao(pag) {
-    const efeito = pag.animacao && pag.animacao !== 'nenhuma' ? ' Efeito sugerido: ' + pag.animacao + '.' : '';
-    return 'Anime esta ilustração (use a imagem anexada como quadro inicial), 5 a 8 segundos, em loop suave. ' +
-      'Movimentos leves e naturais dos personagens e do cenário, câmera quase parada, sem cortes, sem texto.' + efeito +
-      '\nCena: ' + (pag.cena || '');
   }
   async function enviarArquivo(pag, arquivo) {
     const fd = new FormData();
@@ -498,11 +417,7 @@
     const tipos = dados.tipos || [];
     const sel = el('select', { title: 'Tipo do personagem' }, tipos.map((t) => el('option', { value: t.id, selected: t.id === 'adulto' }, t.nome)));
     const botao = el('button', { type: 'button', class: 'pequeno', onclick: async () => {
-      // Voz: a da primeira fala dele com voz do sistema.
-      let voz = null;
-      for (const p of estado.paginas) for (const b of p.blocos) {
-        if (!voz && b.quem.startsWith('voz:') && b.nome === x.nome) voz = { motor: 'edge', id: b.quem.slice(4), tom: b.tom || 0, velocidade: b.velocidade || 0 };
-      }
+      const voz = L.vozDoSecundario(estado.paginas, x.nome);
       botao.disabled = true; botao.textContent = '⏳ Salvando…';
       try {
         const r = await fetch('/personagens/de-secundario', { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -511,16 +426,7 @@
         if (!r.ok || !j.personagem) throw new Error(j.erro || 'erro ' + r.status);
         const novo = j.personagem;
         personagens.push(novo);
-        // Falas e cenas passam a apontar para o personagem novo.
-        for (const p of estado.paginas) {
-          for (const b of p.blocos) {
-            if (b.quem.startsWith('voz:') && b.nome === x.nome) { b.quem = novo.slug; delete b.nome; delete b.tom; delete b.velocidade; }
-          }
-          if ((p.secundarios || []).includes(x.nome)) {
-            p.secundarios = p.secundarios.filter((n) => n !== x.nome);
-            (p.personagens = p.personagens || []).push({ slug: novo.slug, variante: null });
-          }
-        }
+        L.secundarioVirouPersonagem(estado.paginas, x.nome, novo.slug);
         estado.secundarios.splice(estado.secundarios.indexOf(x), 1);
         mudou(); desenhar(); await salvar();
         aviso(novo.nome + ' agora é personagem da família ✓');
@@ -541,7 +447,7 @@
       lista.map((x, i) => el('div', { class: 'sec-item' },
         el('input', { value: x.nome, placeholder: 'Nome (ex.: Pirata Caveira)', onchange: (e) => {
           const antigo = x.nome; x.nome = e.target.value.trim() || antigo;
-          estado.paginas.forEach((p) => { p.secundarios = (p.secundarios || []).map((n) => (n === antigo ? x.nome : n)); });
+          L.renomearSecundario(estado.paginas, antigo, x.nome);
           mudou(); desenhar();
         } }),
         (() => { const t = el('textarea', { rows: 2, placeholder: 'Aparência: corpo, rosto, roupa, cores, acessórios…',

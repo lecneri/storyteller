@@ -14,6 +14,7 @@
   <div id="livro" data-voltar="{{ voltar }}"></div>
   <div id="aviso" class="aviso" hidden></div>
   <script id="dados" type="application/json">{{ dados|safe }}</script>
+  <script src="/comum.js?v={{ crate::web::versao() }}" defer></script>
   <script src="/efeitos.js?v={{ crate::web::versao() }}" defer></script>
   <script src="/player.js?v={{ crate::web::versao() }}" defer></script>
 </body>

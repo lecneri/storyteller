@@ -1,11 +1,6 @@
 // Clique numa miniatura (ou em "Copiar") copia a imagem como PNG para colar na IA.
 (function () {
-  const aviso = (msg) => {
-    const el = document.getElementById('aviso');
-    if (!el) return;
-    el.textContent = msg; el.hidden = false;
-    clearTimeout(el._t); el._t = setTimeout(() => (el.hidden = true), 2200);
-  };
+  const { aviso } = window.St;
   async function pngDe(url) {
     const img = new Image();
     img.src = url;

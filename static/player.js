@@ -1,6 +1,7 @@
 // Player do livro: capa → páginas (imagem | texto) → fim.
 // Leitura livre (setas, deslizar, teclado) ou ▶ narração (áudio por trecho, destaque, virada automática).
 (function () {
+  const { el, aviso } = window.St;
   const dados = JSON.parse(document.getElementById('dados').textContent);
   const raiz = document.getElementById('livro');
   const total = dados.paginas.length;
@@ -11,21 +12,6 @@
   let audio = null;
   let geracao = 0; // invalida narrações antigas ao pausar/trocar de página
 
-  const el = (tag, attrs = {}, ...filhos) => {
-    const e = document.createElement(tag);
-    for (const [k, v] of Object.entries(attrs)) {
-      if (k === 'class') e.className = v;
-      else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
-      else if (v !== undefined && v !== null && v !== false) e.setAttribute(k, v === true ? '' : v);
-    }
-    for (const f of filhos.flat()) if (f != null) e.append(f.nodeType ? f : document.createTextNode(f));
-    return e;
-  };
-  const aviso = (msg) => {
-    const a = document.getElementById('aviso');
-    a.textContent = msg; a.hidden = false;
-    clearTimeout(a._t); a._t = setTimeout(() => (a.hidden = true), 2500);
-  };
   const espera = (ms) => new Promise((r) => setTimeout(r, ms));
 
   // ───────────── montagem das páginas ─────────────

@@ -1,25 +1,10 @@
 // Configurar voz (narrador ou personagem): escolher voz, tom e velocidade, ouvir prévia e salvar.
 // Uso: <div data-voz data-quem="narrador|slug" data-salvar="/url" data-exemplo="texto"></div>
 (function () {
+  const { el, aviso } = window.St;
   const caixas = document.querySelectorAll('[data-voz]');
   if (!caixas.length) return;
 
-  const aviso = (msg) => {
-    const a = document.getElementById('aviso');
-    if (!a) return;
-    a.textContent = msg; a.hidden = false;
-    clearTimeout(a._t); a._t = setTimeout(() => (a.hidden = true), 2500);
-  };
-  const el = (tag, attrs = {}, ...filhos) => {
-    const e = document.createElement(tag);
-    for (const [k, v] of Object.entries(attrs)) {
-      if (k === 'class') e.className = v;
-      else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
-      else if (v !== undefined && v !== null && v !== false) e.setAttribute(k, v === true ? '' : v);
-    }
-    for (const f of filhos.flat()) if (f != null) e.append(f.nodeType ? f : document.createTextNode(f));
-    return e;
-  };
   let tocando = null;
   async function tocar(voz, texto, botao) {
     botao.disabled = true; botao.textContent = '⏳ Gerando…';

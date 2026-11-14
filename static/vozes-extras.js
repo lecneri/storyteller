@@ -1,25 +1,10 @@
 // Vozes extras de um personagem (ex.: "Inglês"): nome, língua, voz, tom e velocidade; N vozes.
 // Uso: <div data-vozes-extras="/personagens/slug/vozes-extras" data-nome="Pedro"></div>
 (function () {
+  const { el, aviso } = window.St;
   const caixa = document.querySelector('[data-vozes-extras]');
   if (!caixa) return;
   const url = caixa.dataset.vozesExtras;
-  const el = (tag, attrs = {}, ...filhos) => {
-    const e = document.createElement(tag);
-    for (const [k, v] of Object.entries(attrs)) {
-      if (k === 'class') e.className = v;
-      else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
-      else if (v !== undefined && v !== null && v !== false) e.setAttribute(k, v === true ? '' : v);
-    }
-    for (const f of filhos.flat()) if (f != null) e.append(f.nodeType ? f : document.createTextNode(f));
-    return e;
-  };
-  const aviso = (msg) => {
-    const a = document.getElementById('aviso');
-    if (!a) return alert(msg);
-    a.textContent = msg; a.hidden = false;
-    clearTimeout(a._t); a._t = setTimeout(() => (a.hidden = true), 2500);
-  };
   let tocando = null;
   async function ouvir(voz, texto, botao) {
     botao.disabled = true; botao.textContent = '⏳';

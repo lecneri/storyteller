@@ -85,20 +85,27 @@ docker compose -f docker-compose.prod.yml up -d --build
 ### Testes
 
 ```bash
-docker run --rm -v "$PWD":/app -w /app rust:1-slim-bookworm cargo test --release
+./scripts/testar.sh   # Rust (no Docker) + JavaScript (node --test)
 ```
+
+Os testes cobrem as regras sem banco: detecção de `@`/`#` no briefing, schema e prompt da IA, ajuste da
+resposta da IA, vozes (chaves, extras, vozes do sistema), "virar variante", leitura das respostas dos CLIs,
+login dos CLIs pelo site, tipos de mídia, exportação e as regras do editor (`static/editor-logica.js`).
 
 ---
 
 ## 📁 Estrutura
 
 ```
-src/          rotas e regras (historias, personagens, estantes, player, narracao,
-              partilha, familia, sistema, ia, imagem, tts, limpeza, …)
+src/          rotas e regras; módulos maiores em pastas:
+              historias/ (conteudo, deteccao, prompt, geracao, memoria, rotas)
+              personagens/ (paginas, variantes, com_ia, juntar)
+              ia/ (escolha da rota, cli = assinaturas, api = chaves)
 migrations/   esquema do banco (sqlx)
 templates/    páginas (askama)
-static/       CSS e JS: editor de blocos, player, efeitos/sons, vozes, briefing
-scripts/      st-tts.py (narração com edge-tts)
+static/       CSS e JS: comum.js (helpers), editor + editor-logica.js, player, efeitos/sons, vozes, briefing
+tests/js/     testes do JavaScript (node --test)
+scripts/      st-tts.py (narração com edge-tts), testar.sh
 ```
 
 ---

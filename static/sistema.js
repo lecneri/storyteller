@@ -1,21 +1,6 @@
 // Sistema: conectar os CLIs (Claude, Codex, agy) pelo site.
 (function () {
-  const aviso = (msg) => {
-    const a = document.getElementById('aviso');
-    if (!a) return;
-    a.textContent = msg; a.hidden = false;
-    clearTimeout(a._t); a._t = setTimeout(() => (a.hidden = true), 3500);
-  };
-  const el = (tag, attrs = {}, ...filhos) => {
-    const e = document.createElement(tag);
-    for (const [k, v] of Object.entries(attrs)) {
-      if (k === 'class') e.className = v;
-      else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
-      else e.setAttribute(k, v);
-    }
-    for (const f of filhos.flat()) if (f != null) e.append(f.nodeType ? f : document.createTextNode(f));
-    return e;
-  };
+  const { el, aviso } = window.St;
   const post = (url, corpo) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: corpo ? JSON.stringify(corpo) : undefined })
     .then(async (r) => ({ ok: r.ok, j: await r.json().catch(() => ({})) }));
 
