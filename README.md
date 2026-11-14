@@ -1,31 +1,120 @@
 # 📚 Storyteller
 
-Histórias infantis em formato de livro ilustrado (imagem | texto), com narração por personagem, animações e sons.
-Rust (axum) + Postgres 18 (pgvector) + Docker. Histórias geradas por IA (texto, imagens e narração), com personagens, estantes, famílias e compartilhamento.
+Crie histórias infantis com IA no formato de **livro ilustrado**: em cada página dupla, uma imagem de um lado e o texto do outro. A história pode ser **narrada**, com uma voz diferente para cada personagem, e as páginas viram sozinhas, com animações e sons.
 
-## Rodar no PC (desenvolvimento)
+Foi feito para famílias: cada uma tem os próprios personagens, estantes e histórias, e pode compartilhar com outras.
+
+> Projeto pessoal, em português do Brasil. Roda em Docker, com backend em Rust e Postgres.
+
+---
+
+## ✨ O que ele faz
+
+**Criar histórias**
+- **Briefing → IA:** escreva a ideia ("o @leo e o Tito vão à lua…") e a IA escreve a história em páginas.
+- **`@` cita personagens** (com autocompletar e variante: `@leo:super-rangers`). **`#` cita histórias anteriores**: a IA recebe um resumo ("memória") e continua a série.
+- **Editor de blocos:** narrador e falas de cada personagem, páginas inseridas em qualquer posição e tudo editável. Também dá para criar a história à mão, sem IA.
+- **Kit da imagem** em cada página: prompt pronto, referências dos personagens para copiar e colar no ChatGPT/Gemini, e uma área para arrastar o resultado (imagem, GIF ou vídeo). Com uma chave de API, a imagem é gerada direto pelo app.
+
+**Personagens**
+- Criados à mão ou **com IA** a partir de uma descrição e/ou fotos (a IA gera a ficha e o desenho de referência).
+- **Variantes** (forma × estilo): "Léo normal", "Super Léo no estilo tokusatsu"… Variantes antigas podem ser arquivadas.
+- **Voz por personagem:** escolha da voz, tom e velocidade, com prévia.
+
+**Ler e ouvir**
+- **Player de livro:** abre em modo leitura. O ▶ narra, destaca a palavra que está sendo lida (karaokê) e vira a página. No celular em pé, vira uma coluna.
+- **Animações e sons** por página (estrelas, chuva, neve, bolhas, tremor, explosão "KABUM!"…), sintetizados no navegador, sem arquivos de áudio.
+- **Modo leitura para crianças:** mostra só as estantes delas e o player. Para sair, é preciso o PIN dos pais.
+
+**Famílias**
+- Login por família, com papéis (admin e membro), convite por link ou e-mail, e várias crianças (leitores) com faixa etária.
+- **Estantes** agrupam histórias e guardam os padrões (personagens, variantes, estilo).
+- **Compartilhamento** entre famílias conectadas (o que é definido no item vence a estante), **link público de leitura** e "copiar para minha família".
+- **Privacidade:** baixar meus dados, apagar conta, exportar tudo em Markdown e limpeza automática de arquivos sem uso.
+
+---
+
+## 🧱 Como funciona
+
+| Parte | Tecnologia |
+|---|---|
+| Servidor | Rust · axum · sqlx · askama |
+| Banco | Postgres 18 (imagem `pgvector/pgvector:pg18`), schemas `acesso`, `conteudo`, `partilha`, `midia`, `ia`, `jobs` |
+| Fila de tarefas | no próprio Postgres (`FOR UPDATE SKIP LOCKED`) |
+| Texto (IA) | CLIs de assinatura (Claude Code, Antigravity `agy`) **ou** APIs (Anthropic, Gemini, OpenAI) |
+| Imagem (IA) | OpenAI (gpt-image) ou Gemini, ou modo manual (kit de prompt) |
+| Narração | [edge-tts](https://github.com/rany2/edge-tts) (gratuito), com o tempo de cada palavra para o karaokê |
+| Frontend | HTML gerado no servidor + JavaScript sem framework (editor, player, efeitos) |
+
+**Ordem de escolha da IA** para cada família: assinatura (CLI, se liberada pelo admin) → chave de API da família → chave do sistema (se o admin liberar, com limite semanal) → chave grátis do Gemini → modo manual.
+
+Os segredos (chaves de API, tokens, senha do e-mail) ficam **criptografados no banco** (AES-256-GCM).
+
+---
+
+## 🚀 Rodando
+
+Requisitos: Docker com Compose.
 
 ```bash
-cp .env.example .env        # ajuste senhas, CHAVE_MESTRA (openssl rand -base64 32), ADMIN_*
+git clone https://github.com/<você>/storyteller.git
+cd storyteller
+cp .env.example .env            # ajuste a senha do Postgres
 docker compose --profile dev up --build -d
-# http://localhost:8090  (APP_BIND_IP=0.0.0.0 para acessar pela rede/VPN)
 ```
 
-Testes: `docker run --rm -v "$PWD":/app -w /app rust:1-slim-bookworm cargo test --release`
+Abra **http://localhost:8090**. No primeiro acesso aparece **/instalar**, onde você cria o admin e a sua família.
 
-## Produção (VPS Oracle, atrás do Caddy)
+Todo o resto se configura **pelo site**, em **⚙️ Sistema**:
+- **Assinaturas:** botão "Conectar" para Claude, ChatGPT (Codex) e Gemini (agy). O site mostra o link de login e você cola o código, sem precisar de terminal.
+- Chaves de API, modelos, endereço público e e-mail (SMTP, com botão de teste).
+- Famílias: quem usa as assinaturas, quem usa a chave do sistema e os limites.
 
-1. Na VPS, em `/opt/docker/container/storyteller`: código do projeto + `.env.db` (já existe) + `.env` (modelo mínimo em `.env.producao.example`).
-2. Pasta de dados: `mkdir -p /opt/docker/volumes/storyteller_data && chown 1000:1000 /opt/docker/volumes/storyteller_data`.
-3. `docker compose -f docker-compose.prod.yml up -d --build` (redes externas `db_net` e `proxy_net`; container `storyteller`, porta 8080).
-4. Caddy: `historias.seudominio.com.br { reverse_proxy storyteller:8080 }`. DNS na Cloudflare.
-5. Abra o site: no primeiro acesso aparece **/instalar** para criar o admin e a família.
-6. Em **⚙️ Sistema**, sem SSH: endereço público, conectar as assinaturas (Claude, ChatGPT/Codex, Gemini/agy), chaves de API, modelos e e-mail (com botão de teste).
-7. Backup: o banco já tem backup; a pasta de dados (mídias **e** `segredos/chave-mestra`) também precisa entrar — restaurar os dois juntos.
+### Produção
 
-## Onde fica cada coisa
+O `docker-compose.prod.yml` usa um Postgres e um proxy reverso que já existem (redes Docker externas). Ajuste os nomes das redes para o seu ambiente e veja `.env.producao.example`: o `.env` de produção é mínimo.
 
-- `src/` — servidor (rotas por assunto: `historias`, `personagens`, `estantes`, `player`, `narracao`, `partilha`, `familia`, `sistema`…)
-- `migrations/` — schemas do Postgres (`acesso`, `conteudo`, `partilha`, `midia`, `ia`, `jobs`)
-- `templates/` — páginas (Askama) · `static/` — CSS/JS (editor, player, efeitos, vozes)
-- `scripts/st-tts.py` — narração (edge-tts)
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+- O container roda como o usuário `APP_UID:APP_GID` (padrão `1000:1000`). A pasta de dados precisa ter esse dono.
+- **Backup:** faça backup do banco **e** da pasta de dados. A pasta guarda as mídias e o arquivo `segredos/chave-mestra`, sem o qual os segredos salvos não podem ser lidos.
+- Funciona em x86_64 e arm64.
+
+### Testes
+
+```bash
+docker run --rm -v "$PWD":/app -w /app rust:1-slim-bookworm cargo test --release
+```
+
+---
+
+## 📁 Estrutura
+
+```
+src/          rotas e regras (historias, personagens, estantes, player, narracao,
+              partilha, familia, sistema, ia, imagem, tts, limpeza, …)
+migrations/   esquema do banco (sqlx)
+templates/    páginas (askama)
+static/       CSS e JS: editor de blocos, player, efeitos/sons, vozes, briefing
+scripts/      st-tts.py (narração com edge-tts)
+```
+
+---
+
+## 🔒 Privacidade e segurança
+
+- **Fotos de crianças** só são usadas com autorização explícita, para gerar o desenho de referência. Depois disso, as histórias usam apenas o desenho.
+- **CLIs isolados:** rodam sem ferramentas, num diretório vazio e com o ambiente limpo, porque o briefing vem do usuário.
+- **Links públicos:** usam só vozes genéricas, podem ser cancelados e têm `noindex`.
+- **Modo leitura:** a sessão fica travada no servidor, e para sair é preciso o PIN.
+- **Senhas:** argon2. Tokens de sessão, convite e link são guardados só como hash.
+
+---
+
+## ⚠️ Avisos
+
+- As assinaturas pessoais (Claude, ChatGPT, Google) são para uso pessoal. Compartilhar o acesso com outras pessoas pode violar os termos desses serviços. Por isso o uso de CLI é liberado **por família**, pelo admin.
+- O edge-tts usa um serviço não oficial da Microsoft e pode deixar de funcionar.
+- Os nomes de marcas usados como "estilo de referência" (ex.: um desenho animado famoso) servem só para orientar a IA. Este projeto não tem relação com essas marcas.
