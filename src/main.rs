@@ -1,4 +1,5 @@
 mod auth;
+mod chaves;
 mod cli_login;
 mod config;
 mod conta;
@@ -147,6 +148,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/sistema/chaves", post(sistema::salvar_chave))
         .route("/sistema/chaves/{provedor}/remover", post(sistema::remover_chave))
         .route("/sistema/config", post(sistema::salvar_config))
+        .route("/chaves/{escopo}/{provedor}/modelos", post(chaves::modelos))
+        .route("/chaves/{escopo}/{provedor}/modelo", post(chaves::salvar_modelo))
+        .route("/chaves/{escopo}/{provedor}/testar", post(chaves::testar))
         .route("/sistema/limpar", post(sistema::limpar_agora))
         .route("/sistema/email-teste", post(sistema::email_teste))
         .route("/sistema/cli/{nome}/iniciar", post(sistema::cli_iniciar))

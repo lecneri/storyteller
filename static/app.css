@@ -156,3 +156,5 @@ body.crianca { background:linear-gradient(180deg,#ffe9c7,#fff8ef 40%); min-heigh
 .codigo-grande { font-size:1.4em; letter-spacing:.1em; padding:2px 10px; }
 .perigo { color:var(--erro) !important; }
 .perigo-caixa { border-color:var(--erro); } .perigo-btn { background:var(--erro); }
+.chave-linha { border:1px solid var(--borda); border-radius:12px; padding:10px 12px; display:grid; gap:8px; }
+.chave-linha select { max-width:280px; }

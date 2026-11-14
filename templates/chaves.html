@@ -1,0 +1,36 @@
+<section class="cartao largo" id="chaves">
+  <h2>🔑 Chaves de API {% if escopo == "sistema" %}do sistema{% else %}da família{% endif %}</h2>
+  <p class="suave">{% if escopo == "sistema" %}Usadas pelas famílias com “Chave do sistema” ligada.{% else %}Usadas quando a família não tem as assinaturas liberadas.{% endif %}
+    Cada chave tem o seu modelo: clique em “Carregar modelos” para ver a lista do provedor. As chaves ficam criptografadas e não aparecem de novo.</p>
+  {% if !cripto_ok %}<p class="erro">O servidor está sem chave-mestra: não dá para guardar chaves.</p>{% endif %}
+  {% if linhas_chaves.is_empty() %}<p class="suave">Nenhuma chave cadastrada.</p>{% endif %}
+  {% for c in linhas_chaves %}
+  <div class="chave-linha" data-escopo="{{ escopo }}" data-provedor="{{ c.provedor }}">
+    <div class="linha" style="justify-content:space-between">
+      <span><strong>{{ c.nome }}</strong> <code>••••{{ c.final_ }}</code></span>
+      <span class="linha">
+        <button type="button" class="pequeno secundario" data-acao="testar">🧪 Testar</button>
+        <form method="post" action="{{ acao_chaves }}/{{ c.provedor }}/remover" class="inline" onsubmit="return confirm('Remover esta chave?')"><button class="link perigo">remover</button></form>
+      </span>
+    </div>
+    <div class="linha">
+      <label class="check">Modelo (texto)
+        <select name="modelo"><option value="">padrão</option>{% if !c.modelo.is_empty() %}<option value="{{ c.modelo }}" selected>{{ c.modelo }}</option>{% endif %}</select></label>
+      {% if c.faz_imagem %}
+      <label class="check">Modelo (imagem)
+        <select name="modelo_imagem"><option value="">padrão</option>{% if !c.modelo_imagem.is_empty() %}<option value="{{ c.modelo_imagem }}" selected>{{ c.modelo_imagem }}</option>{% endif %}</select></label>
+      {% endif %}
+      <button type="button" class="pequeno secundario" data-acao="modelos">🔄 Carregar modelos</button>
+      <button type="button" class="pequeno" data-acao="salvar">💾 Salvar modelo</button>
+    </div>
+  </div>
+  {% endfor %}
+  {% if cripto_ok %}
+  <form method="post" action="{{ acao_chaves }}" class="linha">
+    <select name="provedor">{% for (p, nome) in provedores %}<option value="{{ p }}">{{ nome }}</option>{% endfor %}</select>
+    <input name="chave" type="password" placeholder="cole a chave" required autocomplete="off" style="flex:1">
+    <button type="submit">Adicionar / trocar chave</button>
+  </form>
+  {% endif %}
+</section>
+<script src="/chaves.js" defer></script>

@@ -93,26 +93,8 @@
   </section>
 
   {% if s.admin_familia() %}
-  <section class="cartao largo">
-    <h2>🔑 Chaves de API da família</h2>
-    <p class="suave">Opcional. Usadas quando a família não tem as assinaturas liberadas. A chave fica criptografada e não aparece de novo.</p>
-    {% if !cripto_ok %}<p class="erro">O servidor está sem CHAVE_MESTRA: não dá para guardar chaves.</p>{% endif %}
-    {% for (p, nome) in provedores %}
-    <div class="linha" style="justify-content:space-between">
-      <span>{{ nome }}: {% if let Some(f) = self.chave_de(p) %}<code>••••{{ f }}</code>{% else %}<span class="suave">nenhuma</span>{% endif %}</span>
-      {% if self.chave_de(p).is_some() %}
-      <form method="post" action="/familia/chaves/{{ p }}/remover" class="inline"><button class="link">remover</button></form>
-      {% endif %}
-    </div>
-    {% endfor %}
-    {% if cripto_ok %}
-    <form method="post" action="/familia/chaves" class="linha">
-      <select name="provedor">{% for (p, nome) in provedores %}<option value="{{ p }}">{{ nome }}</option>{% endfor %}</select>
-      <input name="chave" type="password" placeholder="cole a chave" required autocomplete="off" style="flex:1">
-      <button type="submit">Salvar chave</button>
-    </form>
-    {% endif %}
-  </section>
+{% let escopo = "familia" %}{% let acao_chaves = "/familia/chaves" %}
+  {% include "chaves.html" %}
   {% endif %}
 </main>
 {% endblock %}

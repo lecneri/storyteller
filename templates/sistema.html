@@ -74,13 +74,15 @@
         <input name="GEMINI_CHAVE_GRATIS" type="password" autocomplete="off" placeholder="AIza…"></label>
       <label>Chave Gemini para o agy <small class="suave">{% if self.tem("GEMINI_API_KEY") %}✅ {{ self.origem("GEMINI_API_KEY") }}{% else %}só se o login do agy não ficar salvo{% endif %}</small>
         <input name="GEMINI_API_KEY" type="password" autocomplete="off"></label>
-      <details class="inteiro"><summary>Modelos de IA (avançado)</summary>
+      <details class="inteiro"><summary>Modelos padrão (usados quando a chave não tem modelo escolhido)</summary>
         <div class="grade-form" style="margin-top:8px">
           <label>Anthropic <input name="ANTHROPIC_MODELO" value="{{ self.cfg("ANTHROPIC_MODELO") }}" placeholder="claude-opus-5-5"></label>
           <label>Gemini (texto) <input name="GEMINI_MODELO" value="{{ self.cfg("GEMINI_MODELO") }}" placeholder="gemini-2.5-flash"></label>
           <label>OpenAI (texto) <input name="OPENAI_MODELO" value="{{ self.cfg("OPENAI_MODELO") }}" placeholder="gpt-4.1-mini"></label>
           <label>OpenAI (imagem) <input name="OPENAI_MODELO_IMAGEM" value="{{ self.cfg("OPENAI_MODELO_IMAGEM") }}" placeholder="gpt-image-1"></label>
           <label>Gemini (imagem) <input name="GEMINI_MODELO_IMAGEM" value="{{ self.cfg("GEMINI_MODELO_IMAGEM") }}" placeholder="gemini-2.5-flash-image"></label>
+          <label>Kimi (texto) <input name="KIMI_MODELO" value="{{ self.cfg("KIMI_MODELO") }}" placeholder="escolha na chave"></label>
+          <label>Kimi — endereço da API <input name="KIMI_BASE_URL" value="{{ self.cfg("KIMI_BASE_URL") }}" placeholder="https://api.moonshot.ai/v1"></label>
         </div>
       </details>
       <fieldset class="inteiro padroes">
@@ -99,24 +101,8 @@
     </form>
   </section>
 
-  <section class="cartao largo">
-    <h2>🔑 Chaves do sistema</h2>
-    <p class="suave">Usadas pelas famílias com "Chave do sistema" ligada. Ficam criptografadas.</p>
-    {% if !cripto_ok %}<p class="erro">O servidor está sem CHAVE_MESTRA: não dá para guardar chaves.</p>{% endif %}
-    {% for (p, nome) in provedores %}
-    <div class="linha" style="justify-content:space-between">
-      <span>{{ nome }}: {% if let Some(f) = self.chave_de(p) %}<code>••••{{ f }}</code>{% else %}<span class="suave">nenhuma</span>{% endif %}</span>
-      {% if self.chave_de(p).is_some() %}<form method="post" action="/sistema/chaves/{{ p }}/remover" class="inline"><button class="link">remover</button></form>{% endif %}
-    </div>
-    {% endfor %}
-    {% if cripto_ok %}
-    <form method="post" action="/sistema/chaves" class="linha">
-      <select name="provedor">{% for (p, nome) in provedores %}<option value="{{ p }}">{{ nome }}</option>{% endfor %}</select>
-      <input name="chave" type="password" placeholder="cole a chave" required autocomplete="off" style="flex:1">
-      <button type="submit">Salvar chave</button>
-    </form>
-    {% endif %}
-  </section>
+{% let escopo = "sistema" %}{% let acao_chaves = "/sistema/chaves" %}
+  {% include "chaves.html" %}
 </main>
 <script src="/sistema.js" defer></script>
 {% endblock %}

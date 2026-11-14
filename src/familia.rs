@@ -58,6 +58,7 @@ struct PaginaFamilia {
     convites: Vec<Convite>,
     chaves: Vec<(String, String)>,
     provedores: Vec<(&'static str, &'static str)>,
+    linhas_chaves: Vec<crate::chaves::LinhaChave>,
     cripto_ok: bool,
     novo_link: Option<String>,
     aviso: Option<String>,
@@ -66,9 +67,6 @@ struct PaginaFamilia {
 }
 
 impl PaginaFamilia {
-    fn chave_de(&self, provedor: &str) -> Option<String> {
-        self.chaves.iter().find(|(p, _)| p == provedor).map(|(_, f)| f.clone())
-    }
 }
 
 async fn pagina(st: &AppState, s: Sessao, novo_link: Option<String>, aviso: Option<String>) -> Response {
@@ -98,6 +96,7 @@ async fn pagina(st: &AppState, s: Sessao, novo_link: Option<String>, aviso: Opti
         .bind(s.familia_id)
         .fetch_all(&st.db)
         .await;
+    let linhas_chaves = crate::chaves::linhas(st, Some(s.familia_id)).await;
     let conectadas = crate::partilha::conectadas(st, s.familia_id).await.unwrap_or_default();
     let pedidos = crate::partilha::pedidos_recebidos(st, s.familia_id).await.unwrap_or_default();
     match (cfg, membros, convites, chaves) {
@@ -110,6 +109,7 @@ async fn pagina(st: &AppState, s: Sessao, novo_link: Option<String>, aviso: Opti
             convites,
             chaves,
             provedores: PROVEDORES.to_vec(),
+            linhas_chaves,
             cripto_ok: segredos::disponivel(),
             novo_link,
             aviso,

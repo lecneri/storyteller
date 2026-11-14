@@ -36,6 +36,7 @@ struct PaginaSistema {
     familias: Vec<LinhaFamilia>,
     chaves: Vec<(String, String)>,
     provedores: Vec<(&'static str, &'static str)>,
+    linhas_chaves: Vec<crate::chaves::LinhaChave>,
     cripto_ok: bool,
     novo_link: Option<(String, String)>,
     aviso: Option<String>,
@@ -55,9 +56,6 @@ impl PaginaSistema {
             "env" => "vem do .env",
             _ => "",
         }
-    }
-    fn chave_de(&self, provedor: &str) -> Option<String> {
-        self.chaves.iter().find(|(p, _)| p == provedor).map(|(_, f)| f.clone())
     }
 }
 
@@ -92,6 +90,7 @@ async fn pagina(st: &AppState, s: Sessao, novo_link: Option<(String, String)>, a
             familias,
             chaves,
             provedores: PROVEDORES.to_vec(),
+            linhas_chaves: crate::chaves::linhas(st, None).await,
             cripto_ok: segredos::disponivel(),
             novo_link,
             aviso,
