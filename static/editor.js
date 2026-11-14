@@ -369,9 +369,16 @@
   }
 
   // Carrossel: uma página por vez, com ◀ ▶ e miniaturas para pular.
+  // Também é a barra de marcadores no modo lista: clicar rola até a página.
   function navCarrossel() {
     const total = estado.paginas.length;
-    const ir = (i) => { atual = Math.max(0, Math.min(total - 1, i)); desenhar(); window.scrollTo({ top: raiz.offsetTop, behavior: 'smooth' }); };
+    const ir = (i) => {
+      atual = Math.max(0, Math.min(total - 1, i));
+      if (modo === 'carrossel') { desenhar(); window.scrollTo({ top: raiz.offsetTop, behavior: 'smooth' }); return; }
+      const alvo = document.getElementById('pagina-' + (atual + 1));
+      if (alvo) window.scrollTo({ top: alvo.getBoundingClientRect().top + window.scrollY - 80, behavior: 'smooth' });
+      marcarAtiva();
+    };
     const tiras = estado.paginas.map((p, i) => el('button', { type: 'button', title: 'Página ' + (i + 1),
       class: 'tira ' + cor(i) + (i === atual ? ' ativa' : ''), onclick: () => ir(i) },
       midiaEl(p.midia),
@@ -430,7 +437,23 @@
     }
   }
 
+  // Modo lista: marca na barra a página que está na tela.
+  function marcarAtiva() {
+    document.querySelectorAll('.carrossel-nav .tira').forEach((t, i) => t.classList.toggle('ativa', i === atual));
+  }
+  let observador = null;
+  function observarPaginas() {
+    if (observador) observador.disconnect();
+    if (modo !== 'lista' || !('IntersectionObserver' in window)) return;
+    observador = new IntersectionObserver((itens) => {
+      for (const it of itens) if (it.isIntersecting) { atual = +it.target.id.replace('pagina-', '') - 1; marcarAtiva(); }
+    }, { rootMargin: '-30% 0px -60% 0px' });
+    raiz.querySelectorAll('.pagina').forEach((p) => observador.observe(p));
+  }
+
   function desenhar() {
+    // Guarda a rolagem: redesenhar não pode jogar a tela para outro lugar (ex.: ao trocar/remover imagem).
+    const rolagem = window.scrollY;
     const titulo = el('input', { class: 'ed-titulo', value: estado.titulo, oninput: (e) => { estado.titulo = e.target.value; mudou(); } });
     const narr = el('select', { onchange: (e) => { estado.narracao = e.target.value; mudou(); desenhar(); } },
       el('option', { value: 'por-personagem', selected: estado.narracao !== 'narrador' }, 'Por personagem'),
@@ -451,7 +474,7 @@
       modo === 'carrossel' && estado.paginas.length
         ? (atual = Math.min(atual, estado.paginas.length - 1),
            [navCarrossel(), inserirPaginaUI(atual), paginaUI(estado.paginas[atual], atual), inserirPaginaUI(atual + 1), navCarrossel()])
-        : [inserirPaginaUI(0), estado.paginas.map((p, n) => [paginaUI(p, n), inserirPaginaUI(n + 1)])],
+        : [estado.paginas.length > 1 ? navCarrossel() : null, inserirPaginaUI(0), estado.paginas.map((p, n) => [paginaUI(p, n), inserirPaginaUI(n + 1)])],
       el('div', { class: 'barra-salvar' },
         el('a', { href: '/ler/' + dados.id, target: '_blank', rel: 'noopener' }, '📖 Abrir no player'),
         el('a', { href: '/compartilhar/historia/' + dados.id }, '🔗 Compartilhar'),
@@ -463,6 +486,8 @@
         status, el('button', { type: 'button', onclick: salvar }, '💾 Salvar')),
     ].flat(Infinity).filter(Boolean));
     raiz.querySelectorAll('textarea').forEach(ajustar);
+    window.scrollTo(0, rolagem);
+    observarPaginas();
   }
 
   window.addEventListener('beforeunload', (e) => { if (sujo) { e.preventDefault(); e.returnValue = ''; } });
