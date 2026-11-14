@@ -56,7 +56,6 @@ struct PaginaFamilia {
     cfg: Config,
     membros: Vec<Membro>,
     convites: Vec<Convite>,
-    chaves: Vec<(String, String)>,
     provedores: Vec<(&'static str, &'static str)>,
     linhas_chaves: Vec<crate::chaves::LinhaChave>,
     cripto_ok: bool,
@@ -92,29 +91,24 @@ async fn pagina(st: &AppState, s: Sessao, novo_link: Option<String>, aviso: Opti
     .bind(s.familia_id)
     .fetch_all(&st.db)
     .await;
-    let chaves = sqlx::query_as::<_, (String, String)>("SELECT provedor, final FROM ia.chaves WHERE familia_id = $1")
-        .bind(s.familia_id)
-        .fetch_all(&st.db)
-        .await;
     let linhas_chaves = crate::chaves::linhas(st, Some(s.familia_id)).await;
     let conectadas = crate::partilha::conectadas(st, s.familia_id).await.unwrap_or_default();
     let pedidos = crate::partilha::pedidos_recebidos(st, s.familia_id).await.unwrap_or_default();
-    match (cfg, membros, convites, chaves) {
-        (Ok(cfg), Ok(membros), Ok(convites), Ok(chaves)) => render(PaginaFamilia {
+    match (cfg, membros, convites) {
+        (Ok(cfg), Ok(membros), Ok(convites)) => render(PaginaFamilia {
             conectadas,
             pedidos,
             s,
             cfg,
             membros,
             convites,
-            chaves,
             provedores: PROVEDORES.to_vec(),
             linhas_chaves,
             cripto_ok: segredos::disponivel(),
             novo_link,
             aviso,
         }),
-        (Err(e), ..) | (_, Err(e), ..) | (_, _, Err(e), _) | (.., Err(e)) => erro_interno(e.into()),
+        (Err(e), ..) | (_, Err(e), _) | (.., Err(e)) => erro_interno(e.into()),
     }
 }
 

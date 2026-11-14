@@ -99,7 +99,6 @@ pub struct PersonagemOpcao {
     pub nome: String,
     /// [{slug, nome}]
     pub variantes: Value,
-    pub variante_atual: Option<String>,
 }
 
 impl PersonagemOpcao {
@@ -117,11 +116,10 @@ impl PersonagemOpcao {
 
 async fn personagens_opcoes(st: &AppState, familia_id: Uuid) -> Result<Vec<PersonagemOpcao>, sqlx::Error> {
     sqlx::query_as::<_, PersonagemOpcao>(
-        "SELECT p.slug, p.nome, va.slug AS variante_atual,
+        "SELECT p.slug, p.nome,
                 COALESCE((SELECT json_agg(json_build_object('slug', v.slug, 'nome', v.nome) ORDER BY v.criado_em)
                             FROM conteudo.variantes v WHERE v.personagem_id = p.id AND NOT v.arquivada), '[]')::jsonb AS variantes
            FROM conteudo.personagens p
-           LEFT JOIN conteudo.variantes va ON va.id = p.variante_atual
           WHERE p.familia_id = $1 ORDER BY p.nome",
     )
     .bind(familia_id)

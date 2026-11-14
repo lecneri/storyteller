@@ -34,7 +34,6 @@ struct LinhaFamilia {
 struct PaginaSistema {
     s: Sessao,
     familias: Vec<LinhaFamilia>,
-    chaves: Vec<(String, String)>,
     provedores: Vec<(&'static str, &'static str)>,
     linhas_chaves: Vec<crate::chaves::LinhaChave>,
     cripto_ok: bool,
@@ -79,23 +78,19 @@ async fn pagina(st: &AppState, s: Sessao, novo_link: Option<(String, String)>, a
     )
     .fetch_all(&st.db)
     .await;
-    let chaves = sqlx::query_as::<_, (String, String)>("SELECT provedor, final FROM ia.chaves WHERE familia_id IS NULL")
-        .fetch_all(&st.db)
-        .await;
     let clis = crate::cli_login::situacao().await;
-    match (familias, chaves) {
-        (Ok(familias), Ok(chaves)) => render(PaginaSistema {
+    match familias {
+        Ok(familias) => render(PaginaSistema {
             clis,
             s,
             familias,
-            chaves,
             provedores: PROVEDORES.to_vec(),
             linhas_chaves: crate::chaves::linhas(st, None).await,
             cripto_ok: segredos::disponivel(),
             novo_link,
             aviso,
         }),
-        (Err(e), _) | (_, Err(e)) => erro_interno(e.into()),
+        Err(e) => erro_interno(e.into()),
     }
 }
 
