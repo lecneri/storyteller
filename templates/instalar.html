@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block titulo %}Instalar · Storyteller{% endblock %}
+{% block corpo %}
+<main class="centro">
+  <form method="post" action="/instalar" class="cartao">
+    <h1>📚 Bem-vindo!</h1>
+    <p class="suave">Primeiro acesso: crie o administrador do sistema e a sua família. Depois, o resto se configura em ⚙️ Sistema.</p>
+    {% if let Some(e) = erro %}<p class="erro">{{ e }}</p>{% endif %}
+    <label>Seu nome <input name="nome" required autocomplete="name"></label>
+    <label>E-mail <input type="email" name="email" required autocomplete="username"></label>
+    <label>Senha <small class="suave">(mínimo 8)</small> <input type="password" name="senha" minlength="8" required autocomplete="new-password"></label>
+    <label>Nome da família <input name="familia" required placeholder="Família Silva"></label>
+    <button type="submit">Criar e entrar</button>
+  </form>
+</main>
+{% endblock %}

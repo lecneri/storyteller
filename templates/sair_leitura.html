@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <title>Só para adultos</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <main class="centro">
+    <form method="post" action="/sair-leitura" class="cartao centro-texto" id="form-pin">
+      <h2>🔒 Só para adultos</h2>
+      <p class="suave">Digite o PIN para sair do modo leitura.</p>
+      {% if erro %}<p class="erro">PIN errado.</p>{% endif %}
+      <input type="password" name="pin" id="pin" inputmode="numeric" readonly class="pin-visor" required>
+      <div class="teclado">
+        <button type="button" data-tecla="1">1</button><button type="button" data-tecla="2">2</button><button type="button" data-tecla="3">3</button><button type="button" data-tecla="4">4</button><button type="button" data-tecla="5">5</button><button type="button" data-tecla="6">6</button><button type="button" data-tecla="7">7</button><button type="button" data-tecla="8">8</button><button type="button" data-tecla="9">9</button><button type="button" data-tecla="⌫">⌫</button><button type="button" data-tecla="0">0</button><button type="button" data-tecla="OK" class="ok-btn">OK</button>
+      </div>
+      <a href="/crianca">← Voltar para as histórias</a>
+    </form>
+  </main>
+  <script>
+    const pin = document.getElementById('pin');
+    document.querySelectorAll('[data-tecla]').forEach((b) => b.addEventListener('click', () => {
+      const t = b.dataset.tecla;
+      if (t === '⌫') pin.value = pin.value.slice(0, -1);
+      else if (t === 'OK') { if (pin.value.length >= 4) document.getElementById('form-pin').submit(); }
+      else if (pin.value.length < 8) pin.value += t;
+    }));
+  </script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+<header class="topo">
+  <nav>
+    <strong>📚 {{ s.familia_nome }}</strong>
+    <a href="/">Estantes</a>
+    <a href="/historias">Histórias</a>
+    <a href="/personagens">Personagens</a>
+    <a href="/leitores">Leitores</a>
+    <a href="/familia">Família</a>
+    {% if s.admin_sistema %}<a href="/sistema">⚙️ Sistema</a>{% endif %}
+  </nav>
+  <span class="linha">
+    {% if s.familias.len() > 1 %}
+    <form method="post" action="/trocar-familia" class="inline">
+      <select name="familia" onchange="this.form.submit()" title="Trocar de família">
+        {% for (fid, fnome) in s.familias %}<option value="{{ fid }}"{% if s.eh_atual(fid) %} selected{% endif %}>{{ fnome }}</option>{% endfor %}
+      </select>
+    </form>
+    {% endif %}
+    <a href="/conta">{{ s.usuario_nome }}</a>{% if s.admin_familia() %} · admin{% endif %}
+    <form method="post" action="/sair" class="inline"><button class="link">Sair</button></form>
+  </span>
+</header>

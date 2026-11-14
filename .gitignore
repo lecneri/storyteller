@@ -1,0 +1,6 @@
+/target
+.env
+/data
+.env.db
+.playwright-mcp/
+PLANO.md

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block titulo %}Histórias · {{ s.familia_nome }}{% endblock %}
+{% block corpo %}
+{% include "topo.html" %}
+<main class="conteudo">
+  <section class="cartao largo">
+    <h2>Nova história</h2>
+    <form method="post" action="/historias" class="grade-form">
+      <label class="inteiro">Briefing <small class="suave">(opcional — cite personagens com @, ex.: @{% if let Some(p) = personagens.first() %}{{ p.0 }}{% else %}leo{% endif %}, ou pelo nome)</small>
+        <textarea name="briefing" rows="4" placeholder="O Super Léo e o Tito precisam impedir o Zorgo gigante de roubar todos os brinquedos do parque..."></textarea>
+      </label>
+      <label>Faixa etária
+        <select name="faixa">
+          {% for l in leitores %}<option value="{{ l.faixa }}"{% if loop.first %} selected{% endif %}>{{ l.nome }} · {{ l.faixa }} anos</option>{% endfor %}
+          <option value="2-3">2–3 anos</option>
+          <option value="4-6"{% if leitores.is_empty() %} selected{% endif %}>4–6 anos</option>
+          <option value="7-9">7–9 anos</option>
+          <option value="10-12">10–12 anos</option>
+        </select>
+      </label>
+      <label>Narração
+        <select name="narracao">
+          <option value="por-personagem">Por personagem (várias vozes)</option>
+          <option value="narrador">Só narrador</option>
+        </select>
+      </label>
+      <label class="inteiro">Estante
+        <select name="estante">
+          <option value="">(nenhuma)</option>
+          {% for (es, en) in estantes %}<option value="{{ es }}"{% if loop.first %} selected{% endif %}>{{ en }}</option>{% endfor %}
+        </select>
+      </label>
+      {% if !personagens.is_empty() %}
+      <p class="inteiro suave">Personagens disponíveis: {% for p in personagens %}<code>@{{ p.0 }}</code>{% if !loop.last %}, {% endif %}{% endfor %}</p>
+      {% endif %}
+      <label>Quem pode ver
+        <select name="visibilidade">
+          <option value="herdar">Padrão (da estante / família)</option>
+          <option value="privado">Só a minha família</option>
+          <option value="compartilhado">Famílias conectadas</option>
+          <option value="publico">Público (com link)</option>
+        </select>
+      </label>
+      <div class="inteiro linha">
+        <button type="submit" name="modo" value="ia">✨ Gerar com IA</button>
+        <button type="submit" name="modo" value="manual" class="secundario">✍️ Criar manualmente</button>
+      </div>
+    </form>
+  </section>
+  <section class="cartao largo">
+    <h2>Histórias</h2>
+    {% if itens.is_empty() %}<p class="suave">Nenhuma história ainda.</p>{% endif %}
+    <ul class="lista">
+    {% for h in itens %}
+      <li><a href="/historias/{{ h.id }}"><strong>{{ h.titulo }}</strong></a>
+        <span class="suave">· {{ h.faixa }} anos · {{ h.paginas }} páginas · {{ h.estado }}</span>
+        {% if h.paginas > 0 %} · <a href="/ler/{{ h.id }}">📖 ler</a>{% endif %}</li>
+    {% endfor %}
+    </ul>
+  </section>
+</main>
+<script src="/briefing.js" defer></script>
+{% endblock %}

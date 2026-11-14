@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block titulo %}Gerando… · Storyteller{% endblock %}
+{% block corpo %}
+{% include "topo.html" %}
+{% if erro.is_none() %}<meta http-equiv="refresh" content="3">{% endif %}
+<main class="conteudo">
+  <section class="cartao largo centro-texto">
+    {% if let Some(e) = erro %}
+      <h2>😕 Não deu para gerar</h2>
+      <p class="erro">{{ e }}</p>
+      <form method="post" action="/historias/{{ id }}/regerar"><button>Tentar de novo</button></form>
+    {% else %}
+      <h2>✨ Escrevendo a história…</h2>
+      <p class="suave">Isso leva de 30 segundos a 2 minutos. A página atualiza sozinha.</p>
+      <div class="girando">📖</div>
+    {% endif %}
+    {% if !briefing.is_empty() %}<p class="suave"><em>Briefing:</em> {{ briefing }}</p>{% endif %}
+    <p><a href="/historias">← Histórias</a></p>
+  </section>
+</main>
+{% endblock %}

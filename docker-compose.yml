@@ -1,0 +1,39 @@
+# Desenvolvimento: `docker compose --profile dev up --build`
+# Produção (VPS): usa o Postgres 18 que já existe; defina DATABASE_URL no .env e rode sem o profile dev.
+services:
+  app:
+    build:
+      context: .
+      args:
+        APP_UID: ${APP_UID:-1000}
+        APP_GID: ${APP_GID:-1000}
+    env_file: .env
+    ports: ["${APP_BIND_IP:-127.0.0.1}:${APP_PORT:-8090}:8080"]
+    volumes:
+      - ${DATA_HOST_DIR:-storyteller-data}:/data
+      - storyteller-cli:/home/app   # logins dos CLIs (claude/codex/agy) persistem aqui
+      - ./static:/app/static:ro     # dev: CSS/JS sem precisar rebuild
+    depends_on:
+      db:
+        condition: service_healthy
+        required: false
+    restart: unless-stopped
+
+  db:
+    profiles: [dev]
+    image: pgvector/pgvector:pg18   # mesma imagem do servidor
+    environment:
+      POSTGRES_USER: storyteller_app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: storyteller
+    volumes:
+      - storyteller-pg:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U storyteller_app -d storyteller"]
+      interval: 2s
+      retries: 20
+
+volumes:
+  storyteller-data:
+  storyteller-cli:
+  storyteller-pg:

@@ -1,0 +1,102 @@
+// Briefing: autocompletar de @personagem(:variante) e #historia, e chips do que foi detectado.
+(function () {
+  const caixas = document.querySelectorAll('textarea[name="briefing"]');
+  if (!caixas.length) return;
+  const norm = (t) => (t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const el = (tag, attrs = {}, ...filhos) => {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === 'class') e.className = v;
+      else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+      else e.setAttribute(k, v);
+    }
+    for (const f of filhos.flat()) if (f != null) e.append(f.nodeType ? f : document.createTextNode(f));
+    return e;
+  };
+
+  fetch('/mencoes').then((r) => r.json()).then((dados) => caixas.forEach((ta) => ligar(ta, dados)));
+
+  function ligar(ta, dados) {
+    const lista = el('div', { class: 'autocompletar', hidden: '' });
+    const chips = el('div', { class: 'chips detectados' });
+    ta.parentNode.insertBefore(lista, ta.nextSibling);
+    ta.parentNode.insertBefore(chips, lista.nextSibling);
+    let opcoes = [], ativa = 0, inicio = -1;
+
+    function sugestoes() {
+      const pos = ta.selectionStart;
+      const antes = ta.value.slice(0, pos);
+      const m = antes.match(/([@#])([\p{L}\p{N}_:-]*)$/u);
+      if (!m) { fechar(); return; }
+      inicio = pos - m[0].length;
+      const termo = norm(m[2]);
+      if (m[1] === '@') {
+        opcoes = [];
+        for (const p of dados.personagens) {
+          if (!norm(p.slug + ' ' + p.nome).includes(termo.split(':')[0])) continue;
+          opcoes.push({ txt: '@' + p.slug, rot: '🧒 ' + p.nome });
+          for (const v of p.variantes || []) {
+            if (termo.includes(':') && !norm(v.slug).includes(termo.split(':')[1] || '')) continue;
+            opcoes.push({ txt: '@' + p.slug + ':' + v.slug, rot: '   ↳ ' + p.nome + ' · ' + v.nome });
+          }
+        }
+      } else {
+        opcoes = dados.historias.filter((h) => norm(h.slug + ' ' + h.titulo).includes(termo))
+          .map((h) => ({ txt: '#' + h.slug, rot: '📖 ' + h.titulo }));
+      }
+      opcoes = opcoes.slice(0, 8);
+      if (!opcoes.length) { fechar(); return; }
+      ativa = 0;
+      desenharLista();
+    }
+    function desenharLista() {
+      lista.replaceChildren(...opcoes.map((o, i) => el('div', { class: 'opcao' + (i === ativa ? ' ativa' : ''),
+        onmousedown: (e) => { e.preventDefault(); escolher(i); } }, o.rot)));
+      lista.hidden = false;
+    }
+    function fechar() { lista.hidden = true; opcoes = []; }
+    function escolher(i) {
+      const o = opcoes[i];
+      const pos = ta.selectionStart;
+      ta.value = ta.value.slice(0, inicio) + o.txt + ' ' + ta.value.slice(pos);
+      const novo = inicio + o.txt.length + 1;
+      ta.setSelectionRange(novo, novo);
+      fechar(); ta.focus(); detectar();
+    }
+    ta.addEventListener('input', () => { sugestoes(); detectar(); });
+    ta.addEventListener('keydown', (e) => {
+      if (lista.hidden) return;
+      if (e.key === 'ArrowDown') { e.preventDefault(); ativa = (ativa + 1) % opcoes.length; desenharLista(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); ativa = (ativa - 1 + opcoes.length) % opcoes.length; desenharLista(); }
+      else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); escolher(ativa); }
+      else if (e.key === 'Escape') fechar();
+    });
+    ta.addEventListener('blur', () => setTimeout(fechar, 150));
+
+    // Chips: quem a IA vai receber (o servidor detecta do mesmo jeito).
+    function detectar() {
+      const texto = ta.value;
+      const t = '-' + norm(texto) + '-';
+      const achados = [];
+      for (const p of dados.personagens) {
+        const direto = new RegExp('@' + p.slug + '(?::([a-z0-9-]+))?(?![a-z0-9-])', 'i').exec(texto);
+        const nomes = [p.nome, ...(p.apelidos || [])].map(norm).filter(Boolean);
+        if (direto || nomes.some((n) => t.includes('-' + n + '-'))) {
+          achados.push({ rot: '🧒 ' + p.nome + (direto && direto[1] ? ' · ' + direto[1] : ''), remover: () => {
+            ta.value = ta.value.replace(new RegExp('@' + p.slug + '(:[a-z0-9-]+)?\\s?', 'gi'), '');
+            for (const n of [p.nome, ...(p.apelidos || [])]) ta.value = ta.value.replace(new RegExp('\\b' + n + '\\b', 'gi'), '');
+            detectar();
+          } });
+        }
+      }
+      for (const h of dados.historias) {
+        if (new RegExp('#' + h.slug + '(?![a-z0-9-])', 'i').test(texto)) {
+          achados.push({ rot: '📖 ' + h.titulo, remover: () => { ta.value = ta.value.replace(new RegExp('#' + h.slug + '\\s?', 'gi'), ''); detectar(); } });
+        }
+      }
+      chips.replaceChildren(...(achados.length ? [el('small', { class: 'suave' }, 'Vai para a IA: ')] : []),
+        ...achados.map((a) => el('span', { class: 'chip' }, a.rot, el('button', { type: 'button', class: 'link', title: 'Tirar do briefing', onclick: a.remover }, '✕'))));
+    }
+    detectar();
+  }
+})();

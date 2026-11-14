@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block titulo %}{{ titulo }} · Editor{% endblock %}
+{% block corpo %}
+{% include "topo.html" %}
+<main class="conteudo">
+  <p class="largo"><a href="/historias">← Histórias</a></p>
+  <div id="editor" class="largo"></div>
+</main>
+<script id="dados" type="application/json">{{ dados|safe }}</script>
+<script src="/efeitos.js" defer></script>
+<script src="/editor.js" defer></script>
+{% endblock %}

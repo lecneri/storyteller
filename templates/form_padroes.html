@@ -1,0 +1,16 @@
+<label class="inteiro">Estilo de referência <input name="estilo" value="{{ estilo_atual }}" placeholder="Power Rangers, Pokémon, aquarela..."></label>
+<fieldset class="inteiro padroes">
+  <legend>Personagens desta estante <small class="suave">(já entram em toda história criada aqui)</small></legend>
+  {% if personagens.is_empty() %}<p class="suave">Cadastre personagens primeiro.</p>{% endif %}
+  {% for p in personagens %}
+  <div class="linha-p">
+    <label class="check"><input type="checkbox" name="personagem" value="{{ p.slug }}"{% if self.marcado(p.slug) %} checked{% endif %}> {{ p.nome }}</label>
+    {% if !p.opcoes().is_empty() %}
+    <select name="variante_{{ p.slug }}">
+      <option value="">variante atual</option>
+      {% for (vs, vn) in p.opcoes() %}<option value="{{ vs }}"{% if self.variante_escolhida(p.slug, vs) %} selected{% endif %}>{{ vn }}</option>{% endfor %}
+    </select>
+    {% endif %}
+  </div>
+  {% endfor %}
+</fieldset>

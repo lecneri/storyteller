@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block titulo %}Família · {{ cfg.nome }}{% endblock %}
+{% block corpo %}
+{% include "topo.html" %}
+<main class="conteudo">
+  {% if let Some(a) = aviso %}<p class="largo ok">{{ a }}</p>{% endif %}
+  {% if let Some(link) = novo_link %}
+  <section class="cartao largo destaque">
+    <h2>🔗 Link de convite</h2>
+    <p>Mande este link para a pessoa (vale 7 dias e só pode ser usado uma vez):</p>
+    <div class="linha"><input id="link-convite" value="{{ link }}" readonly style="flex:1">
+      <button type="button" onclick="const i=document.getElementById('link-convite');i.select();navigator.clipboard?.writeText(i.value).catch(()=>document.execCommand('copy'));this.textContent='Copiado ✓'">📋 Copiar</button></div>
+  </section>
+  {% endif %}
+
+  <section class="cartao largo">
+    <h2>👨‍👩‍👧 {{ cfg.nome }}</h2>
+    <p class="suave">Nome único (para conexões com outras famílias): <code>@{{ cfg.slug }}</code></p>
+    <p class="suave">IA: {% if cfg.cli_habilitado.unwrap_or(false) %}✅ assinaturas (CLI) liberadas{% else %}CLI desligado{% endif %} ·
+      {% if cfg.usar_chave_sistema.unwrap_or(false) %}✅ usando a chave do sistema{% else %}sem chave do sistema{% endif %}
+      <small>(definido pelo admin do sistema)</small></p>
+    {% if s.admin_familia() %}
+    <form method="post" action="/familia/config" class="grade-form">
+      <label>Nome <input name="nome" value="{{ cfg.nome }}" required></label>
+      <label>Compartilhamento padrão de itens novos
+        <select name="visibilidade_padrao">
+          <option value="privado"{% if cfg.visibilidade_padrao == "privado" %} selected{% endif %}>Não compartilhado</option>
+          <option value="compartilhado"{% if cfg.visibilidade_padrao == "compartilhado" %} selected{% endif %}>Compartilhado</option>
+        </select>
+      </label>
+      <button type="submit">Salvar</button>
+    </form>
+    {% endif %}
+  </section>
+
+  <section class="cartao largo">
+    <h2>Membros</h2>
+    <ul class="lista">
+    {% for m in membros %}
+      <li class="linha" style="justify-content:space-between">
+        <span><strong>{{ m.nome }}</strong> <span class="suave">· {{ m.email }} · {% if m.papel == "admin" %}admin{% else %}membro{% endif %}</span></span>
+        {% if s.admin_familia() && m.usuario_id != s.usuario_id %}
+        <span class="linha">
+          <form method="post" action="/familia/membros/{{ m.usuario_id }}/papel" class="inline">
+            <input type="hidden" name="papel" value="{% if m.papel == "admin" %}membro{% else %}admin{% endif %}">
+            <button class="link">{% if m.papel == "admin" %}tornar membro{% else %}tornar admin{% endif %}</button></form>
+          <form method="post" action="/familia/membros/{{ m.usuario_id }}/remover" class="inline" onsubmit="return confirm('Remover {{ m.nome }} da família?')">
+            <button class="link">remover</button></form>
+        </span>
+        {% endif %}
+      </li>
+    {% endfor %}
+    </ul>
+    {% if s.admin_familia() %}
+    <form method="post" action="/familia/convites" class="linha">
+      <span>Convidar</span>
+      <select name="papel"><option value="membro">membro (cria e edita histórias)</option><option value="admin">admin da família</option></select>
+      <input type="email" name="email" placeholder="e-mail (opcional: envia o link)">
+      <button type="submit">Gerar link de convite</button>
+    </form>
+    {% if !convites.is_empty() %}
+    <p class="suave">Convites pendentes:</p>
+    <ul class="lista">
+      {% for c in convites %}<li class="linha">{{ c.papel }} · vence {{ c.expira }}
+        <form method="post" action="/familia/convites/{{ c.token_hash }}/revogar" class="inline"><button class="link">cancelar</button></form></li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% endif %}
+  </section>
+
+  <section class="cartao largo">
+    <h2>🤝 Famílias conectadas</h2>
+    <p class="suave">Famílias conectadas podem ver o que vocês compartilharem (e vice-versa). Conecte pelo nome único: o seu é <code>@{{ cfg.slug }}</code>.</p>
+    {% for (fid, fnome, fslug) in pedidos %}
+    <div class="linha" style="justify-content:space-between"><span>📨 <strong>{{ fnome }}</strong> <span class="suave">@{{ fslug }}</span> quer se conectar</span>
+      {% if s.admin_familia() %}<span class="linha">
+        <form method="post" action="/familia/conexoes/{{ fid }}/aceitar" class="inline"><button class="pequeno">Aceitar</button></form>
+        <form method="post" action="/familia/conexoes/{{ fid }}/remover" class="inline"><button class="link">recusar</button></form></span>{% endif %}
+    </div>
+    {% endfor %}
+    {% if conectadas.is_empty() %}<p class="suave">Nenhuma conexão ainda.</p>{% endif %}
+    {% for (fid, fnome, fslug) in conectadas %}
+    <div class="linha" style="justify-content:space-between"><span>✅ <strong>{{ fnome }}</strong> <span class="suave">@{{ fslug }}</span></span>
+      {% if s.admin_familia() %}<form method="post" action="/familia/conexoes/{{ fid }}/remover" class="inline" onsubmit="return confirm('Desconectar de {{ fnome }}?')"><button class="link">desconectar</button></form>{% endif %}
+    </div>
+    {% endfor %}
+    {% if s.admin_familia() %}
+    <form method="post" action="/familia/conexoes" class="linha">
+      <input name="slug" placeholder="@nome-unico da outra família" required style="flex:1">
+      <button type="submit">Pedir conexão</button>
+    </form>
+    {% endif %}
+  </section>
+
+  {% if s.admin_familia() %}
+  <section class="cartao largo">
+    <h2>🔑 Chaves de API da família</h2>
+    <p class="suave">Opcional. Usadas quando a família não tem as assinaturas liberadas. A chave fica criptografada e não aparece de novo.</p>
+    {% if !cripto_ok %}<p class="erro">O servidor está sem CHAVE_MESTRA: não dá para guardar chaves.</p>{% endif %}
+    {% for (p, nome) in provedores %}
+    <div class="linha" style="justify-content:space-between">
+      <span>{{ nome }}: {% if let Some(f) = self.chave_de(p) %}<code>••••{{ f }}</code>{% else %}<span class="suave">nenhuma</span>{% endif %}</span>
+      {% if self.chave_de(p).is_some() %}
+      <form method="post" action="/familia/chaves/{{ p }}/remover" class="inline"><button class="link">remover</button></form>
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% if cripto_ok %}
+    <form method="post" action="/familia/chaves" class="linha">
+      <select name="provedor">{% for (p, nome) in provedores %}<option value="{{ p }}">{{ nome }}</option>{% endfor %}</select>
+      <input name="chave" type="password" placeholder="cole a chave" required autocomplete="off" style="flex:1">
+      <button type="submit">Salvar chave</button>
+    </form>
+    {% endif %}
+  </section>
+  {% endif %}
+</main>
+{% endblock %}

@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block titulo %}{{ e.nome }} · Estantes{% endblock %}
+{% block corpo %}
+{% include "topo.html" %}
+<main class="conteudo">
+  <p class="largo"><a href="/">← Estantes</a></p>
+  <section class="estante largo">
+    <header><h2>📚 {{ e.nome }}</h2><a href="/compartilhar/estante/{{ e.id }}">🔗 Compartilhar</a><span class="suave">{% if !e.estilo().is_empty() %}{{ e.estilo() }} · {% endif %}{{ e.resumo_personagens() }}</span></header>
+    <div class="prateleira">
+      {% for h in e.lista() %}
+      <div class="livro">
+        <a href="/ler/{{ h.id }}">{% if let Some(c) = h.capa %}<img src="/midia/{{ c }}" alt="">{% else %}<div class="capa-vazia">📖</div>{% endif %}
+        <strong>{{ h.titulo }}</strong></a>
+        <span class="suave"><a href="/historias/{{ h.id }}">✏️ editar</a></span>
+        <form method="post" action="/estantes/{{ e.slug }}/historias/{{ h.id }}/retirar"><button class="link">tirar da estante</button></form>
+      </div>
+      {% endfor %}
+      {% if e.lista().is_empty() %}<p class="suave">Nenhuma história nesta estante ainda.</p>{% endif %}
+    </div>
+  </section>
+
+  <section class="cartao largo" id="nova">
+    <h2>✨ Nova história nesta estante</h2>
+    <p class="suave">Os personagens e o estilo da estante já entram automaticamente. Cite outros com @ se quiser.</p>
+    <form method="post" action="/historias" class="grade-form">
+      <input type="hidden" name="estante" value="{{ e.slug }}">
+      <label class="inteiro">Briefing <small class="suave">(opcional)</small>
+        <textarea name="briefing" rows="3" placeholder="O que vai acontecer nesta história?"></textarea></label>
+      <label>Faixa etária
+        <select name="faixa"><option value="2-3">2–3 anos</option><option value="4-6" selected>4–6 anos</option><option value="7-9">7–9 anos</option><option value="10-12">10–12 anos</option></select>
+      </label>
+      <label>Narração
+        <select name="narracao"><option value="por-personagem">Por personagem</option><option value="narrador">Só narrador</option></select>
+      </label>
+      <label>Quem pode ver
+        <select name="visibilidade">
+          <option value="herdar">Padrão (da estante / família)</option>
+          <option value="privado">Só a minha família</option>
+          <option value="compartilhado">Famílias conectadas</option>
+          <option value="publico">Público (com link)</option>
+        </select>
+      </label>
+      <div class="inteiro linha">
+        <button type="submit" name="modo" value="ia">✨ Gerar com IA</button>
+        <button type="submit" name="modo" value="manual" class="secundario">✍️ Criar manualmente</button>
+      </div>
+    </form>
+  </section>
+
+  {% if !outras.is_empty() %}
+  <section class="cartao largo">
+    <h2>Colocar história existente</h2>
+    <form method="post" action="/estantes/{{ e.slug }}/historias" class="linha">
+      <select name="historia">{% for h in outras %}<option value="{{ h.id }}">{{ h.titulo }}</option>{% endfor %}</select>
+      <button type="submit">Colocar nesta estante</button>
+    </form>
+  </section>
+  {% endif %}
+
+  <section class="cartao largo">
+    <h2>Configurar estante</h2>
+    <form method="post" action="/estantes/{{ e.slug }}" class="grade-form">
+      <label class="inteiro">Nome <input name="nome" value="{{ e.nome }}" required></label>
+      {% let estilo_atual = e.estilo() %}
+      {% include "form_padroes.html" %}
+      <button type="submit">Salvar</button>
+    </form>
+  </section>
+</main>
+<script src="/briefing.js" defer></script>
+{% endblock %}

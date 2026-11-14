@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block titulo %}Convite · Storyteller{% endblock %}
+{% block corpo %}
+<main class="centro">
+  <div class="cartao">
+    <h1>📚 Storyteller</h1>
+    {% if familia.is_empty() %}
+      <p class="erro">{% if let Some(e) = erro %}{{ e }}{% endif %}</p>
+      <a href="/entrar">Ir para o login</a>
+    {% else %}
+      <p>Você foi convidado para a <strong>{{ familia }}</strong> como <strong>{% if papel == "admin" %}admin da família{% else %}membro{% endif %}</strong>.</p>
+      {% if let Some(e) = erro %}<p class="erro">{{ e }}</p>{% endif %}
+      <form method="post" class="grade-form" style="grid-template-columns:1fr">
+        {% if let Some(nome) = logado %}
+          <p>Entrar na família com a sua conta (<strong>{{ nome }}</strong>)?</p>
+        {% else %}
+          <label>Seu nome <input name="nome" required autocomplete="name"></label>
+          <label>E-mail <input type="email" name="email" required autocomplete="username"></label>
+          <label>Senha <small class="suave">(mínimo 8 caracteres)</small> <input type="password" name="senha" minlength="8" required autocomplete="new-password"></label>
+        {% endif %}
+        <button type="submit">Aceitar convite</button>
+      </form>
+      {% if logado.is_none() %}<p class="suave">Já tem conta? <a href="/entrar">Entre primeiro</a> e abra o link de novo.</p>{% endif %}
+    {% endif %}
+  </div>
+</main>
+{% endblock %}

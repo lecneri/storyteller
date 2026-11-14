@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block titulo %}Minha conta · Storyteller{% endblock %}
+{% block corpo %}
+{% include "topo.html" %}
+<main class="conteudo">
+  {% if let Some(a) = aviso %}<p class="erro largo">{{ a }}</p>{% endif %}
+  <section class="cartao largo">
+    <h2>👤 Minha conta</h2>
+    <form method="post" action="/conta" class="grade-form">
+      <label>Nome <input name="nome" value="{{ s.usuario_nome }}" required></label>
+      <label>E-mail <input value="{{ email }}" disabled></label>
+      <label class="check inteiro"><input type="checkbox" name="notificacoes" value="1"{% if notificacoes %} checked{% endif %}> Receber e-mails (história pronta, convites){% if !email_ok %} <small class="suave">— envio de e-mail ainda não configurado no servidor</small>{% endif %}</label>
+      <label>Senha atual <small class="suave">(só para trocar)</small> <input type="password" name="senha_atual" autocomplete="current-password"></label>
+      <label>Senha nova <input type="password" name="senha_nova" minlength="8" autocomplete="new-password"></label>
+      <button type="submit">Salvar</button>
+    </form>
+  </section>
+  <section class="cartao largo">
+    <h2>📦 Exportar</h2>
+    <p class="suave">Baixa tudo da família em Markdown (personagens, estantes, histórias, memórias) com as imagens e vídeos — no formato de pastas do projeto.</p>
+    <a href="/exportar"><button type="button">⬇ Baixar .zip</button></a>
+  </section>
+</main>
+{% endblock %}

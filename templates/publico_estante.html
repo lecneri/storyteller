@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <title>{{ nome }}</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body class="crianca">
+  <header class="crianca-topo"><h1>📚 {{ nome }}</h1></header>
+  <main class="crianca-estantes">
+    {% if historias.is_empty() %}<p class="vazio">Nenhuma história disponível.</p>{% endif %}
+    <div class="prateleira grande">
+      {% for (hid, titulo, capa) in historias %}
+      <a class="livro" href="/p/{{ token }}/h/{{ hid }}">
+        {% if let Some(c) = capa %}<img src="/p/{{ token }}/midia/{{ c }}" alt="">{% else %}<div class="capa-vazia">📖</div>{% endif %}
+        <strong>{{ titulo }}</strong>
+      </a>
+      {% endfor %}
+    </div>
+  </main>
+</body>
+</html>

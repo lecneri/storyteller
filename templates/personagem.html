@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block titulo %}{{ p.nome }} · Personagens{% endblock %}
+{% block corpo %}
+{% include "topo.html" %}
+<main class="conteudo">
+  <p class="largo linha" style="justify-content:space-between"><a href="/personagens">← Personagens</a> <a href="/compartilhar/personagem/{{ p.id }}">🔗 Compartilhar</a></p>
+  {% if let Some(e) = erro %}<p class="erro largo">{{ e }}</p>{% endif %}
+
+  <section class="cartao largo">
+    <h2>Variantes de {{ p.nome }}</h2>
+    {% if variantes.is_empty() %}<p class="suave">Nenhuma variante ainda. Crie a primeira abaixo (ex.: "Super Léo · Power Rangers").</p>{% endif %}
+    {% for v in variantes %}
+      <article class="variante{% if self.eh_atual(v) %} atual{% endif %}{% if v.arquivada %} arquivada{% endif %}">
+        <header>
+          <strong>{{ v.nome }}{% if v.arquivada %} <span class="suave">· 📦 arquivada</span>{% endif %}</strong>
+          <span class="linha">
+          {% if self.eh_atual(v) %}<span class="selo">⭐ atual</span>{% else %}{% if !v.arquivada %}
+            <form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/atual" class="inline"><button class="link">Tornar atual</button></form>
+          {% endif %}{% endif %}
+            <form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/arquivar" class="inline"
+              {% if !v.arquivada %}onsubmit="return confirm('Arquivar {{ v.nome }}? As histórias que já usam continuam iguais; ela só não aparece para histórias novas.')"{% endif %}>
+              <button class="link">{% if v.arquivada %}♻️ Restaurar{% else %}📦 Arquivar{% endif %}</button></form>
+          </span>
+        </header>
+        <p class="suave">
+          {% if let Some(f) = v.forma %}Forma: {{ f }}{% endif %}
+          {% if let Some(e) = v.estilo %} · Estilo: {{ e }}{% endif %}
+        </p>
+        {% if let Some(d) = v.descricao %}<p>{{ d }}</p>{% endif %}
+        <div class="minis">
+          {% for ref_id in v.referencias %}{% include "miniatura.html" %}{% endfor %}
+          {% if v.referencias.is_empty() %}<p class="suave">Sem imagem: a descrição será usada no prompt.</p>{% endif %}
+        </div>
+        {% if !v.arquivada %}
+        <details class="kit-personagem"{% if v.referencias.is_empty() %} open{% endif %}>
+          <summary>🎨 Kit do desenho de referência</summary>
+          {% if !self.fotos().is_empty() %}
+          <p class="suave">Fotos enviadas (só no servidor; clique para copiar e colar na IA):</p>
+          <div class="minis">{% for ref_id in self.fotos() %}{% include "miniatura.html" %}{% endfor %}</div>
+          {% endif %}
+          <div class="linha-kit"><span>Prompt</span>
+            <button type="button" class="pequeno" data-copiar-texto="prompt-{{ v.slug }}">📋 Copiar prompt</button></div>
+          <textarea id="prompt-{{ v.slug }}" class="prompt" rows="5" readonly>{{ self.prompt_kit(v) }}</textarea>
+          <div class="linha-kit">
+            <a href="https://chatgpt.com/" target="_blank" rel="noopener">Abrir ChatGPT ↗</a>
+            <a href="https://gemini.google.com/app" target="_blank" rel="noopener">Abrir Gemini ↗</a>
+            {% if imagem_api %}
+            <form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/gerar-ref" class="inline" onsubmit="this.querySelector('button').textContent='⏳ Gerando…'">
+              <button type="submit" class="pequeno">✨ Gerar pela API</button></form>
+            {% endif %}
+          </div>
+        </details>
+        {% endif %}
+        <form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/refs" enctype="multipart/form-data" class="linha">
+          <input type="file" name="refs" accept="image/png,image/jpeg,image/webp,image/gif" multiple required>
+          <button type="submit">Adicionar imagens</button>
+        </form>
+      </article>
+    {% endfor %}
+  </section>
+
+  <section class="cartao largo">
+    <h2>Nova variante</h2>
+    <form method="post" action="/personagens/{{ p.slug }}/variantes" enctype="multipart/form-data" class="grade-form">
+      <label>Nome <input name="nome" required placeholder="Super Léo Rangers"></label>
+      <label>Forma <input name="forma" placeholder="normal, super, gigante..."></label>
+      <label class="inteiro">Estilo de referência <input name="estilo" placeholder="Power Rangers, Cavaleiros do Zodíaco, Pokémon..."></label>
+      <label class="inteiro">Descrição <textarea name="descricao" rows="2" placeholder="Armadura vermelha com detalhes dourados, capacete com visor..."></textarea></label>
+      <label class="inteiro">Imagens de referência <input type="file" name="refs" accept="image/png,image/jpeg,image/webp,image/gif" multiple></label>
+      <label class="check"><input type="checkbox" name="atual" value="1"> Tornar a variante atual</label>
+      <button type="submit">Criar variante</button>
+    </form>
+  </section>
+
+  <section class="cartao largo">
+    <h2>🎙️ Voz de {{ p.nome }}</h2>
+    <p class="suave">Sem voz salva, usa a voz padrão do tipo de personagem.</p>
+    <div data-voz data-quem="{{ p.slug }}" data-salvar="/personagens/{{ p.slug }}/voz" data-exemplo="Oi! Eu sou {{ p.nome }}!"><p class="suave">Carregando vozes…</p></div>
+  </section>
+
+  <section class="cartao largo">
+    <h2>Ficha</h2>
+    <form method="post" action="/personagens/{{ p.slug }}" class="grade-form">
+      <label>Nome <input name="nome" value="{{ p.nome }}" required></label>
+      <label>Tipo
+        <select name="tipo">{% for (k, v) in tipos %}<option value="{{ k }}"{% if p.tipo == k.to_string() %} selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+      </label>
+      <label class="inteiro">Apelidos <input name="apelidos" value="{{ p.apelidos() }}"></label>
+      <label class="inteiro">Aparência <textarea name="aparencia" rows="2">{{ p.campo("aparencia") }}</textarea></label>
+      <label class="inteiro">Personalidade <textarea name="personalidade" rows="2">{{ p.campo("personalidade") }}</textarea></label>
+      <label class="inteiro">Jeito de falar <textarea name="jeito_falar" rows="2">{{ p.campo("jeito_falar") }}</textarea></label>
+      <button type="submit">Salvar ficha</button>
+    </form>
+  </section>
+</main>
+<script src="/vozes.js" defer></script>
+{% endblock %}

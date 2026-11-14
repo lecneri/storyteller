@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block titulo %}Entrar · Storyteller{% endblock %}
+{% block corpo %}
+<main class="centro">
+  <form method="post" action="/entrar" class="cartao">
+    <h1>📚 Storyteller</h1>
+    {% if let Some(e) = erro %}<p class="erro">{{ e }}</p>{% endif %}
+    <label>E-mail <input type="email" name="email" value="{{ email }}" required autofocus autocomplete="username"></label>
+    <label>Senha <input type="password" name="senha" required autocomplete="current-password"></label>
+    <button type="submit">Entrar</button>
+    <a href="/esqueci" class="suave">Esqueci minha senha</a>
+  </form>
+</main>
+{% endblock %}

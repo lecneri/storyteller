@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block titulo %}Estantes · {{ s.familia_nome }}{% endblock %}
+{% block corpo %}
+{% include "topo.html" %}
+<main class="conteudo">
+  {% if estantes.is_empty() %}
+  <section class="cartao largo"><h2>📚 Estantes</h2><p class="suave">Nenhuma estante ainda. Crie a primeira abaixo (ex.: "Super Léo").</p></section>
+  {% endif %}
+  {% for e in estantes %}
+  <section class="estante largo">
+    <header>
+      <h2><a href="/estantes/{{ e.slug }}">{{ e.nome }}</a></h2>
+      <span class="suave">{% if !e.estilo().is_empty() %}{{ e.estilo() }} · {% endif %}{{ e.resumo_personagens() }}</span>
+    </header>
+    <div class="prateleira">
+      {% for h in e.lista() %}
+      <div class="livro">
+        <a href="/ler/{{ h.id }}" title="Ler">
+          {% if let Some(c) = h.capa %}<img src="/midia/{{ c }}" alt="">{% else %}<div class="capa-vazia">📖</div>{% endif %}
+          <strong>{{ h.titulo }}</strong>
+        </a>
+        <span class="suave">{{ h.paginas }} pág · {{ h.faixa }} · <a href="/historias/{{ h.id }}">✏️ editar</a></span>
+      </div>
+      {% endfor %}
+      <a class="livro novo" href="/estantes/{{ e.slug }}#nova"><div class="capa-vazia">＋</div><strong>Nova história</strong></a>
+    </div>
+  </section>
+  {% endfor %}
+
+  {% if !compartilhadas.is_empty() %}
+  <section class="estante largo">
+    <header><h2>📥 Compartilhadas comigo</h2></header>
+    <div class="prateleira">
+      {% for (hid, titulo, fam, capa) in compartilhadas %}
+      <div class="livro">
+        <a href="/ler/{{ hid }}">{% if let Some(c) = capa %}<img src="/midia/{{ c }}" alt="">{% else %}<div class="capa-vazia">📖</div>{% endif %}
+        <strong>{{ titulo }}</strong></a>
+        <span class="suave">de {{ fam }}</span>
+        <form method="post" action="/historias/{{ hid }}/copiar"><button class="link">📄 copiar para minha família</button></form>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  {% if !soltas.is_empty() %}
+  <section class="cartao largo">
+    <h2>Fora das estantes</h2>
+    <ul class="lista">{% for h in soltas %}<li><a href="/historias/{{ h.id }}">{{ h.titulo }}</a></li>{% endfor %}</ul>
+  </section>
+  {% endif %}
+
+  <section class="cartao largo">
+    <h2>Nova estante</h2>
+    {% if let Some(e) = erro %}<p class="erro">{{ e }}</p>{% endif %}
+    <form method="post" action="/estantes" class="grade-form">
+      <label class="inteiro">Nome <input name="nome" required placeholder="Super Léo"></label>
+      {% let estilo_atual = String::new() %}
+      {% include "form_padroes.html" %}
+      <button type="submit">Criar estante</button>
+    </form>
+  </section>
+</main>
+{% endblock %}

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2b1d14">
+  <meta name="robots" content="noindex, nofollow">
+  <title>{{ titulo }}</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/player.css">
+</head>
+<body class="player">
+  <div id="livro" data-voltar="{{ voltar }}"></div>
+  <div id="aviso" class="aviso" hidden></div>
+  <script id="dados" type="application/json">{{ dados|safe }}</script>
+  <script src="/efeitos.js" defer></script>
+  <script src="/player.js" defer></script>
+</body>
+</html>

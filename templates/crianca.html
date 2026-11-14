@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <title>Histórias do {{ nome }}</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body class="crianca">
+  <header class="crianca-topo">
+    <h1>Oi, {{ nome }}! 👋</h1>
+    <a class="cadeado" href="/sair-leitura" title="Só para adultos">🔒</a>
+  </header>
+  <main class="crianca-estantes">
+    {% if estantes.is_empty() %}<p class="vazio">Ainda não tem histórias aqui. 📚</p>{% endif %}
+    {% for e in estantes %}
+    <section>
+      <h2>{{ e.nome }}</h2>
+      <div class="prateleira grande">
+        {% for h in e.lista() %}
+        <a class="livro" href="/ler/{{ h.id }}">
+          {% if let Some(c) = h.capa %}<img src="/midia/{{ c }}" alt="">{% else %}<div class="capa-vazia">📖</div>{% endif %}
+          <strong>{{ h.titulo }}</strong>
+        </a>
+        {% endfor %}
+      </div>
+    </section>
+    {% endfor %}
+  </main>
+</body>
+</html>

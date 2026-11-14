@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block titulo %}Senha · Storyteller{% endblock %}
+{% block corpo %}
+<main class="centro">
+  <div class="cartao">
+    <h1>📚 Storyteller</h1>
+    {% if let Some(e) = erro %}<p class="erro">{{ e }}</p>{% endif %}
+    {% if let Some(t) = token %}
+      <form method="post" action="/redefinir/{{ t }}" class="grade-form" style="grid-template-columns:1fr">
+        <label>Nova senha <input type="password" name="senha" minlength="8" required autocomplete="new-password"></label>
+        <button type="submit">Salvar nova senha</button>
+      </form>
+    {% else %}{% if enviado %}
+      <p>Se este e-mail tiver conta, enviamos um link para criar uma senha nova. Confira a caixa de entrada (e o spam).</p>
+    {% else %}
+      <form method="post" action="/esqueci" class="grade-form" style="grid-template-columns:1fr">
+        <label>Seu e-mail <input type="email" name="email" required autocomplete="username"></label>
+        <button type="submit">Enviar link</button>
+      </form>
+    {% endif %}{% endif %}
+    <a href="/entrar">← Voltar ao login</a>
+  </div>
+</main>
+{% endblock %}

@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block titulo %}Sistema · Storyteller{% endblock %}
+{% block corpo %}
+{% include "topo.html" %}
+<main class="conteudo">
+  {% if let Some(a) = aviso %}<p class="largo ok">{{ a }}</p>{% endif %}
+  {% if let Some((nome, link)) = novo_link %}
+  <section class="cartao largo destaque">
+    <h2>🔗 Convite de admin para {{ nome }}</h2>
+    <p>Mande este link para quem vai administrar a família (vale 7 dias, uso único):</p>
+    <div class="linha"><input id="link-convite" value="{{ link }}" readonly style="flex:1">
+      <button type="button" onclick="const i=document.getElementById('link-convite');i.select();navigator.clipboard?.writeText(i.value).catch(()=>document.execCommand('copy'));this.textContent='Copiado ✓'">📋 Copiar</button></div>
+  </section>
+  {% endif %}
+
+  <section class="cartao largo">
+    <h2>⚙️ Famílias</h2>
+    <p class="suave"><strong>CLI</strong> = usa as suas assinaturas. <strong>Chave do sistema</strong> = você paga a API para a família.
+      O limite conta as histórias geradas por esses dois caminhos nos últimos 7 dias.</p>
+    <div class="tabela">
+    {% for f in familias %}
+      <form method="post" action="/sistema/familias/{{ f.id }}" class="linha-familia">
+        <span><strong>{{ f.nome }}</strong><br><small class="suave">@{{ f.slug }} · {{ f.membros }} membro(s) · {{ f.historias }} história(s) · uso 7d: {{ f.uso_semana }}</small></span>
+        <label class="check"><input type="checkbox" name="cli" value="1"{% if f.cli_habilitado %} checked{% endif %}> CLI</label>
+        <label class="check"><input type="checkbox" name="chave_sistema" value="1"{% if f.usar_chave_sistema %} checked{% endif %}> Chave do sistema</label>
+        <label class="check">Limite/semana <input name="limite" type="number" min="0" style="width:80px" value="{% if let Some(l) = f.limite_semana %}{{ l }}{% endif %}" placeholder="∞"></label>
+        <button type="submit" class="pequeno">Salvar</button>
+        <button type="submit" class="pequeno secundario" formaction="/sistema/familias/{{ f.id }}/convite">Convite de admin</button>
+      </form>
+    {% endfor %}
+    </div>
+    <form method="post" action="/sistema/familias" class="linha">
+      <input name="nome" placeholder="Nome da nova família (ex.: Família Souza)" required style="flex:1">
+      <button type="submit">Criar família</button>
+    </form>
+  </section>
+
+  <section class="cartao largo">
+    <h2>🤖 Assinaturas (CLIs)</h2>
+    <p class="suave">Conecte as suas assinaturas sem SSH: clique em “Conectar”, abra o link, autorize e (se pedir) cole o código aqui.</p>
+    {% for (nome, situ) in clis %}
+    <div class="cli-linha" data-cli="{{ nome }}">
+      <div class="linha" style="justify-content:space-between">
+        <span><strong>{% if nome == "claude" %}Claude{% else %}{% if nome == "codex" %}ChatGPT (Codex){% else %}Gemini (agy){% endif %}{% endif %}</strong>
+          <span class="suave">· {{ situ }}</span></span>
+        <span class="linha">
+          <button type="button" class="pequeno" data-acao="iniciar">🔌 Conectar</button>
+          {% if nome != "codex" %}<button type="button" class="pequeno secundario" data-acao="testar">🧪 Testar</button>{% endif %}
+        </span>
+      </div>
+      <div class="cli-fluxo" hidden></div>
+    </div>
+    {% endfor %}
+  </section>
+
+  <section class="cartao largo">
+    <h2>⚙️ Configurações gerais</h2>
+    <p class="suave">Tudo aqui fica salvo no banco (os segredos, criptografados). Campos de segredo em branco mantêm o valor atual.</p>
+    <form method="post" action="/sistema/config" class="grade-form">
+      <label class="inteiro">Endereço público do site <small class="suave">{{ self.origem("URL_PUBLICA") }}</small>
+        <input name="URL_PUBLICA" value="{{ self.cfg("URL_PUBLICA") }}" placeholder="https://historias.seudominio.com.br"></label>
+      <label>CLI para escrever histórias
+        <select name="CLI_TEXTO">
+          <option value="claude"{% if self.cfg("CLI_TEXTO") != "agy" %} selected{% endif %}>Claude</option>
+          <option value="agy"{% if self.cfg("CLI_TEXTO") == "agy" %} selected{% endif %}>Gemini (agy)</option>
+        </select></label>
+      <label>Token do Claude <small class="suave">{% if self.tem("CLAUDE_CODE_OAUTH_TOKEN") %}✅ {{ self.origem("CLAUDE_CODE_OAUTH_TOKEN") }}{% else %}ou use “Conectar” acima{% endif %}</small>
+        <input name="CLAUDE_CODE_OAUTH_TOKEN" type="password" autocomplete="off" placeholder="sk-ant-oat… (opcional)"></label>
+      <label>Chave grátis do Gemini <small class="suave">{% if self.tem("GEMINI_CHAVE_GRATIS") %}✅ {{ self.origem("GEMINI_CHAVE_GRATIS") }}{% else %}para famílias sem outra IA{% endif %}</small>
+        <input name="GEMINI_CHAVE_GRATIS" type="password" autocomplete="off" placeholder="AIza…"></label>
+      <label>Chave Gemini para o agy <small class="suave">{% if self.tem("GEMINI_API_KEY") %}✅ {{ self.origem("GEMINI_API_KEY") }}{% else %}só se o login do agy não ficar salvo{% endif %}</small>
+        <input name="GEMINI_API_KEY" type="password" autocomplete="off"></label>
+      <details class="inteiro"><summary>Modelos de IA (avançado)</summary>
+        <div class="grade-form" style="margin-top:8px">
+          <label>Anthropic <input name="ANTHROPIC_MODELO" value="{{ self.cfg("ANTHROPIC_MODELO") }}" placeholder="claude-opus-5-5"></label>
+          <label>Gemini (texto) <input name="GEMINI_MODELO" value="{{ self.cfg("GEMINI_MODELO") }}" placeholder="gemini-2.5-flash"></label>
+          <label>OpenAI (texto) <input name="OPENAI_MODELO" value="{{ self.cfg("OPENAI_MODELO") }}" placeholder="gpt-4.1-mini"></label>
+          <label>OpenAI (imagem) <input name="OPENAI_MODELO_IMAGEM" value="{{ self.cfg("OPENAI_MODELO_IMAGEM") }}" placeholder="gpt-image-1"></label>
+          <label>Gemini (imagem) <input name="GEMINI_MODELO_IMAGEM" value="{{ self.cfg("GEMINI_MODELO_IMAGEM") }}" placeholder="gemini-2.5-flash-image"></label>
+        </div>
+      </details>
+      <fieldset class="inteiro padroes">
+        <legend>✉️ E-mail (Gmail: use uma “senha de app” — myaccount.google.com/apppasswords)</legend>
+        <div class="grade-form">
+          <label>Servidor <input name="SMTP_HOST" value="{{ self.cfg("SMTP_HOST") }}" placeholder="smtp.gmail.com"></label>
+          <label>Usuário (e-mail) <input name="SMTP_USUARIO" value="{{ self.cfg("SMTP_USUARIO") }}" autocomplete="off"></label>
+          <label>Senha de app <small class="suave">{% if self.tem("SMTP_SENHA") %}✅ salva{% endif %}</small> <input name="SMTP_SENHA" type="password" autocomplete="off"></label>
+          <label>Remetente <input name="SMTP_REMETENTE" value="{{ self.cfg("SMTP_REMETENTE") }}" placeholder="Storyteller <seu@gmail.com>"></label>
+        </div>
+      </fieldset>
+      <div class="inteiro linha">
+        <button type="submit">💾 Salvar configurações</button>
+        <button type="submit" class="secundario" formaction="/sistema/email-teste">✉️ Enviar e-mail de teste</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="cartao largo">
+    <h2>🔑 Chaves do sistema</h2>
+    <p class="suave">Usadas pelas famílias com "Chave do sistema" ligada. Ficam criptografadas.</p>
+    {% if !cripto_ok %}<p class="erro">O servidor está sem CHAVE_MESTRA: não dá para guardar chaves.</p>{% endif %}
+    {% for (p, nome) in provedores %}
+    <div class="linha" style="justify-content:space-between">
+      <span>{{ nome }}: {% if let Some(f) = self.chave_de(p) %}<code>••••{{ f }}</code>{% else %}<span class="suave">nenhuma</span>{% endif %}</span>
+      {% if self.chave_de(p).is_some() %}<form method="post" action="/sistema/chaves/{{ p }}/remover" class="inline"><button class="link">remover</button></form>{% endif %}
+    </div>
+    {% endfor %}
+    {% if cripto_ok %}
+    <form method="post" action="/sistema/chaves" class="linha">
+      <select name="provedor">{% for (p, nome) in provedores %}<option value="{{ p }}">{{ nome }}</option>{% endfor %}</select>
+      <input name="chave" type="password" placeholder="cole a chave" required autocomplete="off" style="flex:1">
+      <button type="submit">Salvar chave</button>
+    </form>
+    {% endif %}
+  </section>
+</main>
+<script src="/sistema.js" defer></script>
+{% endblock %}

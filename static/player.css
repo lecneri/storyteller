@@ -1,0 +1,49 @@
+/* Player: livro ilustrado (imagem | texto). Pensado para tablet deitado; no celular em pé vira uma coluna. */
+body.player { margin:0; background:#2b1d14; color:#2b2b2b; height:100dvh; overflow:hidden; font-family: "Nunito", system-ui, sans-serif; -webkit-user-select:none; user-select:none; }
+#livro { height:100dvh; display:grid; grid-template-rows:1fr auto; }
+.palco-livro { position:relative; display:grid; place-items:center; padding:12px; overflow:hidden; perspective:2000px; }
+.spread { position:relative; width:min(100%, calc((100dvh - 110px) * 1.5)); aspect-ratio:3/2; display:grid; grid-template-columns:1fr 1fr; background:#fffaf2; border-radius:10px; box-shadow:0 20px 50px rgba(0,0,0,.45); overflow:hidden; }
+.spread::after { content:''; position:absolute; top:0; bottom:0; left:50%; width:40px; transform:translateX(-50%); background:linear-gradient(90deg, transparent, rgba(0,0,0,.12), transparent); pointer-events:none; }
+.lado { position:relative; overflow:hidden; }
+.lado-imagem { background:#f3e6d3; container-type:inline-size; }
+.lado-imagem img, .lado-imagem video { width:100%; height:100%; object-fit:cover; display:block; }
+.lado-imagem .sem-imagem { width:100%; height:100%; display:grid; place-items:center; font-size:72px; background:linear-gradient(160deg,#9bd3ff,#ffe3a3); }
+.lado-texto { display:flex; flex-direction:column; justify-content:center; gap:.7em; padding:6% 7%; font-size:clamp(16px, 2.4vw, 30px); line-height:1.45; overflow:auto; }
+.trecho { margin:0; padding:.15em .35em; border-radius:.4em; transition:background .25s; }
+.trecho.fala { color:#1d4e89; }
+.trecho.fala .quem { display:block; font-size:.55em; text-transform:uppercase; letter-spacing:.08em; color:#c0612b; font-weight:800; }
+.trecho.ativo { background:#fff1b8; }
+.palavra.lida { color:#c0612b; }
+.palavra.agora { background:#ffd56b; border-radius:.2em; }
+/* Ken Burns na narração */
+.narrando .lado-imagem img { animation:kenburns 18s ease-in-out infinite alternate; }
+@keyframes kenburns { from { transform:scale(1) translate(0,0); } to { transform:scale(1.12) translate(-2%, -2%); } }
+/* Virada de página */
+.spread.virando-frente { animation:vira-frente .55s ease-in forwards; transform-origin:left center; }
+.spread.virando-tras { animation:vira-tras .55s ease-in forwards; transform-origin:right center; }
+.spread.entrando { animation:entra .45s ease-out; }
+@keyframes vira-frente { to { transform:rotateY(-25deg) translateX(-8%); opacity:0; } }
+@keyframes vira-tras { to { transform:rotateY(25deg) translateX(8%); opacity:0; } }
+@keyframes entra { from { opacity:0; transform:scale(.97); } to { opacity:1; transform:none; } }
+/* Capa e fim */
+.capa { grid-column:1 / -1; display:grid; grid-template-columns:1fr 1fr; }
+.capa .titulo-capa { display:grid; place-items:center; text-align:center; padding:8%; font-size:clamp(22px, 4vw, 56px); font-weight:900; color:#c0612b; line-height:1.15; }
+.fim { grid-column:1 / -1; display:grid; place-items:center; text-align:center; gap:16px; font-size:clamp(28px, 6vw, 80px); font-weight:900; color:#c0612b; }
+.fim button { font-size:clamp(16px, 2vw, 24px); }
+/* Barra de controles */
+.controles { display:flex; align-items:center; justify-content:center; gap:clamp(8px, 2vw, 24px); padding:10px 12px calc(10px + env(safe-area-inset-bottom)); background:#1c130d; }
+.controles button { background:#3a2a1f; color:#fff; border:none; border-radius:999px; min-width:56px; height:56px; font-size:24px; display:grid; place-items:center; padding:0 14px; }
+.controles button.grande { min-width:84px; height:72px; font-size:34px; background:#ff7a45; }
+.controles button:disabled { opacity:.35; }
+.controles .pontos { display:flex; gap:6px; flex-wrap:wrap; max-width:30vw; }
+.controles .ponto { width:10px; height:10px; border-radius:50%; background:#5b4535; }
+.controles .ponto.atual { background:#ff7a45; }
+.controles a.voltar { color:#fff; font-size:24px; text-decoration:none; }
+/* Celular em pé: uma coluna (imagem em cima, texto embaixo) */
+@media (orientation: portrait) {
+  .spread { width:min(100%, 640px); aspect-ratio:auto; height:calc(100dvh - 120px); grid-template-columns:1fr; grid-template-rows:minmax(0, 1.1fr) minmax(0, 1fr); }
+  .spread::after { display:none; }
+  .capa { grid-template-columns:1fr; grid-template-rows:1.4fr 1fr; }
+  .lado-texto { font-size:clamp(16px, 4.6vw, 26px); justify-content:flex-start; }
+  .controles .pontos { display:none; }
+}

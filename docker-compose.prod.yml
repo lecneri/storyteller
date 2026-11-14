@@ -1,0 +1,29 @@
+# Produção (VPS Oracle): usa o Postgres 18 existente (rede db_net) e o Caddy (rede proxy_net).
+# Uso: docker compose -f docker-compose.prod.yml up -d --build
+# Credenciais do banco em .env.db (permissão 600, fora do git).
+services:
+  app:
+    build:
+      context: .
+      args:
+        APP_UID: ${APP_UID:-1000}
+        APP_GID: ${APP_GID:-1000}
+    container_name: storyteller
+    env_file:
+      - .env
+      - .env.db          # DATABASE_URL do banco storyteller
+    volumes:
+      - ${DATA_HOST_DIR:-storyteller-data}:/data
+      - storyteller-cli:/home/app   # logins dos CLIs (claude/gemini/codex) persistem aqui
+    networks: [db_net, proxy_net]
+    restart: unless-stopped
+
+networks:
+  db_net:
+    external: true
+  proxy_net:
+    external: true
+
+volumes:
+  storyteller-data:
+  storyteller-cli:

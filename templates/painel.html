@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block titulo %}Leitores · {{ s.familia_nome }}{% endblock %}
+{% block corpo %}
+{% include "topo.html" %}
+<main class="conteudo">
+  {% if let Some(e) = erro %}<p class="erro largo">{{ e }}</p>{% endif %}
+  {% if let Some(o) = ok %}<p class="largo ok">{{ o }}</p>{% endif %}
+  <section class="cartao largo">
+    <h2>Leitores</h2>
+    {% if leitores.is_empty() %}
+      <p class="suave">Nenhum leitor ainda. Cadastre a primeira criança abaixo.</p>
+    {% endif %}
+    {% for l in leitores %}
+    <article class="variante">
+      <header>
+        <strong>🧒 {{ l.nome }} <span class="suave">· {{ l.faixa }} anos</span></strong>
+        <form method="post" action="/leitores/{{ l.id }}/modo-leitura" class="inline">
+          <button type="submit"{% if !tem_pin %} disabled title="Defina o PIN dos pais primeiro"{% endif %}>📖 Entregar para {{ l.nome }}</button>
+        </form>
+      </header>
+      {% if !estantes.is_empty() %}
+      <form method="post" action="/leitores/{{ l.id }}/estantes" class="linha">
+        <span class="suave">Estantes que {{ l.nome }} vê:</span>
+        <label class="check"><input type="checkbox" name="todas" value="1"{% if l.ve_todas() %} checked{% endif %}> todas</label>
+        {% for (es, en) in estantes %}
+        <label class="check"><input type="checkbox" name="estante" value="{{ es }}"{% if !l.ve_todas() && l.ve(es) %} checked{% endif %}> {{ en }}</label>
+        {% endfor %}
+        <button type="submit" class="pequeno secundario">Salvar</button>
+      </form>
+      {% endif %}
+    </article>
+    {% endfor %}
+    <form method="post" action="/leitores/novo" class="linha">
+      <input name="nome" placeholder="Nome da criança" required>
+      <select name="faixa" required>
+        <option value="2-3">2–3 anos</option>
+        <option value="4-6" selected>4–6 anos</option>
+        <option value="7-9">7–9 anos</option>
+        <option value="10-12">10–12 anos</option>
+      </select>
+      <button type="submit">Adicionar</button>
+    </form>
+  </section>
+
+  <section class="cartao largo">
+    <h2>🔒 PIN dos pais</h2>
+    <p class="suave">No modo leitura a criança só vê as estantes dela e o player. Para sair, é preciso digitar este PIN.
+      {% if tem_pin %}<strong>PIN definido.</strong>{% else %}<strong>Ainda não definido.</strong>{% endif %}</p>
+    {% if s.admin_familia() %}
+    <form method="post" action="/familia/pin" class="linha">
+      <input name="pin" type="password" inputmode="numeric" pattern="[0-9]{4,8}" placeholder="4 a 8 números" required autocomplete="new-password">
+      <button type="submit">{% if tem_pin %}Trocar PIN{% else %}Definir PIN{% endif %}</button>
+    </form>
+    {% else %}<p class="suave">Só o admin da família pode mudar o PIN.</p>{% endif %}
+  </section>
+</main>
+{% endblock %}
