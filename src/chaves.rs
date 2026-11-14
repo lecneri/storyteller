@@ -22,6 +22,8 @@ pub struct LinhaChave {
     pub modelo: String,
     pub modelo_imagem: String,
     pub faz_imagem: bool,
+    /// Chave de voz (ElevenLabs): o modelo é de voz e o teste mostra os créditos.
+    pub e_voz: bool,
 }
 
 /// Linhas para a tela (familia = None → chaves do sistema).
@@ -37,6 +39,7 @@ pub async fn linhas(st: &AppState, familia: Option<Uuid>) -> Vec<LinhaChave> {
         .map(|(p, f, m, mi)| LinhaChave {
             nome: crate::familia::PROVEDORES.iter().find(|(k, _)| *k == p).map(|(_, n)| n.to_string()).unwrap_or_else(|| p.clone()),
             faz_imagem: p == "openai" || p == "gemini",
+            e_voz: p == "elevenlabs",
             provedor: p,
             final_: f,
             modelo: m.unwrap_or_default(),
@@ -103,6 +106,12 @@ fn separar_modelos(provedor: &str, j: &Value) -> (Vec<String>, Vec<String>) {
 pub async fn modelos(State(st): State<AppState>, s: Sessao, Path((esc, provedor)): Path<(String, String)>) -> Response {
     let Some(familia) = escopo(&s, &esc) else { return StatusCode::FORBIDDEN.into_response() };
     let Some((k, _)) = chave(&st, familia, &provedor).await else { return erro("Chave não encontrada.") };
+    if provedor == "elevenlabs" {
+        return match crate::elevenlabs::modelos(&k).await {
+            Ok(v) => Json(json!({ "texto": v, "imagem": [] })).into_response(),
+            Err(e) => erro(format!("{e:#}")),
+        };
+    }
     let http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(30)).build().unwrap_or_default();
     let r = match provedor.as_str() {
         "anthropic" => http.get("https://api.anthropic.com/v1/models?limit=100").header("x-api-key", &k).header("anthropic-version", "2026-10-21").send().await,
@@ -160,6 +169,12 @@ pub async fn salvar_modelo(
 pub async fn testar(State(st): State<AppState>, s: Sessao, Path((esc, provedor)): Path<(String, String)>) -> Response {
     let Some(familia) = escopo(&s, &esc) else { return StatusCode::FORBIDDEN.into_response() };
     let Some((k, modelo)) = chave(&st, familia, &provedor).await else { return erro("Chave não encontrada.") };
+    if provedor == "elevenlabs" {
+        return match crate::elevenlabs::creditos(&k).await {
+            Ok(t) => Json(json!({ "ok": true, "resposta": t })).into_response(),
+            Err(e) => Json(json!({ "ok": false, "erro": format!("{e:#}") })).into_response(),
+        };
+    }
     let pedido = crate::ia::PedidoTexto {
         sistema: "Responda só com o JSON pedido.".into(),
         imagens: Vec::new(),

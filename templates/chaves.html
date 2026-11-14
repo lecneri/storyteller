@@ -14,7 +14,7 @@
       </span>
     </div>
     <div class="linha">
-      <label class="check">Modelo (texto)
+      <label class="check">Modelo ({% if c.e_voz %}voz{% else %}texto{% endif %})
         <select name="modelo"><option value="">padrão</option>{% if !c.modelo.is_empty() %}<option value="{{ c.modelo }}" selected>{{ c.modelo }}</option>{% endif %}</select></label>
       {% if c.faz_imagem %}
       <label class="check">Modelo (imagem)

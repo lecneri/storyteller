@@ -30,5 +30,23 @@
     return j;
   }
 
-  raiz.St = { el, aviso, postJson };
+  // <select> de voz: vozes grátis + as da conta ElevenLabs da família (dados vem de GET /vozes).
+  // Muda `voz` (motor, id, nome, reserva) e chama depois() a cada troca.
+  function seletorVoz(dados, voz, depois) {
+    const eleven = [...(dados.eleven || [])];
+    if (voz.motor === 'eleven' && !eleven.some((v) => v.id === voz.id)) {
+      eleven.push({ id: voz.id, nome: (voz.nome || voz.id) + ' (não está mais na conta)', reserva: voz.reserva });
+    }
+    const opcao = (motor, v) => el('option', { value: motor + ':' + v.id, selected: (voz.motor === 'eleven') === (motor === 'eleven') && v.id === voz.id }, v.nome);
+    const grupos = [el('optgroup', { label: 'Vozes grátis' }, dados.vozes.map((v) => opcao('edge', v)))];
+    if (eleven.length) grupos.unshift(el('optgroup', { label: 'ElevenLabs (usa créditos)' }, eleven.map((v) => opcao('eleven', v))));
+    return el('select', { onchange: (e) => {
+      const [motor, id] = e.target.value.split(':');
+      const v = eleven.find((x) => x.id === id);
+      Object.assign(voz, motor === 'eleven' ? { motor, id, nome: v.nome, reserva: v.reserva, tom: 0 } : { motor, id, nome: '', reserva: '' });
+      if (depois) depois();
+    } }, grupos);
+  }
+
+  raiz.St = { el, aviso, postJson, seletorVoz };
 })(window);

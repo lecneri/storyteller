@@ -4,6 +4,7 @@ mod cli_login;
 mod config;
 mod conta;
 mod crianca;
+mod elevenlabs;
 mod email;
 mod estantes;
 mod exportar;

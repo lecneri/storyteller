@@ -27,8 +27,18 @@ fn audio_json(a: &tts::Audio) -> Value {
 
 /// GET /vozes: lista de vozes + as vozes atuais da família.
 pub async fn vozes(State(st): State<AppState>, s: Sessao) -> Response {
+    // Vozes da conta ElevenLabs da família (se ela cadastrou a chave).
+    let (eleven, eleven_erro) = match crate::elevenlabs::chave_da_familia(&st, s.familia_id).await {
+        None => (Vec::new(), None),
+        Some((k, _)) => match crate::elevenlabs::vozes(&k).await {
+            Ok(v) => (v.into_iter().map(|x| json!({ "id": x.id, "nome": x.nome, "reserva": x.reserva })).collect(), None),
+            Err(e) => (Vec::new(), Some(format!("{e:#}"))),
+        },
+    };
     match tts::vozes_da_familia(&st, s.familia_id).await {
         Ok(v) => Json(json!({
+            "eleven": eleven,
+            "eleven_erro": eleven_erro,
             "vozes": tts::VOZES.iter().map(|(id, nome)| json!({ "id": id, "nome": nome })).collect::<Vec<_>>(),
             "narrador": v.narrador,
             "personagens": v.personagens.into_iter().map(|(s, v)| json!({ "slug": s, "voz": v })).collect::<Vec<_>>(),

@@ -30,7 +30,7 @@
       e.target.disabled = true; e.target.textContent = '⏳ Testando…';
       const r = await post(base + '/testar');
       e.target.disabled = false; e.target.textContent = '🧪 Testar';
-      aviso(r.j.ok ? '✅ Respondeu: ' + r.j.resposta : '❌ ' + String(r.j.erro || 'falhou').slice(0, 220));
+      aviso(r.j.ok ? (linha.dataset.provedor === 'elevenlabs' ? '✅ ' : '✅ Respondeu: ') + r.j.resposta : '❌ ' + String(r.j.erro || 'falhou').slice(0, 220));
     });
   });
 })();

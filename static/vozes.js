@@ -1,7 +1,7 @@
 // Configurar voz (narrador ou personagem): escolher voz, tom e velocidade, ouvir prévia e salvar.
 // Uso: <div data-voz data-quem="narrador|slug" data-salvar="/url" data-exemplo="texto"></div>
 (function () {
-  const { el, aviso } = window.St;
+  const { el, aviso, seletorVoz } = window.St;
   const caixas = document.querySelectorAll('[data-voz]');
   if (!caixas.length) return;
 
@@ -27,8 +27,7 @@
       const quem = caixa.dataset.quem;
       const atual = quem === 'narrador' ? dados.narrador : ((dados.personagens.find((p) => p.slug === quem) || {}).voz || dados.narrador);
       const voz = { ...atual };
-      const sel = el('select', { onchange: (e) => (voz.id = e.target.value) },
-        dados.vozes.map((v) => el('option', { value: v.id, selected: v.id === voz.id }, v.nome)));
+      const sel = seletorVoz(dados, voz, () => { tom.value = voz.tom; tom.disabled = voz.motor === 'eleven'; atualiza(); });
       const rotTom = el('span', { class: 'suave' });
       const rotVel = el('span', { class: 'suave' });
       const atualiza = () => {
@@ -44,9 +43,11 @@
         aviso(r.ok ? 'Voz salva ✓' : 'Não salvou');
         if (r.ok && valor === null) location.reload();
       };
+      tom.disabled = voz.motor === 'eleven';
       atualiza();
       caixa.replaceChildren(el('div', { class: 'grade-form' },
         el('label', { class: 'inteiro' }, 'Voz', sel),
+        dados.eleven_erro ? el('p', { class: 'inteiro erro' }, 'ElevenLabs: ' + dados.eleven_erro) : null,
         el('label', {}, 'Tom ', rotTom, tom),
         el('label', {}, 'Velocidade ', rotVel, vel),
         el('label', { class: 'inteiro' }, 'Frase de teste', texto),

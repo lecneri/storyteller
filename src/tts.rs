@@ -119,6 +119,12 @@ pub struct Voz {
     /// Ajuste de velocidade em % (-40 a +40)
     #[serde(default)]
     pub velocidade: i32,
+    /// Nome para a tela (vozes da ElevenLabs, que não estão na lista fixa).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub nome: String,
+    /// Voz grátis usada quando a ElevenLabs falha (sem chave, sem créditos...).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub reserva: String,
 }
 
 fn motor_padrao() -> String {
@@ -127,10 +133,21 @@ fn motor_padrao() -> String {
 
 impl Voz {
     fn nova(id: &str, tom: i32, velocidade: i32) -> Self {
-        Voz { motor: "edge".into(), id: id.into(), tom, velocidade }
+        Voz { motor: "edge".into(), id: id.into(), tom, velocidade, nome: String::new(), reserva: String::new() }
     }
     /// Garante valores aceitos (voz conhecida e ajustes dentro dos limites).
     pub fn validada(mut self) -> Self {
+        if self.motor == "eleven" && crate::elevenlabs::id_valido(&self.id) {
+            self.nome = self.nome.trim().chars().take(80).collect();
+            if !VOZES.iter().any(|(id, _)| *id == self.reserva) {
+                self.reserva = "pt-BR-AntonioNeural".into();
+            }
+            self.tom = 0; // a ElevenLabs não muda o tom
+            self.velocidade = self.velocidade.clamp(-30, 20);
+            return self;
+        }
+        self.nome.clear();
+        self.reserva.clear();
         if !VOZES.iter().any(|(id, _)| *id == self.id) {
             self.id = VOZES[0].0.into();
         }
@@ -138,6 +155,10 @@ impl Voz {
         self.tom = self.tom.clamp(-60, 60);
         self.velocidade = self.velocidade.clamp(-40, 40);
         self
+    }
+    /// A voz grátis que substitui uma voz da ElevenLabs quando ela falha.
+    pub fn de_reserva(&self) -> Voz {
+        Voz::nova(&self.reserva, 0, self.velocidade).validada()
     }
     pub fn de_json(v: &Value) -> Option<Voz> {
         serde_json::from_value::<Voz>(v.clone()).ok().map(Voz::validada)
@@ -177,22 +198,42 @@ pub fn hash_publico(voz: &Voz, texto: &str) -> String {
     hash(voz, texto.trim())
 }
 
-/// Devolve o áudio do cache ou gera com o edge-tts.
+async fn do_cache(st: &AppState, familia_id: Uuid, h: &str) -> anyhow::Result<Option<Audio>> {
+    let r: Option<(Uuid, f32, Value)> =
+        sqlx::query_as("SELECT arquivo, duracao, palavras FROM midia.audios WHERE familia_id = $1 AND hash = $2")
+            .bind(familia_id)
+            .bind(h)
+            .fetch_optional(&st.db)
+            .await?;
+    Ok(r.map(|(arquivo, duracao, palavras)| Audio { arquivo, duracao, palavras }))
+}
+
+/// Devolve o áudio do cache ou gera (ElevenLabs ou edge-tts).
+/// Se a ElevenLabs falhar, usa a voz grátis de reserva — guardada com a chave dela, para
+/// tentar a ElevenLabs de novo da próxima vez (quando os créditos voltarem).
 pub async fn sintetizar(st: &AppState, familia_id: Uuid, familia_slug: &str, texto: &str, voz: &Voz) -> anyhow::Result<Audio> {
     let texto = texto.trim();
     if texto.is_empty() {
         bail!("texto vazio");
     }
     let h = hash(voz, texto);
-    let em_cache: Option<(Uuid, f32, Value)> = sqlx::query_as(
-        "SELECT arquivo, duracao, palavras FROM midia.audios WHERE familia_id = $1 AND hash = $2",
-    )
-    .bind(familia_id)
-    .bind(&h)
-    .fetch_optional(&st.db)
-    .await?;
-    if let Some((arquivo, duracao, palavras)) = em_cache {
-        return Ok(Audio { arquivo, duracao, palavras });
+    if let Some(a) = do_cache(st, familia_id, &h).await? {
+        return Ok(a);
+    }
+    let reserva;
+    let mut voz = voz;
+    let mut h = h;
+    if voz.motor == "eleven" {
+        match gerar_eleven(st, familia_id, familia_slug, texto, voz, &h).await {
+            Ok(a) => return Ok(a),
+            Err(e) => tracing::warn!("ElevenLabs falhou, usando voz grátis: {e:#}"),
+        }
+        reserva = voz.de_reserva();
+        voz = &reserva;
+        h = hash(voz, texto);
+        if let Some(a) = do_cache(st, familia_id, &h).await? {
+            return Ok(a);
+        }
     }
 
     // O serviço de voz às vezes falha por instabilidade de rede: tenta até 3 vezes.
@@ -210,6 +251,18 @@ pub async fn sintetizar(st: &AppState, familia_id: Uuid, familia_slug: &str, tex
         }
     }
     Err(ultima.unwrap_or_else(|| anyhow::anyhow!("falha no TTS")))
+}
+
+async fn gerar_eleven(st: &AppState, familia_id: Uuid, familia_slug: &str, texto: &str, voz: &Voz, h: &str) -> anyhow::Result<Audio> {
+    let Some((chave, modelo)) = crate::elevenlabs::chave_da_familia(st, familia_id).await else {
+        bail!("a família não tem chave da ElevenLabs");
+    };
+    let (bytes, palavras) = crate::elevenlabs::sintetizar(&chave, &modelo, &voz.id, texto, voz.velocidade).await?;
+    let tmp = std::env::temp_dir().join(format!("st-tts-{h}-{}.mp3", Uuid::new_v4()));
+    tokio::fs::write(&tmp, &bytes).await?;
+    let duracao = duracao_mp3(&tmp).await.unwrap_or(0.0);
+    let _ = tokio::fs::remove_file(&tmp).await;
+    guardar(st, familia_id, familia_slug, h, &bytes, duracao, palavras).await
 }
 
 async fn gerar(st: &AppState, familia_id: Uuid, familia_slug: &str, texto: &str, voz: &Voz, h: &str) -> anyhow::Result<Audio> {
@@ -248,9 +301,12 @@ async fn gerar(st: &AppState, familia_id: Uuid, familia_slug: &str, texto: &str,
     let bytes = tokio::fs::read(&tmp).await.context("o TTS não gerou o arquivo")?;
     let duracao = duracao_mp3(&tmp).await.unwrap_or(0.0);
     let _ = tokio::fs::remove_file(&tmp).await;
+    guardar(st, familia_id, familia_slug, h, &bytes, duracao, palavras).await
+}
 
+async fn guardar(st: &AppState, familia_id: Uuid, familia_slug: &str, h: &str, bytes: &[u8], duracao: f32, palavras: Value) -> anyhow::Result<Audio> {
     let pasta = format!("familias/{familia_slug}/audio");
-    let arquivo = midia::salvar(st, familia_id, &pasta, &bytes, "audio/mpeg", "mp3").await?;
+    let arquivo = midia::salvar(st, familia_id, &pasta, bytes, "audio/mpeg", "mp3").await?;
     sqlx::query(
         "INSERT INTO midia.audios (familia_id, hash, arquivo, duracao, palavras) VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (familia_id, hash) DO NOTHING",
@@ -276,14 +332,7 @@ async fn duracao_mp3(caminho: &std::path::Path) -> anyhow::Result<f32> {
 
 /// Só consulta o cache (não gera).
 pub async fn no_cache(st: &AppState, familia_id: Uuid, texto: &str, voz: &Voz) -> anyhow::Result<Option<Audio>> {
-    let r: Option<(Uuid, f32, Value)> = sqlx::query_as(
-        "SELECT arquivo, duracao, palavras FROM midia.audios WHERE familia_id = $1 AND hash = $2",
-    )
-    .bind(familia_id)
-    .bind(hash(voz, texto.trim()))
-    .fetch_optional(&st.db)
-    .await?;
-    Ok(r.map(|(arquivo, duracao, palavras)| Audio { arquivo, duracao, palavras }))
+    do_cache(st, familia_id, &hash(voz, texto.trim())).await
 }
 
 /// Vozes de uma família: narrador + cada personagem (configurada ou padrão pelo tipo) + vozes extras.

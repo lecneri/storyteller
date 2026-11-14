@@ -84,7 +84,8 @@ async fn pagina(st: &AppState, s: Sessao, novo_link: Option<(String, String)>, a
             clis,
             s,
             familias,
-            provedores: PROVEDORES.to_vec(),
+            // A ElevenLabs é por família: cada uma usa a própria chave.
+            provedores: PROVEDORES.iter().copied().filter(|(p, _)| *p != "elevenlabs").collect(),
             linhas_chaves: crate::chaves::linhas(st, None).await,
             cripto_ok: segredos::disponivel(),
             novo_link,
@@ -177,7 +178,7 @@ pub async fn salvar_chave(State(st): State<AppState>, s: Sessao, RawForm(corpo):
     }
     let form = campos(&corpo);
     let (provedor, chave) = (campo(&form, "provedor"), campo(&form, "chave"));
-    if !PROVEDORES.iter().any(|(p, _)| *p == provedor) || chave.len() < 10 {
+    if !PROVEDORES.iter().any(|(p, _)| *p == provedor) || provedor == "elevenlabs" || chave.len() < 10 {
         return pagina(&st, s, None, Some("Chave inválida.".into())).await;
     }
     match familia::gravar_chave(&st, None, &provedor, &chave).await {

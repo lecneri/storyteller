@@ -49,7 +49,7 @@ pub fn extrair_json(texto: &str) -> anyhow::Result<Value> {
 /// Chaves cifradas disponíveis (da família, ou do sistema quando familia = None), na ordem de preferência.
 async fn chaves(st: &crate::AppState, familia: Option<uuid::Uuid>) -> anyhow::Result<Vec<(String, String, Option<String>)>> {
     let linhas: Vec<(String, Vec<u8>, Option<String>)> = sqlx::query_as(
-        "SELECT provedor, cifrada, modelo FROM ia.chaves WHERE familia_id IS NOT DISTINCT FROM $1
+        "SELECT provedor, cifrada, modelo FROM ia.chaves WHERE familia_id IS NOT DISTINCT FROM $1 AND provedor <> 'elevenlabs'
           ORDER BY CASE provedor WHEN 'anthropic' THEN 1 WHEN 'gemini' THEN 2 WHEN 'openai' THEN 3 ELSE 4 END",
     )
     .bind(familia)

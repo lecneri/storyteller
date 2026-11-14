@@ -1,7 +1,7 @@
 // Vozes extras de um personagem (ex.: "Inglês"): nome, língua, voz, tom e velocidade; N vozes.
 // Uso: <div data-vozes-extras="/personagens/slug/vozes-extras" data-nome="Pedro"></div>
 (function () {
-  const { el, aviso } = window.St;
+  const { el, aviso, seletorVoz } = window.St;
   const caixa = document.querySelector('[data-vozes-extras]');
   if (!caixa) return;
   const url = caixa.dataset.vozesExtras;
@@ -24,8 +24,7 @@
     const exemplo = (l) => (linguas.find((x) => x.nome === l) || {}).exemplo || 'Oi!';
 
     function linha(e, i) {
-      const sel = el('select', { onchange: (ev) => (e.voz.id = ev.target.value) },
-        vozes.vozes.map((v) => el('option', { value: v.id, selected: v.id === e.voz.id }, v.nome)));
+      const sel = seletorVoz(vozes, e.voz, () => { tom.value = e.voz.tom; tom.disabled = e.voz.motor === 'eleven'; });
       const frase = el('input', { value: exemplo(e.lingua) });
       const lingua = el('select', { onchange: (ev) => {
         const antigo = e.lingua; e.lingua = ev.target.value;
@@ -35,6 +34,7 @@
       const nome = el('input', { value: e.nome, placeholder: 'Inglês', oninput: (ev) => (e.nome = ev.target.value) });
       const tom = el('input', { type: 'range', min: -60, max: 60, step: 5, value: e.voz.tom, oninput: (ev) => (e.voz.tom = +ev.target.value) });
       const vel = el('input', { type: 'range', min: -40, max: 40, step: 5, value: e.voz.velocidade, oninput: (ev) => (e.voz.velocidade = +ev.target.value) });
+      tom.disabled = e.voz.motor === 'eleven';
       const botao = el('button', { type: 'button', class: 'secundario', onclick: () => ouvir(e.voz, frase.value, botao) }, '▶ Ouvir');
       return el('div', { class: 'cartao grade-form' },
         el('label', {}, 'Nome da voz', nome),

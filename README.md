@@ -44,6 +44,7 @@ Foi feito para famílias: cada uma tem os próprios personagens, estantes e hist
 | Texto (IA) | CLIs de assinatura (Claude Code, Antigravity `agy`) **ou** APIs (Anthropic, Gemini, OpenAI) |
 | Imagem (IA) | OpenAI (gpt-image) ou Gemini, ou modo manual (kit de prompt) |
 | Narração | [edge-tts](https://github.com/rany2/edge-tts) (gratuito), com o tempo de cada palavra para o karaokê |
+| Vozes premium (opcional) | [ElevenLabs](https://elevenlabs.io): cada família cadastra a própria chave em Família → Chaves; as vozes da conta aparecem no seletor de voz. Sem créditos, a fala sai pela voz grátis de reserva |
 | Frontend | HTML gerado no servidor + JavaScript sem framework (editor, player, efeitos) |
 
 **Ordem de escolha da IA** para cada família: assinatura (CLI, se liberada pelo admin) → chave de API da família → chave do sistema (se o admin liberar, com limite semanal) → chave grátis do Gemini → modo manual.
