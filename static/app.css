@@ -176,3 +176,4 @@ body.crianca { background:linear-gradient(180deg,#ffe9c7,#fff8ef 40%); min-heigh
 .tira span { position:absolute; right:2px; bottom:2px; background:var(--pg); color:#fff; font-size:.75em; border-radius:6px; padding:0 5px; }
 .tira.ativa { border-color:var(--pg); box-shadow:0 0 0 2px var(--cartao), 0 0 0 4px var(--pg); }
 .carrossel-nav button:disabled { opacity:.35; cursor:default; }
+.foto-kit { display:grid; gap:4px; justify-items:center; max-width:160px; text-align:center; }

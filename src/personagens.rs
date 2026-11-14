@@ -221,6 +221,9 @@ impl PaginaPersonagem {
         let aparencia = v.descricao.clone().unwrap_or_else(|| self.p.campo("aparencia"));
         prompt_model_sheet(&self.p.nome, &aparencia, v.estilo.as_deref(), !self.fotos().is_empty() || !v.referencias.is_empty())
     }
+    fn foto_na_variante(&self, v: &Variante, foto: &str) -> bool {
+        v.referencias.iter().any(|r| r.to_string() == foto)
+    }
     fn eh_atual(&self, v: &Variante) -> bool {
         self.p.variante_atual == Some(v.id)
     }
@@ -405,6 +408,31 @@ pub async fn adicionar_refs(
     .bind(&slug)
     .bind(&vslug)
     .bind(&refs)
+    .execute(&st.db)
+    .await;
+    match r {
+        Ok(_) => Redirect::to(&format!("/personagens/{slug}")).into_response(),
+        Err(e) => erro_interno(e.into()),
+    }
+}
+
+/// POST /personagens/{slug}/variantes/{vslug}/usar-foto/{foto}: a foto enviada na criação (ex.: já é um desenho)
+/// passa a ser também imagem de referência da variante. Só fotos deste personagem.
+pub async fn usar_foto(
+    State(st): State<AppState>,
+    s: Sessao,
+    Path((slug, vslug, foto)): Path<(String, String, Uuid)>,
+) -> Response {
+    let r = sqlx::query(
+        "UPDATE conteudo.variantes v SET referencias = array_append(v.referencias, $4)
+           FROM conteudo.personagens p
+          WHERE v.personagem_id = p.id AND p.familia_id = $1 AND p.slug = $2 AND v.slug = $3
+            AND COALESCE(p.ficha->'fotos', '[]') ? $4::text AND NOT ($4 = ANY(v.referencias))",
+    )
+    .bind(s.familia_id)
+    .bind(&slug)
+    .bind(&vslug)
+    .bind(foto)
     .execute(&st.db)
     .await;
     match r {

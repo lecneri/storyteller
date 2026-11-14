@@ -35,8 +35,14 @@
         <details class="kit-personagem"{% if v.referencias.is_empty() %} open{% endif %}>
           <summary>🎨 Kit do desenho de referência</summary>
           {% if !self.fotos().is_empty() %}
-          <p class="suave">Fotos enviadas (só no servidor; clique para copiar e colar na IA):</p>
-          <div class="minis">{% for ref_id in self.fotos() %}{% include "miniatura.html" %}{% endfor %}</div>
+          <p class="suave">Fotos enviadas (só no servidor; clique para copiar e colar na IA). Se a foto já for o desenho certo, use direto nesta variante:</p>
+          <div class="minis">{% for ref_id in self.fotos() %}
+            <div class="foto-kit">{% include "miniatura.html" %}
+              {% if !self.foto_na_variante(v, ref_id) %}
+              <form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/usar-foto/{{ ref_id }}">
+                <button type="submit" class="pequeno secundario">✅ Usar como imagem desta variante</button></form>
+              {% else %}<small class="suave">✅ já é imagem desta variante</small>{% endif %}
+            </div>{% endfor %}</div>
           {% endif %}
           <div class="linha-kit"><span>Prompt</span>
             <button type="button" class="pequeno" data-copiar-texto="prompt-{{ v.slug }}">📋 Copiar prompt</button></div>
