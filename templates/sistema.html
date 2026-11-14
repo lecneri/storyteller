@@ -30,7 +30,8 @@
     {% endfor %}
     </div>
     <form method="post" action="/sistema/limpar" class="linha">
-      <span class="suave">Arquivos sem uso (imagens trocadas, histórias apagadas, áudios antigos) são apagados sozinhos uma vez por dia.</span>
+      <span class="suave">Arquivos sem uso (imagens trocadas, histórias apagadas, áudios de trechos editados ou de vozes trocadas) são apagados sozinhos uma vez por dia.
+        Última limpeza: {% if self.tem("LIMPEZA_RESULTADO") %}{{ self.cfg("LIMPEZA_RESULTADO") }}{% else %}ainda não rodou{% endif %}.</span>
       <button type="submit" class="pequeno secundario">🧹 Limpar agora</button>
     </form>
     <form method="post" action="/sistema/familias" class="linha">

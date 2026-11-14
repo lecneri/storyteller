@@ -11,12 +11,19 @@ use crate::{historias::Conteudo, tts, AppState};
 /// Arquivos mais novos que isto nunca são apagados (um envio pode ainda não ter sido salvo na página).
 const CARENCIA_HORAS: i32 = 24;
 
-/// Hashes de áudio ainda úteis para uma família: todos os trechos das histórias que ela pode tocar,
-/// com as vozes atuais dela e com as vozes genéricas (links públicos).
+/// Hashes de áudio ainda úteis para uma família: todos os trechos das histórias dela com as vozes
+/// atuais da família, e com as vozes genéricas só nas histórias que têm link público ativo.
 async fn audios_em_uso(st: &AppState, familia: Uuid) -> anyhow::Result<HashSet<String>> {
     let vozes = tts::vozes_da_familia(st, familia).await?;
-    let historias: Vec<(Uuid, String, Value)> =
-        sqlx::query_as("SELECT familia_id, narracao, conteudo FROM conteudo.historias WHERE familia_id = $1")
+    let historias: Vec<(bool, String, Value)> = sqlx::query_as(
+        "SELECT EXISTS (SELECT 1 FROM partilha.links l
+                         WHERE NOT l.revogado AND (l.expira_em IS NULL OR l.expira_em > now())
+                           AND ((l.item_tipo = 'historia' AND l.item_id = h.id)
+                             OR (l.item_tipo = 'estante' AND h.visibilidade <> 'privado' AND EXISTS (
+                                   SELECT 1 FROM conteudo.estante_historias eh WHERE eh.estante_id = l.item_id AND eh.historia_id = h.id)))),
+                h.narracao, h.conteudo
+           FROM conteudo.historias h WHERE h.familia_id = $1",
+    )
             .bind(familia)
             .fetch_all(&st.db)
             .await?;
@@ -25,7 +32,7 @@ async fn audios_em_uso(st: &AppState, familia: Uuid) -> anyhow::Result<HashSet<S
         .fetch_all(&st.db)
         .await?;
     let mut usados = HashSet::new();
-    for (_, narracao, conteudo) in historias {
+    for (publica, narracao, conteudo) in historias {
         let c: Conteudo = serde_json::from_value(conteudo).unwrap_or_default();
         for b in c.paginas.iter().flat_map(|p| p.blocos.iter()) {
             let texto = b.texto.trim();
@@ -33,17 +40,12 @@ async fn audios_em_uso(st: &AppState, familia: Uuid) -> anyhow::Result<HashSet<S
                 continue;
             }
             let quem = if narracao == "narrador" { "narrador".to_string() } else { b.chave_voz() };
-            let (base, extra) = tts::separar(&quem);
+            let (base, _) = tts::separar(&quem);
             let tipo = tipos.iter().find(|(s, _)| s == base).map(|(_, t)| t.as_str()).unwrap_or("narrador");
             usados.insert(tts::hash_publico(&vozes.de(&quem), texto));
-            let generica = if quem == "narrador" {
-                tts::narrador_padrao()
-            } else if extra.is_some() {
-                tts::generica_extra(tipo)
-            } else {
-                tts::voz_por_tipo(tipo)
-            };
-            usados.insert(tts::hash_publico(&generica, texto));
+            if publica {
+                usados.insert(tts::hash_publico(&tts::voz_generica(&quem, tipo), texto));
+            }
         }
     }
     Ok(usados)
@@ -105,15 +107,33 @@ pub async fn limpar(st: &AppState) -> anyhow::Result<(u64, i64)> {
     Ok((apagados, liberado))
 }
 
-/// Roda a limpeza uma vez por dia (a primeira, 10 minutos depois de subir).
+/// Worker: confere a cada hora e limpa se a última limpeza tem mais de 24 h. A data fica no banco
+/// (LIMPEZA_ULTIMA), então reiniciar o servidor (deploy) não atrasa a limpeza.
 pub async fn agendar(st: AppState) {
-    tokio::time::sleep(Duration::from_secs(600)).await;
+    tokio::time::sleep(Duration::from_secs(120)).await;
     loop {
-        if let Err(e) = limpar(&st).await {
-            tracing::warn!("limpeza falhou: {e:#}");
+        let agora = chrono::Utc::now().timestamp();
+        let ultima: i64 = crate::config::get("LIMPEZA_ULTIMA").and_then(|v| v.parse().ok()).unwrap_or(0);
+        if agora - ultima >= 24 * 3600 {
+            registrar(&st, limpar(&st).await).await;
         }
-        tokio::time::sleep(Duration::from_secs(24 * 3600)).await;
+        tokio::time::sleep(Duration::from_secs(3600)).await;
     }
+}
+
+/// Guarda quando foi a última limpeza e o resultado (mostrado em ⚙️ Sistema).
+pub async fn registrar(st: &AppState, r: anyhow::Result<(u64, i64)>) -> String {
+    let texto = match &r {
+        Ok((n, b)) => format!("{n} arquivo(s) apagado(s), {:.1} MB liberados", *b as f64 / 1048576.0),
+        Err(e) => format!("falhou: {e:#}"),
+    };
+    if let Err(e) = &r {
+        tracing::warn!("limpeza falhou: {e:#}");
+    }
+    let quando = chrono::Utc::now();
+    let _ = crate::config::salvar(st, "LIMPEZA_ULTIMA", &quando.timestamp().to_string()).await;
+    let _ = crate::config::salvar(st, "LIMPEZA_RESULTADO", &format!("{} — {texto}", quando.with_timezone(&chrono::FixedOffset::west_opt(3 * 3600).unwrap()).format("%d/%m %H:%M"))).await;
+    texto
 }
 
 /// Apaga uma família inteira: banco (em cascata) e arquivos do disco que nenhuma outra família usa.

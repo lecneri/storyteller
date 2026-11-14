@@ -315,9 +315,9 @@ pub async fn limpar_agora(State(st): State<AppState>, s: Sessao) -> Response {
     if let Some(r) = so_admin_sistema(&s) {
         return r;
     }
-    let aviso = match crate::limpeza::limpar(&st).await {
-        Ok((n, b)) => format!("Limpeza feita ✓ {n} arquivo(s) apagado(s), {:.1} MB liberados (arquivos com menos de 24 h ficam).", b as f64 / 1048576.0),
-        Err(e) => format!("A limpeza falhou: {e:#}"),
-    };
+    let r = crate::limpeza::limpar(&st).await;
+    let ok = r.is_ok();
+    let texto = crate::limpeza::registrar(&st, r).await;
+    let aviso = if ok { format!("Limpeza feita ✓ {texto} (arquivos com menos de 24 h ficam).") } else { format!("A limpeza {texto}") };
     pagina(&st, s, None, Some(aviso)).await
 }
