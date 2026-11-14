@@ -80,11 +80,23 @@ pub struct Bloco {
     /// Voz extra do personagem usada neste trecho (slug, ex.: "ingles").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub voz: Option<String>,
+    /// Nome de quem fala quando quem = "voz:<id>" (voz do sistema sem personagem, ex.: "Vilão").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nome: Option<String>,
+    /// Ajustes da voz do sistema neste trecho (só com quem = "voz:<id>").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tom: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub velocidade: Option<i32>,
 }
 
 impl Bloco {
     /// Chave da voz do trecho: "pedro" ou "pedro+ingles".
     pub fn chave_voz(&self) -> String {
+        if self.quem.starts_with("voz:") {
+            let (t, v) = (self.tom.unwrap_or(0), self.velocidade.unwrap_or(0));
+            return if t == 0 && v == 0 { self.quem.clone() } else { format!("{}|{t}|{v}", self.quem) };
+        }
         match &self.voz {
             Some(v) if self.quem != "narrador" && !v.is_empty() => format!("{}+{v}", self.quem),
             _ => self.quem.clone(),
@@ -375,7 +387,7 @@ fn normalizar(mut c: Conteudo, narracao: &str, citados: &[NaCena], todos: &[Pers
         p.blocos.retain(|b| !b.texto.is_empty());
         if narracao == "narrador" && p.blocos.len() > 1 {
             let texto = p.blocos.iter().map(|b| b.texto.as_str()).collect::<Vec<_>>().join(" ");
-            p.blocos = vec![Bloco { quem: "narrador".into(), texto, voz: None }];
+            p.blocos = vec![Bloco { quem: "narrador".into(), texto, voz: None, nome: None, tom: None, velocidade: None }];
         }
     }
     c.paginas.retain(|p| !p.blocos.is_empty());
@@ -528,7 +540,7 @@ pub async fn gerar_memoria(st: &AppState, historia: Uuid) -> anyhow::Result<Stri
     let texto: Vec<String> = c
         .paginas
         .iter()
-        .flat_map(|p| p.blocos.iter().map(|b| format!("[{}] {}", b.quem, b.texto)))
+        .flat_map(|p| p.blocos.iter().map(|b| format!("[{}] {}", b.nome.as_deref().unwrap_or(&b.quem), b.texto)))
         .collect();
     let pedido = ia::PedidoTexto {
         sistema: "Você resume histórias infantis para servir de memória em histórias seguintes. Responda só com o JSON pedido.".into(),
@@ -802,7 +814,9 @@ pub async fn abrir(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) 
     let dados = json!({
         "id": h.id, "titulo": h.titulo, "faixa": h.faixa, "narracao": h.narracao,
         "briefing": h.briefing, "conteudo": h.conteudo,
-        "personagens": personagens, "animacoes": ANIMACOES, "estilo": h.estilo,
+        "personagens": personagens,
+        "vozes_sistema": crate::tts::VOZES.iter().map(|(id, n)| json!({ "id": id, "nome": n })).collect::<Vec<_>>(),
+        "animacoes": ANIMACOES, "estilo": h.estilo,
         "memoria": h.memoria, "continua": h.continua,
         "imagem_api": crate::imagem::disponivel(&st, s.familia_id).await,
     });

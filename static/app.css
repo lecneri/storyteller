@@ -183,3 +183,17 @@ body.crianca { background:linear-gradient(180deg,#ffe9c7,#fff8ef 40%); min-heigh
 .zona-envio:focus { outline:none; border-style:solid; background:color-mix(in srgb, var(--cartao) 80%, var(--cor)); }
 .zona-envio:focus .zona-normal { display:none; }
 .zona-envio:focus .zona-pronta { display:inline; font-weight:700; }
+
+/* Seletor de quem fala (personagens + vozes do sistema, com prévia) */
+.quem-caixa { position:relative; }
+.quem-botao { padding:4px 10px; }
+.quem-lista { position:absolute; z-index:20; top:calc(100% + 4px); left:0; min-width:280px; max-height:360px; overflow:auto; background:var(--cartao); border:1px solid var(--borda); border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,.25); padding:6px; }
+.quem-grupo { font-size:.75em; text-transform:uppercase; letter-spacing:.05em; color:var(--suave); padding:8px 6px 4px; }
+.quem-op { display:flex; align-items:center; gap:6px; padding:2px 4px; border-radius:8px; }
+.quem-op.ativa, .quem-op:hover { background:var(--fundo); }
+.quem-op .pequeno { padding:2px 8px; }
+.quem-escolher { color:var(--texto); text-align:left; flex:1; padding:6px 4px; }
+.voz-sistema { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.nome-fala { padding:4px 8px; width:170px; }
+.ajuste-voz { display:flex; align-items:center; gap:4px; font-weight:400; font-size:.85em; }
+.ajuste-voz input { width:90px; padding:0; }

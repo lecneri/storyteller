@@ -73,9 +73,27 @@ pub fn separar(chave: &str) -> (&str, Option<&str>) {
     }
 }
 
+/// Fala com uma voz do sistema, sem personagem (ex.: o vilão de uma história só): quem = "voz:<id>".
+/// A chave da voz pode trazer tom e velocidade: "voz:<id>|<tom>|<velocidade>".
+pub fn voz_direta(chave: &str) -> Option<Voz> {
+    let resto = chave.strip_prefix("voz:")?;
+    let mut partes = resto.split('|');
+    let id = partes.next()?;
+    let tom = partes.next().and_then(|t| t.parse().ok()).unwrap_or(0);
+    let vel = partes.next().and_then(|t| t.parse().ok()).unwrap_or(0);
+    VOZES.iter().any(|(v, _)| *v == id).then(|| Voz::nova(id, tom, vel).validada())
+}
+
+/// Nome curto de uma voz do sistema ("Guy · homem, animado" → "Guy").
+pub fn nome_voz(id: &str) -> String {
+    VOZES.iter().find(|(v, _)| *v == id).map(|(_, n)| n.split(" · ").next().unwrap_or(n).to_string()).unwrap_or_default()
+}
+
 /// Voz genérica (links públicos) de um trecho: `chave` é "narrador", o slug ou "slug+voz-extra".
 pub fn voz_generica(chave: &str, tipo: &str) -> Voz {
-    if chave == "narrador" || tipo.is_empty() || tipo == "narrador" {
+    if let Some(v) = voz_direta(chave) {
+        v
+    } else if chave == "narrador" || tipo.is_empty() || tipo == "narrador" {
         narrador_padrao()
     } else if separar(chave).1.is_some() {
         generica_extra(tipo)
@@ -281,6 +299,9 @@ impl VozesFamilia {
     pub fn de(&self, quem: &str) -> Voz {
         if quem == "narrador" {
             return self.narrador.clone();
+        }
+        if let Some(v) = voz_direta(quem) {
+            return v;
         }
         if let Some((_, v)) = self.extras.iter().find(|(k, _)| k == quem) {
             return v.clone();

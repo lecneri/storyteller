@@ -38,6 +38,9 @@ impl Vozes {
     /// `quem`: "narrador", slug ou chave de voz extra ("pedro+ingles").
     fn de(&self, quem: &str, tipo: &str) -> tts::Voz {
         let extra = tts::separar(quem).1.is_some();
+        if let Some(v) = tts::voz_direta(quem) {
+            return v;
+        }
         match self {
             Vozes::Familia(v) if quem == "narrador" => v.narrador.clone(),
             Vozes::Familia(v) => v
@@ -85,11 +88,15 @@ async fn montar(
         let mut blocos = Vec::new();
         for b in p.blocos.iter().filter(|b| !b.texto.trim().is_empty()) {
             let quem = if h.narracao == "narrador" { "narrador".to_string() } else { b.chave_voz() };
-            let (nome, tipo) = nomes
-                .iter()
-                .find(|(s, _, _)| *s == b.quem)
-                .map(|(_, n, t)| (n.clone(), t.clone()))
-                .unwrap_or_else(|| ("Narrador".into(), "narrador".into()));
+            let (nome, tipo) = match b.quem.strip_prefix("voz:").map(|r| r.split('|').next().unwrap_or(r)) {
+                // Voz do sistema sem personagem: o nome dado no editor (ou o da voz).
+                Some(id) => (b.nome.clone().filter(|n| !n.trim().is_empty()).unwrap_or_else(|| tts::nome_voz(id)), "voz".to_string()),
+                None => nomes
+                    .iter()
+                    .find(|(s, _, _)| *s == b.quem)
+                    .map(|(_, n, t)| (n.clone(), t.clone()))
+                    .unwrap_or_else(|| ("Narrador".into(), "narrador".into())),
+            };
             let tipo_voz = if quem == "narrador" { "narrador" } else { tipo.as_str() };
             let audio = tts::no_cache(st, familia_cache, &b.texto, &vozes.de(&quem, tipo_voz)).await?;
             blocos.push(json!({

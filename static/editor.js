@@ -40,13 +40,73 @@
     const ref = v && (v.referencias || [])[0];
     return ref ? '/midia/' + ref : null;
   }
+  const vozesSistema = dados.vozes_sistema || [];
+  // Mesma regra do servidor (Bloco::chave_voz): "pedro", "pedro+ingles" ou "voz:<id>|tom|velocidade".
+  function chaveVoz(b) {
+    if (b.quem.startsWith('voz:')) {
+      const t = b.tom || 0, v = b.velocidade || 0;
+      return t || v ? b.quem + '|' + t + '|' + v : b.quem;
+    }
+    return b.voz && b.quem !== 'narrador' ? b.quem + '+' + b.voz : b.quem;
+  }
+  const nomeVoz = (id) => ((vozesSistema.find((v) => v.id === id) || {}).nome || id).split(' · ')[0];
   function avatar(quem) {
     if (quem === 'narrador') return el('div', { class: 'avatar', title: 'Narrador' }, '🎙️');
+    if (quem.startsWith('voz:')) return el('div', { class: 'avatar', title: 'Voz do sistema' }, '🎭');
     const src = miniatura(quem);
     const emoji = { animal: '🐶', robo: '🤖', vilao: '😈', adulto: '🧑', criatura: '🐉' }[(personagem(quem) || {}).tipo] || '🧒';
     return src ? el('img', { class: 'avatar', src, alt: '' }) : el('div', { class: 'avatar' }, emoji);
   }
-  const nomeDe = (quem) => (quem === 'narrador' ? 'Narrador' : (personagem(quem) || {}).nome || quem);
+  const nomeDe = (quem, b) => (quem === 'narrador' ? 'Narrador'
+    : quem.startsWith('voz:') ? ((b && b.nome) || nomeVoz(quem.slice(4)))
+    : (personagem(quem) || {}).nome || quem);
+
+  // Prévia de uma voz na lista: personagem (com a voz dele) ou voz do sistema.
+  async function previaVoz(op, botao) {
+    botao.textContent = '⏳';
+    try {
+      const r = op.sistema
+        ? await fetch('/tts/previa', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ voz: { motor: 'edge', id: op.sistema, tom: 0, velocidade: 0 }, texto: 'Olá! Esta é a minha voz. Hello, this is my voice!' }) })
+        : await fetch(location.pathname + '/bloco-audio', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ quem: op.valor, texto: op.valor === 'narrador' ? 'Era uma vez, num lugar muito distante…' : 'Oi! Eu sou ' + op.nome + '!' }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.erro || 'erro');
+      if (tocando) tocando.pause();
+      tocando = new Audio(j.audio);
+      await tocando.play();
+    } catch (e) { aviso('Não deu para ouvir: ' + e.message); }
+    finally { botao.textContent = '▶'; }
+  }
+
+  // Seletor de quem fala: personagens e, à parte, as vozes do sistema (para um vilão de uma história só,
+  // sem criar personagem). Cada opção tem ▶ para ouvir antes de escolher.
+  function seletorQuem(b) {
+    const ops = [
+      { grupo: 'Personagens' },
+      { valor: 'narrador', nome: 'Narrador', rot: '🎙️ Narrador' },
+      ...personagens.map((p) => ({ valor: p.slug, nome: p.nome, rot: p.nome })),
+      { grupo: 'Outras vozes (sem personagem)' },
+      ...vozesSistema.map((v) => ({ valor: 'voz:' + v.id, sistema: v.id, nome: v.nome.split(' · ')[0], rot: '🎭 ' + v.nome })),
+    ];
+    const botao = el('button', { type: 'button', class: 'quem-botao secundario' }, nomeDe(b.quem, b) + ' ▾');
+    if (estado.narracao === 'narrador') { botao.disabled = true; return botao; }
+    const lista = el('div', { class: 'quem-lista', hidden: true },
+      ops.map((op) => op.grupo ? el('div', { class: 'quem-grupo' }, op.grupo)
+        : el('div', { class: 'quem-op' + (op.valor === b.quem ? ' ativa' : '') },
+            el('button', { type: 'button', class: 'pequeno secundario', title: 'Ouvir', onclick: (e) => { e.stopPropagation(); previaVoz(op, e.currentTarget); } }, '▶'),
+            el('button', { type: 'button', class: 'link quem-escolher', onclick: () => {
+              b.quem = op.valor; delete b.voz; if (!op.sistema) { delete b.nome; delete b.tom; delete b.velocidade; }
+              lista.hidden = true; mudou(); desenhar();
+            } }, op.rot))));
+    const fechar = (e) => { if (!caixa.contains(e.target)) { lista.hidden = true; document.removeEventListener('click', fechar); } };
+    botao.addEventListener('click', () => {
+      lista.hidden = !lista.hidden;
+      if (!lista.hidden) setTimeout(() => document.addEventListener('click', fechar), 0);
+    });
+    const caixa = el('span', { class: 'quem-caixa' }, botao, lista);
+    return caixa;
+  }
 
   let tocando = null;
   async function ouvirBloco(b, botao) {
@@ -54,7 +114,7 @@
     botao.textContent = '⏳';
     try {
       const r = await fetch(location.pathname + '/bloco-audio', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ quem: b.voz && b.quem !== 'narrador' ? b.quem + '+' + b.voz : b.quem, texto: b.texto }) });
+        body: JSON.stringify({ quem: chaveVoz(b), texto: b.texto }) });
       const j = await r.json();
       if (!r.ok) throw new Error(j.erro || 'erro');
       if (tocando) tocando.pause();
@@ -95,25 +155,34 @@
 
   function blocoUI(pag, i) {
     const b = pag.blocos[i];
-    const opcoes = [el('option', { value: 'narrador', selected: b.quem === 'narrador' }, '🎙️ Narrador')].concat(
-      personagens.map((p) => el('option', { value: p.slug, selected: b.quem === p.slug }, p.nome))
-    );
-    const sel = el('select', { onchange: (e) => { b.quem = e.target.value; delete b.voz; mudou(); desenhar(); } }, opcoes);
-    if (estado.narracao === 'narrador') sel.disabled = true;
+    const sel = seletorQuem(b);
+    // Voz do sistema: nome de quem fala (aparece no player).
+    const sistema = b.quem.startsWith('voz:') && estado.narracao !== 'narrador';
+    const rotulo = (v, sufixo) => (v > 0 ? '+' : '') + v + sufixo;
+    const ajuste = (campo, min, max, sufixo, titulo) => {
+      const r = el('span', { class: 'suave' }, rotulo(b[campo] || 0, sufixo));
+      return el('label', { class: 'ajuste-voz', title: titulo }, titulo + ' ', r,
+        el('input', { type: 'range', min, max, step: 5, value: b[campo] || 0, oninput: (e) => {
+          const v = +e.target.value; if (v) b[campo] = v; else delete b[campo]; r.textContent = rotulo(v, sufixo); mudou(); } }));
+    };
+    const nomeFala = sistema ? el('span', { class: 'voz-sistema' },
+      el('input', { class: 'nome-fala', placeholder: 'Quem fala? (ex.: Vilão)', value: b.nome || '',
+        oninput: (e) => { b.nome = e.target.value; mudou(); } }),
+      ajuste('tom', -60, 60, '', 'Tom'), ajuste('velocidade', -40, 40, '%', 'Velocidade')) : null;
     // Vozes extras do personagem (ex.: Inglês): escolhe qual voz este trecho usa.
-    const extras = b.quem === 'narrador' || estado.narracao === 'narrador' ? [] : ((personagem(b.quem) || {}).vozes_extras || []);
+    const extras = b.quem === 'narrador' || b.quem.startsWith('voz:') || estado.narracao === 'narrador' ? [] : ((personagem(b.quem) || {}).vozes_extras || []);
     const selVoz = extras.length ? el('select', { title: 'Voz deste trecho', onchange: (e) => {
       if (e.target.value) b.voz = e.target.value; else delete b.voz; mudou(); } },
       el('option', { value: '' }, '🗣️ voz normal'),
       extras.map((x) => el('option', { value: x.slug, selected: b.voz === x.slug }, '🌎 ' + x.nome))) : null;
     const txt = el('textarea', { rows: Math.max(2, Math.ceil((b.texto || '').length / 70)),
-      placeholder: b.quem === 'narrador' ? 'Texto do narrador…' : 'Fala de ' + nomeDe(b.quem) + '…',
+      placeholder: b.quem === 'narrador' ? 'Texto do narrador…' : 'Fala de ' + nomeDe(b.quem, b) + '…',
       oninput: (e) => { b.texto = e.target.value; mudou(); } });
     txt.value = b.texto || '';
     return el('div', { class: 'bloco' },
       avatar(b.quem),
       el('div', {},
-        el('div', { class: 'cab' }, sel, selVoz,
+        el('div', { class: 'cab' }, sel, selVoz, nomeFala,
           el('span', { class: 'acoes' },
             el('button', { type: 'button', title: 'Ouvir este trecho', onclick: (e) => ouvirBloco(b, e.currentTarget) }, '▶'),
             el('button', { type: 'button', title: 'Subir', onclick: () => mover(pag.blocos, i, -1) }, '↑'),
