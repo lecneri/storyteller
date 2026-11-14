@@ -73,6 +73,17 @@ pub fn separar(chave: &str) -> (&str, Option<&str>) {
     }
 }
 
+/// Voz genérica (links públicos) de um trecho: `chave` é "narrador", o slug ou "slug+voz-extra".
+pub fn voz_generica(chave: &str, tipo: &str) -> Voz {
+    if chave == "narrador" || tipo.is_empty() || tipo == "narrador" {
+        narrador_padrao()
+    } else if separar(chave).1.is_some() {
+        generica_extra(tipo)
+    } else {
+        voz_por_tipo(tipo)
+    }
+}
+
 /// Voz genérica (links públicos) para uma voz extra: precisa ser multilíngue.
 pub fn generica_extra(tipo: &str) -> Voz {
     let v = voz_por_tipo(tipo);

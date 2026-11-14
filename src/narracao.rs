@@ -260,6 +260,28 @@ pub async fn executar_narracao(st: &AppState, payload: &Value) -> anyhow::Result
     Ok(())
 }
 
+/// Job: gera o áudio de todos os trechos com as vozes genéricas (as do link público).
+pub async fn executar_narracao_publica(st: &AppState, payload: &Value) -> anyhow::Result<()> {
+    let id: Uuid = payload["historia_id"].as_str().unwrap_or_default().parse()?;
+    let h = carregar(st, id).await?;
+    let tipos: Vec<(String, String)> = sqlx::query_as("SELECT slug, tipo FROM conteudo.personagens WHERE familia_id = $1")
+        .bind(h.familia_id)
+        .fetch_all(&st.db)
+        .await?;
+    let mut falhas = 0;
+    for (_, _, quem, texto) in blocos(&h) {
+        let tipo = tipos.iter().find(|(s, _)| s == tts::separar(&quem).0).map(|(_, t)| t.as_str()).unwrap_or("");
+        if let Err(e) = tts::sintetizar(st, h.familia_id, &h.familia_slug, &texto, &tts::voz_generica(&quem, tipo)).await {
+            tracing::warn!("narração pública: trecho falhou: {e:#}");
+            falhas += 1;
+        }
+    }
+    if falhas > 0 {
+        anyhow::bail!("{falhas} trecho(s) não foram gerados");
+    }
+    Ok(())
+}
+
 /// POST /historias/{id}/narrar
 pub async fn narrar(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) -> Response {
     let ok: Result<bool, _> =

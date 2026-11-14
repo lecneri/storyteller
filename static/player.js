@@ -112,15 +112,27 @@
   }
 
   // ───────────── narração ─────────────
-  async function audioDoBloco(b) {
-    if (b.audio) return b;
-    // Ainda não gerado: pede ao servidor na hora (a família logada pode gerar).
-    try {
-      const r = await fetch(dados.audio_url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ historia: dados.id, quem: b.voz || b.quem, texto: b.texto }) });
-      if (r.ok) { const j = await r.json(); Object.assign(b, { audio: j.audio, duracao: j.duracao, palavras: j.palavras }); }
-    } catch (_) { /* segue sem áudio */ }
-    return b;
+  // Ainda não gerado: pede ao servidor (uma vez só por trecho; a promessa fica guardada).
+  function audioDoBloco(b) {
+    if (b.audio) return Promise.resolve(b);
+    if (!b._pedido) {
+      b._pedido = fetch(dados.audio_url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ historia: dados.id, quem: b.voz || b.quem, texto: b.texto }) })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j) => { if (j) Object.assign(b, { audio: j.audio, duracao: j.duracao, palavras: j.palavras }); return b; })
+        .catch(() => b)
+        .finally(() => { if (!b.audio) b._pedido = null; });
+    }
+    return b._pedido;
+  }
+  // Enquanto um trecho toca, já pede os próximos (o resto da página e o começo da seguinte).
+  function adiantar(pagina, bloco) {
+    const fila = [];
+    for (let p = pagina; p < dados.paginas.length && fila.length < 3; p++) {
+      const bs = dados.paginas[p].blocos;
+      for (let i = p === pagina ? bloco + 1 : 0; i < bs.length && fila.length < 3; i++) if (!bs[i].audio) fila.push(bs[i]);
+    }
+    fila.forEach((b) => audioDoBloco(b));
   }
 
   function destacarPalavras(trecho, b, a, minhaGeracao) {
@@ -149,7 +161,9 @@
       if (minhaGeracao !== geracao) return false;
       trechos.forEach((t, j) => t.classList.toggle('ativo', j === i));
       trechos[i]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-      const b = await audioDoBloco(p.blocos[i]);
+      const pedido = audioDoBloco(p.blocos[i]);
+      adiantar(pos - 1, i);
+      const b = await pedido;
       if (minhaGeracao !== geracao) return false;
       if (b.audio) {
         audio = new Audio(b.audio);

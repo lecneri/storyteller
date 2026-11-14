@@ -354,10 +354,28 @@ pub async fn salvar(
         tx.commit().await
     }
     .await;
-    match r {
-        Ok(()) => Redirect::to(&format!("/compartilhar/{tipo}/{id}")).into_response(),
-        Err(e) => erro_interno(e.into()),
+    if let Err(e) = r {
+        return erro_interno(e.into());
     }
+    // Público sem nenhum link ativo: já gera um (sem prazo) e mostra, senão "público" não leva a lugar nenhum.
+    if vis == "publico" && tipo != "personagem" {
+        let tem_link: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM partilha.links WHERE item_tipo = $1 AND item_id = $2 AND NOT revogado
+                              AND (expira_em IS NULL OR expira_em > now()))",
+        )
+        .bind(&tipo)
+        .bind(id)
+        .fetch_one(&st.db)
+        .await
+        .unwrap_or(true);
+        if !tem_link {
+            return match gerar_link(&st, s.familia_id, &tipo, id, None).await {
+                Ok(link) => pagina(&st, s, tipo, id, Some(link)).await,
+                Err(e) => erro_interno(e.into()),
+            };
+        }
+    }
+    Redirect::to(&format!("/compartilhar/{tipo}/{id}")).into_response()
 }
 
 // ───────────── links públicos ─────────────
@@ -378,25 +396,47 @@ pub async fn criar_link(
         return Redirect::to("/").into_response();
     }
     let dias: Option<i32> = f.dias.parse().ok().filter(|d| *d > 0);
+    match gerar_link(&st, s.familia_id, &tipo, id, dias).await {
+        Ok(link) => pagina(&st, s, tipo, id, Some(link)).await,
+        Err(e) => erro_interno(e.into()),
+    }
+}
+
+/// Cria um link público (o token só existe aqui; no banco fica o hash) e devolve a URL.
+async fn gerar_link(st: &AppState, familia: Uuid, tipo: &str, id: Uuid, dias: Option<i32>) -> Result<String, sqlx::Error> {
     let mut bytes = [0u8; 24];
     rand::thread_rng().fill_bytes(&mut bytes);
     let token = URL_SAFE_NO_PAD.encode(bytes);
-    let r = sqlx::query(
+    sqlx::query(
         "INSERT INTO partilha.links (token_hash, item_tipo, item_id, familia_id, expira_em)
          VALUES ($1, $2, $3, $4, CASE WHEN $5::int IS NULL THEN NULL ELSE now() + make_interval(days => $5::int) END)",
     )
     .bind(auth::hash_token(&token))
-    .bind(&tipo)
+    .bind(tipo)
     .bind(id)
-    .bind(s.familia_id)
+    .bind(familia)
     .bind(dias)
     .execute(&st.db)
-    .await;
-    if let Err(e) = r {
-        return erro_interno(e.into());
+    .await?;
+    // Já gera em segundo plano a narração com as vozes genéricas, para o link não ficar esperando cada trecho.
+    let historias: Vec<Uuid> = if tipo == "historia" {
+        vec![id]
+    } else {
+        sqlx::query_scalar(
+            "SELECT h.id FROM conteudo.estante_historias eh JOIN conteudo.historias h ON h.id = eh.historia_id
+              WHERE eh.estante_id = $1 AND h.visibilidade <> 'privado'",
+        )
+        .bind(id)
+        .fetch_all(&st.db)
+        .await
+        .unwrap_or_default()
+    };
+    for h in historias {
+        if let Err(e) = crate::jobs::enfileirar(st, "narrar_publico", familia, serde_json::json!({ "historia_id": h })).await {
+            tracing::warn!("não enfileirei a narração pública: {e:#}");
+        }
     }
-    let link = format!("{}/p/{token}", crate::email::url_publica());
-    pagina(&st, s, tipo, id, Some(link)).await
+    Ok(format!("{}/p/{token}", crate::email::url_publica()))
 }
 
 pub async fn revogar_link(
@@ -561,13 +601,7 @@ pub async fn publico_audio(State(st): State<AppState>, Path(token): Path<String>
         .ok()
         .flatten()
         .unwrap_or_default();
-    let voz = if p.quem == "narrador" || tipo.is_empty() {
-        tts::narrador_padrao()
-    } else if tts::separar(&p.quem).1.is_some() {
-        tts::generica_extra(&tipo)
-    } else {
-        tts::voz_por_tipo(&tipo)
-    };
+    let voz = tts::voz_generica(&p.quem, &tipo);
     let slug: String = sqlx::query_scalar("SELECT slug FROM acesso.familias WHERE id = $1")
         .bind(l.familia_id)
         .fetch_one(&st.db)

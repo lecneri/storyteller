@@ -62,6 +62,7 @@ async fn executar(st: &AppState, job: Job) {
     let resultado = match job.tipo.as_str() {
         "gerar_historia" => crate::historias::executar_geracao(st, &job.payload).await,
         "gerar_narracao" => crate::narracao::executar_narracao(st, &job.payload).await,
+        "narrar_publico" => crate::narracao::executar_narracao_publica(st, &job.payload).await,
         outro => Err(anyhow::anyhow!("tipo de job desconhecido: {outro}")),
     };
     let r = match resultado {

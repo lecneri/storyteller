@@ -15,6 +15,7 @@
           {% if pode_link %}<option value="publico"{% if visibilidade == "publico" %} selected{% endif %}>Público (qualquer um com o link)</option>{% endif %}
         </select>
       </label>
+      {% if pode_link %}<p class="suave">🌐 <strong>Público</strong>: quem não tem login abre pelo <strong>link público</strong> (gerado abaixo ao salvar). O endereço da barra do navegador sempre pede login.</p>{% endif %}
       <p class="suave">Regra: o que for definido aqui vence a estante e o padrão da família.
         {% if tipo == "estante" %}Compartilhar a estante compartilha as histórias dela — menos as marcadas como “Só a minha família”.{% endif %}
         {% if tipo == "personagem" %}Personagem não compartilhado ainda aparece nas histórias compartilhadas, mas outras famílias não podem usá-lo.{% endif %}</p>
@@ -38,6 +39,7 @@
     <h2>🌐 Link público de leitura</h2>
     <p class="suave">Abre só o player, sem login. Usa apenas vozes genéricas de IA. Pode ser cancelado quando quiser.</p>
     {% if let Some(l) = novo_link %}
+    <p><strong>✅ Este é o link para quem não tem login:</strong></p>
     <div class="linha"><input id="link-publico" value="{{ l }}" readonly style="flex:1">
       <button type="button" onclick="const i=document.getElementById('link-publico');i.select();navigator.clipboard?.writeText(i.value).catch(()=>document.execCommand('copy'));this.textContent='Copiado ✓'">📋 Copiar</button></div>
     <p class="suave">Guarde o link agora: por segurança ele não é mostrado de novo.</p>
