@@ -111,3 +111,51 @@ pub fn regras_faixa(faixa: &str) -> (u32, u32, u32, u32) {
         _ => (8, 10, 30, 60),
     }
 }
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+    use serde_json::json;
+
+    fn bloco(v: serde_json::Value) -> Bloco {
+        serde_json::from_value(v).unwrap()
+    }
+
+    #[test]
+    fn chave_da_voz_de_cada_fala() {
+        assert_eq!(bloco(json!({ "quem": "narrador", "texto": "" })).chave_voz(), "narrador");
+        assert_eq!(bloco(json!({ "quem": "pedro", "texto": "" })).chave_voz(), "pedro");
+        assert_eq!(bloco(json!({ "quem": "pedro", "voz": "ingles", "texto": "" })).chave_voz(), "pedro+ingles");
+        assert_eq!(bloco(json!({ "quem": "pedro", "voz": "", "texto": "" })).chave_voz(), "pedro");
+        // Narrador nunca usa voz extra.
+        assert_eq!(bloco(json!({ "quem": "narrador", "voz": "ingles", "texto": "" })).chave_voz(), "narrador");
+        assert_eq!(bloco(json!({ "quem": "voz:en-US-GuyNeural", "texto": "" })).chave_voz(), "voz:en-US-GuyNeural");
+        assert_eq!(bloco(json!({ "quem": "voz:en-US-GuyNeural", "tom": -30, "texto": "" })).chave_voz(), "voz:en-US-GuyNeural|-30|0");
+    }
+
+    #[test]
+    fn historias_antigas_continuam_abrindo() {
+        // JSON de antes das vozes extras, secundários e mídia: os campos novos ficam vazios.
+        let c: Conteudo = serde_json::from_value(json!({ "paginas": [
+            { "cena": "Quintal", "personagens": [{ "slug": "noob" }], "animacao": "chuva",
+              "blocos": [{ "quem": "noob", "texto": "Au!" }] }
+        ]})).unwrap();
+        assert!(c.secundarios.is_empty());
+        assert!(c.paginas[0].midia.is_none());
+        // E os campos vazios não vão para o JSON gravado.
+        let v = serde_json::to_value(&c).unwrap();
+        assert!(v.get("secundarios").is_none());
+        assert!(v["paginas"][0]["blocos"][0].get("voz").is_none());
+    }
+
+    #[test]
+    fn regras_das_faixas_crescem_com_a_idade() {
+        let mut anterior = (0, 0, 0, 0);
+        for f in FAIXAS {
+            let r = regras_faixa(f);
+            assert!(r.0 <= r.1 && r.2 <= r.3, "{f}: mínimo maior que máximo");
+            assert!(r.1 >= anterior.1 && r.3 >= anterior.3, "{f}: menor que a faixa anterior");
+            anterior = r;
+        }
+    }
+}

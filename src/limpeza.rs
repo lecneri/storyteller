@@ -179,3 +179,21 @@ fn remover_pastas_vazias(dir: &std::path::Path) -> bool {
     }
     vazia && std::fs::remove_dir(dir).is_ok()
 }
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+
+    #[test]
+    fn remove_so_pastas_vazias() {
+        let raiz = std::env::temp_dir().join(format!("st-teste-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(raiz.join("a/b/c")).unwrap();
+        std::fs::create_dir_all(raiz.join("d")).unwrap();
+        std::fs::write(raiz.join("d/arquivo.png"), b"x").unwrap();
+        // "d" tem arquivo: a raiz não pode sumir, mas a/b/c (vazias) somem.
+        assert!(!remover_pastas_vazias(&raiz));
+        assert!(!raiz.join("a").exists());
+        assert!(raiz.join("d/arquivo.png").exists());
+        std::fs::remove_dir_all(&raiz).unwrap();
+    }
+}

@@ -254,3 +254,37 @@ pub fn zipar(arquivos: Vec<(String, Vec<u8>)>) -> anyhow::Result<Vec<u8>> {
     }
     Ok(buf.into_inner())
 }
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn historia_em_markdown() {
+        let id = Uuid::new_v4();
+        let c: Conteudo = serde_json::from_value(json!({ "paginas": [{
+            "cena": "Navio\npirata", "personagens": [{ "slug": "pedro", "variante": "pirata" }, { "slug": "noob" }],
+            "animacao": "chuva", "midia": { "id": id, "tipo": "image/png" },
+            "blocos": [{ "quem": "narrador", "texto": " Era uma vez. " }, { "quem": "pedro", "voz": "ingles", "texto": "Ahoy!" }]
+        }]})).unwrap();
+        let md = historia_md("O \"Pirata\"", "4-6", "por-personagem", Some("briefing"), &c, &|_| "midia/p01.png".into());
+        assert!(md.starts_with("---\ntitulo: \"O \\\"Pirata\\\"\"\n"));
+        assert!(md.contains("briefing: \"briefing\"\n"));
+        assert!(md.contains("# Página 1\ncena: Navio pirata\n"));
+        assert!(md.contains("personagens_na_cena: [pedro:pirata, noob]\n"));
+        assert!(md.contains("animacao: chuva\nmidia: midia/p01.png\n"));
+        assert!(md.contains("\nEra uma vez.\n"));
+        assert!(md.contains("[pedro+ingles] — Ahoy!"));
+    }
+
+    #[test]
+    fn zip_abre_com_os_arquivos() {
+        let bytes = zipar(vec![("a/b.md".into(), b"oi".to_vec()), ("c.txt".into(), b"tchau".to_vec())]).unwrap();
+        let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+        assert_eq!(z.len(), 2);
+        let mut s = String::new();
+        std::io::Read::read_to_string(&mut z.by_name("a/b.md").unwrap(), &mut s).unwrap();
+        assert_eq!(s, "oi");
+    }
+}
