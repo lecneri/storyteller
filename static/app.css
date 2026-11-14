@@ -197,3 +197,4 @@ body.crianca { background:linear-gradient(180deg,#ffe9c7,#fff8ef 40%); min-heigh
 .nome-fala { padding:4px 8px; width:170px; }
 .ajuste-voz { display:flex; align-items:center; gap:4px; font-weight:400; font-size:.85em; }
 .ajuste-voz input { width:90px; padding:0; }
+.secundario { display:grid; grid-template-columns:200px 1fr auto; gap:8px; align-items:start; margin:6px 0; } @media (max-width:640px) { .secundario { grid-template-columns:1fr; } } .secundario textarea { width:100%; }

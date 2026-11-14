@@ -6,7 +6,10 @@
     titulo: dados.titulo,
     narracao: dados.narracao,
     paginas: (dados.conteudo && dados.conteudo.paginas) || [],
+    // Personagens só desta história: [{nome, descricao}] (aparência fixa para os prompts de imagem).
+    secundarios: (dados.conteudo && dados.conteudo.secundarios) || [],
   };
+  const secundario = (nome) => estado.secundarios.find((x) => x.nome === nome);
   const personagens = dados.personagens || [];
   let sujo = false;
   // Visualização: "lista" (todas as páginas) ou "carrossel" (uma por vez). Lembrada no navegador.
@@ -241,13 +244,18 @@
       '- ' + (r.num ? 'Imagem ' + r.num + ': ' : '') + r.nome + (r.variante ? ' (' + r.variante + ')' : '') +
       (r.emprestada ? ' — use a imagem só para o rosto, cabelo e traços; a roupa e a aparência são as desta variante' : '') +
       (r.desc ? ' — ' + r.desc : '') + (r.num ? '' : ' (sem imagem de referência)'));
+    // Secundários (sem ficha): sempre a mesma descrição, para saírem iguais em todas as páginas.
+    for (const nome of pag.secundarios || []) {
+      const x = secundario(nome);
+      if (x) linhas.push('- ' + x.nome + (x.descricao ? ' — ' + x.descricao : ''));
+    }
     return [
       'Ilustração de livro infantil, página inteira, formato retrato 3:4.',
       'Estilo: ' + (estilo ? estilo + ', ' : '') + 'cores vivas, traço limpo e amigável, para crianças de ' + dados.faixa + ' anos.',
       '',
       'Cena: ' + (pag.cena || '(descreva a cena)'),
       '',
-      refs.length ? 'Personagens' + (refs.some((r) => r.num) ? ' (siga fielmente as imagens de referência anexadas, na ordem):' : ':') : null,
+      linhas.length ? 'Personagens' + (refs.some((r) => r.num) ? ' (siga fielmente as imagens de referência anexadas, na ordem; os sem imagem, pela descrição):' : ' (siga a descrição de cada um):') : null,
       ...linhas,
       '',
       'Não escreva nenhum texto, letra, número ou balão de fala na imagem.',
@@ -409,6 +417,17 @@
       el('strong', {}, '🖼️ Ilustração da página ' + (n + 1)),
       el('label', {}, 'Cena', cena),
       el('div', {}, el('small', { class: 'suave' }, 'Personagens na cena'), el('div', { class: 'chips' }, naCena, addSel)),
+      estado.secundarios.length ? el('div', {}, el('small', { class: 'suave' }, 'Secundários na cena'),
+        el('div', { class: 'chips' },
+          (pag.secundarios || []).map((nome, i) => el('span', { class: 'chip', title: (secundario(nome) || {}).descricao || '' }, '🎭 ' + nome,
+            el('button', { type: 'button', class: 'link', title: 'Tirar da cena', onclick: () => { pag.secundarios.splice(i, 1); mudou(); desenhar(); } }, '✕'))),
+          (() => {
+            const faltam = estado.secundarios.filter((x) => !(pag.secundarios || []).includes(x.nome));
+            return faltam.length ? el('select', { onchange: (e) => {
+              if (!e.target.value) return;
+              (pag.secundarios = pag.secundarios || []).push(e.target.value); mudou(); desenhar();
+            } }, el('option', { value: '' }, '+ secundário'), faltam.map((x) => el('option', { value: x.nome }, x.nome))) : null;
+          })())) : null,
       el('label', {}, 'Animação', anim),
       el('div', { class: 'linha-kit' },
         el('label', { class: 'check' },
@@ -473,6 +492,31 @@
       } }, rotulo));
   }
 
+  // Personagens só desta história (sem ficha): nome + aparência fixa, usada nos prompts de imagem.
+  function secundariosUI() {
+    const lista = estado.secundarios;
+    return el('details', { class: 'memoria', open: lista.some((x) => !x.descricao) },
+      el('summary', {}, '🎭 Personagens só desta história (' + lista.length + ')'),
+      el('p', { class: 'suave' }, 'A descrição vai igual no prompt de imagem de todas as páginas em que eles aparecem.'),
+      lista.map((x, i) => el('div', { class: 'secundario' },
+        el('input', { value: x.nome, placeholder: 'Nome (ex.: Pirata Caveira)', onchange: (e) => {
+          const antigo = x.nome; x.nome = e.target.value.trim() || antigo;
+          estado.paginas.forEach((p) => { p.secundarios = (p.secundarios || []).map((n) => (n === antigo ? x.nome : n)); });
+          mudou(); desenhar();
+        } }),
+        (() => { const t = el('textarea', { rows: 2, placeholder: 'Aparência: corpo, rosto, roupa, cores, acessórios…',
+          oninput: (e) => { x.descricao = e.target.value; mudou(); } }); t.value = x.descricao || ''; return t; })(),
+        el('button', { type: 'button', class: 'link perigo', onclick: () => {
+          if (!confirm('Tirar ' + x.nome + ' desta história? (as falas continuam)')) return;
+          lista.splice(i, 1);
+          estado.paginas.forEach((p) => { p.secundarios = (p.secundarios || []).filter((n) => n !== x.nome); });
+          mudou(); desenhar();
+        } }, 'remover'))),
+      el('button', { type: 'button', class: 'pequeno secundario', onclick: () => {
+        lista.push({ nome: 'Novo personagem ' + (lista.length + 1), descricao: '' }); mudou(); desenhar();
+      } }, '＋ Adicionar'));
+  }
+
   // Memória: resumo usado quando outra história cita esta com #.
   function memoriaUI() {
     const ta = el('textarea', { rows: 3, placeholder: 'Resumo com os fatos importantes (quem venceu, o que descobriram...). Usado quando outra história citar esta com #.' });
@@ -501,7 +545,7 @@
       const r = await fetch(location.pathname + '/conteudo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ titulo: estado.titulo, narracao: estado.narracao, conteudo: { paginas: estado.paginas } }),
+        body: JSON.stringify({ titulo: estado.titulo, narracao: estado.narracao, conteudo: { paginas: estado.paginas, secundarios: estado.secundarios } }),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.erro || 'erro ' + r.status);
@@ -575,6 +619,7 @@
       (dados.continua || []).length ? el('p', { class: 'suave' }, '📚 Continua de: ',
         dados.continua.map((c, i) => [i ? ', ' : '', el('a', { href: '/historias/' + c.id }, c.titulo)])) : null,
       memoriaUI(),
+      secundariosUI(),
       modo === 'carrossel' && estado.paginas.length
         ? (atual = Math.min(atual, estado.paginas.length - 1),
            [navCarrossel(), inserirPaginaUI(atual), paginaUI(estado.paginas[atual], atual), inserirPaginaUI(atual + 1), navCarrossel()])

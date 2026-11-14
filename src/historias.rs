@@ -30,6 +30,16 @@ const FAIXAS: [&str; 4] = ["2-3", "4-6", "7-9", "10-12"];
 pub struct Conteudo {
     #[serde(default)]
     pub paginas: Vec<Pagina>,
+    /// Personagens só desta história (sem ficha), com a aparência fixa usada nos prompts de imagem.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secundarios: Vec<Secundario>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct Secundario {
+    pub nome: String,
+    #[serde(default)]
+    pub descricao: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -38,6 +48,9 @@ pub struct Pagina {
     pub cena: String,
     #[serde(default)]
     pub personagens: Vec<NaCena>,
+    /// Nomes dos secundários (Conteudo.secundarios) que aparecem na ilustração desta página.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secundarios: Vec<String>,
     #[serde(default)]
     pub animacao: Option<String>,
     #[serde(default)]
@@ -223,16 +236,24 @@ fn schema_historia() -> Value {
     json!({
         "type": "object",
                     "additionalProperties": false,
-        "required": ["titulo", "faixa", "paginas"],
+        "required": ["titulo", "faixa", "secundarios", "paginas"],
         "properties": {
             "titulo": { "type": "string" },
+            "secundarios": {
+                "type": "array",
+                "description": "personagens sem ficha que aparecem nas ilustrações, com a aparência fixa",
+                "items": {
+                    "type": "object", "additionalProperties": false, "required": ["nome", "descricao"],
+                    "properties": { "nome": { "type": "string" }, "descricao": { "type": "string" } }
+                }
+            },
             "faixa": { "type": "string", "enum": FAIXAS, "description": "faixa etária escolhida para esta história" },
             "paginas": {
                 "type": "array",
                 "items": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["cena", "personagens", "animacao", "blocos"],
+                    "required": ["cena", "personagens", "secundarios", "animacao", "blocos"],
                     "properties": {
                         "cena": { "type": "string", "description": "Descrição visual da ilustração da página (para o gerador de imagem)" },
                         "personagens": {
@@ -244,6 +265,8 @@ fn schema_historia() -> Value {
                                 "properties": { "slug": { "type": "string" }, "variante": { "type": "string" } }
                             }
                         },
+                        "secundarios": { "type": "array", "items": { "type": "string" },
+                                         "description": "nomes dos secundários (da lista secundarios) que aparecem nesta ilustração" },
                         "animacao": { "type": "string", "enum": ANIMACOES },
                         "blocos": {
                             "type": "array",
@@ -394,6 +417,9 @@ fn montar_prompt(
          - Em cada página: \"cena\" descreve a ilustração (lugar, ação, expressões, enquadramento), sem texto escrito na imagem; \
            \"personagens\" lista quem aparece na ilustração com slug e variante (use a variante_a_usar, salvo se o briefing pedir outra; as variantes em tambem_citadas também foram pedidas: use cada uma nas páginas em que fizer sentido, por exemplo depois de uma transformação, e escreva a cena com a aparência da variante daquela página); \
            \"animacao\" é um efeito leve que combine com a cena, ou \"nenhuma\".\n\
+         - Personagens SECUNDÁRIOS (sem ficha) que aparecem nas ilustrações: descreva cada um uma vez em \"secundarios\" \
+           (nome + aparência FIXA e detalhada, como uma ficha para o ilustrador: espécie/idade, corpo, rosto, roupa, cores, acessórios), \
+           e em cada página liste em \"secundarios\" os nomes dos que aparecem na ilustração. A aparência não muda entre as páginas.\n\
          - Use SOMENTE os personagens abaixo (pelos slugs). {secundarios}\n\n\
          PERSONAGENS:\n{}\n\n\
          {vozes_sistema}\
@@ -406,7 +432,23 @@ fn montar_prompt(
 
 /// Ajusta a resposta da IA às regras do app (quem inválido vira narrador, modo narrador = 1 bloco).
 fn normalizar(mut c: Conteudo, narracao: &str, citados: &[NaCena], todos: &[PersonagemIA]) -> Conteudo {
+    for sec in &mut c.secundarios {
+        sec.nome = sec.nome.trim().to_string();
+        sec.descricao = sec.descricao.trim().to_string();
+    }
+    c.secundarios.retain(|s| !s.nome.is_empty());
+    let nomes: Vec<String> = c.secundarios.iter().map(|s| s.nome.clone()).collect();
     for p in &mut c.paginas {
+        // Só nomes da lista (com a grafia dela), sem repetir.
+        let mut na_cena: Vec<String> = Vec::new();
+        for n in &p.secundarios {
+            if let Some(x) = nomes.iter().find(|x| x.to_lowercase() == n.trim().to_lowercase()) {
+                if !na_cena.contains(x) {
+                    na_cena.push(x.clone());
+                }
+            }
+        }
+        p.secundarios = na_cena;
         p.personagens.retain(|n| citados.iter().any(|c| c.slug == n.slug));
         for n in &mut p.personagens {
             if n.variante.as_deref().is_some_and(|v| v.trim().is_empty()) {
@@ -535,7 +577,7 @@ pub async fn executar_geracao(st: &AppState, payload: &Value) -> anyhow::Result<
     let resposta = ia::gerar_texto(st, h.familia_id, &pedido).await?;
     let titulo = resposta["titulo"].as_str().unwrap_or("Nova história").trim().to_string();
     let faixa = resposta["faixa"].as_str().filter(|f| FAIXAS.contains(f)).unwrap_or(&h.faixa).to_string();
-    let conteudo: Conteudo = serde_json::from_value(json!({ "paginas": resposta["paginas"] }))?;
+    let conteudo: Conteudo = serde_json::from_value(json!({ "paginas": resposta["paginas"], "secundarios": resposta["secundarios"] }))?;
     let conteudo = normalizar(conteudo, &h.narracao, &citados, &todos);
     if conteudo.paginas.is_empty() {
         anyhow::bail!("a IA devolveu uma história vazia");
