@@ -95,6 +95,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/personagens", get(personagens::lista).post(personagens::criar))
         .route("/personagens/ia", post(personagens::criar_com_ia))
         .route("/personagens/descrever-foto", post(personagens::descrever_foto))
+        .route("/personagens/de-secundario", post(historias::salvar_secundario))
         .route("/personagens/{slug}", get(personagens::detalhe).post(personagens::salvar_ficha))
         .route("/personagens/{slug}/variantes", post(personagens::criar_variante))
         .route("/personagens/{slug}/variantes/{vslug}/atual", post(personagens::marcar_atual))

@@ -924,6 +924,7 @@ pub async fn abrir(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) 
         "id": h.id, "titulo": h.titulo, "faixa": h.faixa, "narracao": h.narracao,
         "briefing": h.briefing, "conteudo": h.conteudo,
         "personagens": personagens,
+        "tipos": crate::personagens::TIPOS.iter().map(|(k, n)| json!({ "id": k, "nome": n })).collect::<Vec<_>>(),
         "vozes_sistema": crate::tts::VOZES.iter().map(|(id, n)| json!({ "id": id, "nome": n })).collect::<Vec<_>>(),
         "animacoes": ANIMACOES, "estilo": h.estilo,
         "memoria": h.memoria, "continua": h.continua,
@@ -1084,6 +1085,63 @@ pub async fn enviar_midia(State(st): State<AppState>, s: Sessao, Path(id): Path<
     match midia::salvar(&st, s.familia_id, &pasta, &bytes, mime, ext).await {
         Ok(mid) => Json(json!({ "id": mid, "tipo": mime })).into_response(),
         Err(e) => erro_interno(e),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct PedidoSecundario {
+    nome: String,
+    tipo: String,
+    #[serde(default)]
+    descricao: String,
+    /// Voz usada nas falas dele na história (vira a voz padrão do personagem).
+    #[serde(default)]
+    voz: Option<crate::tts::Voz>,
+}
+
+/// POST /personagens/de-secundario: transforma um personagem só da história em personagem da família
+/// (ficha com a aparência, variante "Principal" e voz). Devolve o personagem no formato do editor.
+pub async fn salvar_secundario(State(st): State<AppState>, s: Sessao, Json(p): Json<PedidoSecundario>) -> Response {
+    let erro = |m: &str| (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "erro": m }))).into_response();
+    let nome = p.nome.trim().to_string();
+    let slug = util::slug(&nome);
+    if slug.is_empty() || !crate::personagens::TIPOS.iter().any(|(k, _)| *k == p.tipo) {
+        return erro("Dê um nome e escolha o tipo.");
+    }
+    let descricao = p.descricao.trim().to_string();
+    let voz = p.voz.map(|v| json!(v.validada())).unwrap_or(json!({}));
+    let r = async {
+        let mut tx = st.db.begin().await?;
+        let pid: Uuid = sqlx::query_scalar(
+            "INSERT INTO conteudo.personagens (familia_id, slug, nome, tipo, ficha, voz_padrao) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+        )
+        .bind(s.familia_id)
+        .bind(&slug)
+        .bind(&nome)
+        .bind(&p.tipo)
+        .bind(json!({ "apelidos": [], "aparencia": descricao }))
+        .bind(&voz)
+        .fetch_one(&mut *tx)
+        .await?;
+        let vid: Uuid = sqlx::query_scalar(
+            "INSERT INTO conteudo.variantes (personagem_id, slug, nome, forma, descricao) VALUES ($1, 'principal', 'Principal', 'normal', $2) RETURNING id",
+        )
+        .bind(pid)
+        .bind(Some(descricao.as_str()).filter(|d| !d.is_empty()))
+        .fetch_one(&mut *tx)
+        .await?;
+        sqlx::query("UPDATE conteudo.personagens SET variante_atual = $2 WHERE id = $1").bind(pid).bind(vid).execute(&mut *tx).await?;
+        tx.commit().await
+    }
+    .await;
+    match r {
+        Ok(()) => {}
+        Err(sqlx::Error::Database(e)) if e.is_unique_violation() => return erro(&format!("Já existe um personagem chamado {nome}.")),
+        Err(e) => return erro_interno(e.into()),
+    }
+    match personagens_da_familia(&st, s.familia_id).await {
+        Ok(todos) => Json(json!({ "personagem": todos.into_iter().find(|x| x.slug == slug) })).into_response(),
+        Err(e) => erro_interno(e.into()),
     }
 }
 

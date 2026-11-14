@@ -492,13 +492,53 @@
       } }, rotulo));
   }
 
+  // "Salvar como personagem": o secundário vira personagem da família (ficha, variante e a voz usada aqui),
+  // e a história passa a usar o personagem novo nas falas e nas cenas.
+  function salvarComoPersonagem(x) {
+    const tipos = dados.tipos || [];
+    const sel = el('select', { title: 'Tipo do personagem' }, tipos.map((t) => el('option', { value: t.id, selected: t.id === 'adulto' }, t.nome)));
+    const botao = el('button', { type: 'button', class: 'pequeno', onclick: async () => {
+      // Voz: a da primeira fala dele com voz do sistema.
+      let voz = null;
+      for (const p of estado.paginas) for (const b of p.blocos) {
+        if (!voz && b.quem.startsWith('voz:') && b.nome === x.nome) voz = { motor: 'edge', id: b.quem.slice(4), tom: b.tom || 0, velocidade: b.velocidade || 0 };
+      }
+      botao.disabled = true; botao.textContent = '⏳ Salvando…';
+      try {
+        const r = await fetch('/personagens/de-secundario', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nome: x.nome, tipo: sel.value, descricao: x.descricao || '', voz }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || !j.personagem) throw new Error(j.erro || 'erro ' + r.status);
+        const novo = j.personagem;
+        personagens.push(novo);
+        // Falas e cenas passam a apontar para o personagem novo.
+        for (const p of estado.paginas) {
+          for (const b of p.blocos) {
+            if (b.quem.startsWith('voz:') && b.nome === x.nome) { b.quem = novo.slug; delete b.nome; delete b.tom; delete b.velocidade; }
+          }
+          if ((p.secundarios || []).includes(x.nome)) {
+            p.secundarios = p.secundarios.filter((n) => n !== x.nome);
+            (p.personagens = p.personagens || []).push({ slug: novo.slug, variante: null });
+          }
+        }
+        estado.secundarios.splice(estado.secundarios.indexOf(x), 1);
+        mudou(); desenhar(); await salvar();
+        aviso(novo.nome + ' agora é personagem da família ✓');
+      } catch (e) {
+        aviso('Não salvou: ' + e.message);
+        botao.disabled = false; botao.textContent = '💾 Salvar como personagem';
+      }
+    } }, '💾 Salvar como personagem');
+    return el('div', { class: 'linha' }, sel, botao);
+  }
+
   // Personagens só desta história (sem ficha): nome + aparência fixa, usada nos prompts de imagem.
   function secundariosUI() {
     const lista = estado.secundarios;
     return el('details', { class: 'memoria', open: lista.some((x) => !x.descricao) },
       el('summary', {}, '🎭 Personagens só desta história (' + lista.length + ')'),
       el('p', { class: 'suave' }, 'A descrição vai igual no prompt de imagem de todas as páginas em que eles aparecem.'),
-      lista.map((x, i) => el('div', { class: 'secundario' },
+      lista.map((x, i) => el('div', { class: 'sec-item' },
         el('input', { value: x.nome, placeholder: 'Nome (ex.: Pirata Caveira)', onchange: (e) => {
           const antigo = x.nome; x.nome = e.target.value.trim() || antigo;
           estado.paginas.forEach((p) => { p.secundarios = (p.secundarios || []).map((n) => (n === antigo ? x.nome : n)); });
@@ -506,6 +546,7 @@
         } }),
         (() => { const t = el('textarea', { rows: 2, placeholder: 'Aparência: corpo, rosto, roupa, cores, acessórios…',
           oninput: (e) => { x.descricao = e.target.value; mudou(); } }); t.value = x.descricao || ''; return t; })(),
+        salvarComoPersonagem(x),
         el('button', { type: 'button', class: 'link perigo', onclick: () => {
           if (!confirm('Tirar ' + x.nome + ' desta história? (as falas continuam)')) return;
           lista.splice(i, 1);
