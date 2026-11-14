@@ -12,7 +12,7 @@ use uuid::Uuid;
 use crate::{midia, AppState};
 
 /// Vozes disponíveis (edge-tts). As "Multilingual" também falam português.
-pub const VOZES: [(&str, &str); 14] = [
+pub const VOZES: [(&str, &str); 21] = [
     ("pt-BR-FranciscaNeural", "Francisca · mulher (BR)"),
     ("pt-BR-AntonioNeural", "Antonio · homem (BR)"),
     ("pt-BR-ThalitaMultilingualNeural", "Thalita · mulher jovem (BR)"),
@@ -27,6 +27,13 @@ pub const VOZES: [(&str, &str); 14] = [
     ("ko-KR-HyunsuMultilingualNeural", "Hyunsu · homem jovem, sotaque leve"),
     ("en-US-AnaNeural", "Ana · menina (só inglês)"),
     ("en-GB-MaisieNeural", "Maisie · menina (só inglês britânico)"),
+    ("en-US-GuyNeural", "Guy · homem, animado (só inglês)"),
+    ("en-US-RogerNeural", "Roger · homem, alegre (só inglês)"),
+    ("en-US-ChristopherNeural", "Christopher · homem, voz de narrador (só inglês)"),
+    ("en-US-EricNeural", "Eric · homem, calmo (só inglês)"),
+    ("en-US-SteffanNeural", "Steffan · homem, sereno (só inglês)"),
+    ("en-GB-RyanNeural", "Ryan · homem (só inglês britânico)"),
+    ("en-GB-ThomasNeural", "Thomas · homem (só inglês britânico)"),
 ];
 
 /// Línguas oferecidas para as vozes extras de um personagem (nome, frase de teste).
