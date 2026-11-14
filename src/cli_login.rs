@@ -389,3 +389,41 @@ pub async fn situacao() -> Vec<(String, String)> {
     };
     vec![("claude".into(), claude.into()), ("codex".into(), codex.into()), ("agy".into(), agy.into())]
 }
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+
+    #[test]
+    fn esconde_tokens_do_claude() {
+        assert_eq!(mascarar("token: sk-ant-oat01-abcdef123 salvo"), "token: sk-ant-•••• salvo");
+        assert_eq!(mascarar("nada aqui"), "nada aqui");
+        assert_eq!(mascarar("sk-ant-a e sk-ant-b"), "sk-ant-•••• e sk-ant-••••");
+    }
+
+    #[test]
+    fn limpa_escapes_do_terminal() {
+        assert_eq!(limpar("\u{1b}[1;32mPronto\u{1b}[0m\r\n"), "Pronto\n");
+        // Link OSC 8: o endereço fica no texto.
+        let t = limpar("\u{1b}]8;;https://claude.ai/oauth\u{7}abrir\u{1b}]8;;\u{7}");
+        assert!(t.contains("https://claude.ai/oauth"));
+    }
+
+    #[test]
+    fn acha_link_e_codigo_de_dispositivo() {
+        let t = "Abra https://auth.openai.com/codex/device; e digite ABCD-1234 para entrar";
+        assert_eq!(achar_url(t, &["https://auth.openai.com"]).as_deref(), Some("https://auth.openai.com/codex/device"));
+        assert_eq!(achar_url(t, &["https://outro"]), None);
+        assert_eq!(achar_codigo_device(t).as_deref(), Some("ABCD-1234"));
+        assert_eq!(achar_codigo_device("sem-codigo aqui ab-12"), None);
+    }
+
+    #[test]
+    fn acha_token_mesmo_quebrado_e_grudado() {
+        let token = format!("sk-ant-oat01-{}", "A".repeat(60));
+        // Quebra de linha no meio e texto grudado no fim.
+        let t = format!("Your token:\n{}\n{}Store this token safely", &token[..30], &token[30..]);
+        assert_eq!(achar_token_claude(&t).as_deref(), Some(token.as_str()));
+        assert_eq!(achar_token_claude("sk-ant-oat01-curto"), None);
+    }
+}

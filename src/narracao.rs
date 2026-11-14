@@ -18,8 +18,8 @@ use crate::{
     web::erro_interno,
     AppState,
 };
-
 use crate::web::erro_json as erro;
+
 
 fn audio_json(a: &tts::Audio) -> Value {
     json!({ "audio": format!("/midia/{}", a.arquivo), "duracao": a.duracao, "palavras": a.palavras })

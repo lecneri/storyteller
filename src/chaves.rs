@@ -12,6 +12,7 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::{auth::Sessao, segredos, AppState};
+use crate::web::erro_json as erro;
 
 #[derive(Serialize)]
 pub struct LinhaChave {
@@ -65,7 +66,38 @@ async fn chave(st: &AppState, familia: Option<Uuid>, provedor: &str) -> Option<(
     segredos::decifrar(&c).ok().map(|k| (k, m))
 }
 
-use crate::web::erro_json as erro;
+
+/// Separa a lista de modelos do provedor em (texto, imagem), tirando os que não servem
+/// (embeddings, áudio, tts, busca...). Cada provedor devolve a lista num formato.
+fn separar_modelos(provedor: &str, j: &Value) -> (Vec<String>, Vec<String>) {
+    let mut texto: Vec<String> = Vec::new();
+    let mut imagem: Vec<String> = Vec::new();
+    if provedor == "gemini" {
+        for m in j["models"].as_array().into_iter().flatten() {
+            let nome = m["name"].as_str().unwrap_or_default().trim_start_matches("models/").to_string();
+            let gera = m["supportedGenerationMethods"].as_array().is_some_and(|a| a.iter().any(|x| x == "generateContent"));
+            if !gera || ["embedding", "tts", "aqa"].iter().any(|x| nome.contains(x)) {
+                continue;
+            }
+            if nome.contains("image") { imagem.push(nome) } else { texto.push(nome) }
+        }
+    } else {
+        const FORA: [&str; 6] = ["audio", "realtime", "transcribe", "tts", "embedding", "search"];
+        for m in j["data"].as_array().into_iter().flatten() {
+            let id = m["id"].as_str().unwrap_or_default().to_string();
+            match provedor {
+                "openai" if id.starts_with("gpt-image") || id.starts_with("dall-e") => imagem.push(id),
+                "openai" if (id.starts_with("gpt-") || id.starts_with('o')) && !FORA.iter().any(|x| id.contains(x)) => texto.push(id),
+                "openai" => {}
+                _ => texto.push(id),
+            }
+        }
+    }
+    texto.sort();
+    texto.dedup();
+    imagem.sort();
+    (texto, imagem)
+}
 
 /// POST /chaves/{escopo}/{provedor}/modelos: lista os modelos que a chave enxerga.
 pub async fn modelos(State(st): State<AppState>, s: Sessao, Path((esc, provedor)): Path<(String, String)>) -> Response {
@@ -88,37 +120,7 @@ pub async fn modelos(State(st): State<AppState>, s: Sessao, Path((esc, provedor)
     if !status.is_success() {
         return erro(format!("{status}: {}", j["error"]["message"].as_str().unwrap_or("a chave foi recusada")));
     }
-    // Separa modelos de texto e de imagem (pelos nomes/métodos de cada provedor).
-    let mut texto: Vec<String> = Vec::new();
-    let mut imagem: Vec<String> = Vec::new();
-    if provedor == "gemini" {
-        for m in j["models"].as_array().into_iter().flatten() {
-            let nome = m["name"].as_str().unwrap_or_default().trim_start_matches("models/").to_string();
-            let gera = m["supportedGenerationMethods"].as_array().is_some_and(|a| a.iter().any(|x| x == "generateContent"));
-            if !gera || nome.contains("embedding") || nome.contains("tts") || nome.contains("aqa") {
-                continue;
-            }
-            if nome.contains("image") { imagem.push(nome) } else { texto.push(nome) }
-        }
-    } else {
-        for m in j["data"].as_array().into_iter().flatten() {
-            let id = m["id"].as_str().unwrap_or_default().to_string();
-            if provedor == "openai" {
-                if id.starts_with("gpt-image") || id.starts_with("dall-e") {
-                    imagem.push(id);
-                } else if (id.starts_with("gpt-") || id.starts_with('o')) && !id.contains("audio") && !id.contains("realtime")
-                    && !id.contains("transcribe") && !id.contains("tts") && !id.contains("embedding") && !id.contains("search")
-                {
-                    texto.push(id);
-                }
-            } else {
-                texto.push(id);
-            }
-        }
-    }
-    texto.sort();
-    texto.dedup();
-    imagem.sort();
+    let (texto, imagem) = separar_modelos(&provedor, &j);
     Json(json!({ "texto": texto, "imagem": imagem })).into_response()
 }
 
@@ -168,5 +170,40 @@ pub async fn testar(State(st): State<AppState>, s: Sessao, Path((esc, provedor))
     match crate::ia::por_api(&provedor, &k, modelo.as_deref(), &pedido).await {
         Ok(v) => Json(json!({ "ok": true, "resposta": v["resposta"] })).into_response(),
         Err(e) => Json(json!({ "ok": false, "erro": format!("{e:#}") })).into_response(),
+    }
+}
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+
+    #[test]
+    fn separa_modelos_da_openai() {
+        let j = json!({ "data": [
+            { "id": "gpt-5" }, { "id": "gpt-image-1" }, { "id": "dall-e-3" }, { "id": "o4-mini" },
+            { "id": "gpt-4o-audio-preview" }, { "id": "text-embedding-3" }, { "id": "whisper-1" }, { "id": "gpt-5" }
+        ]});
+        let (t, i) = separar_modelos("openai", &j);
+        assert_eq!(t, vec!["gpt-5", "o4-mini"]);
+        assert_eq!(i, vec!["dall-e-3", "gpt-image-1"]);
+    }
+
+    #[test]
+    fn separa_modelos_do_gemini() {
+        let j = json!({ "models": [
+            { "name": "models/gemini-2.5-flash", "supportedGenerationMethods": ["generateContent"] },
+            { "name": "models/gemini-2.5-flash-image", "supportedGenerationMethods": ["generateContent"] },
+            { "name": "models/text-embedding-004", "supportedGenerationMethods": ["embedContent"] },
+            { "name": "models/gemini-2.5-flash-preview-tts", "supportedGenerationMethods": ["generateContent"] }
+        ]});
+        let (t, i) = separar_modelos("gemini", &j);
+        assert_eq!(t, vec!["gemini-2.5-flash"]);
+        assert_eq!(i, vec!["gemini-2.5-flash-image"]);
+    }
+
+    #[test]
+    fn outros_provedores_vao_todos_para_texto() {
+        let (t, i) = separar_modelos("kimi", &json!({ "data": [{ "id": "kimi-k2" }, { "id": "moonshot-v1" }] }));
+        assert_eq!((t.len(), i.len()), (2, 0));
     }
 }

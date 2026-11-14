@@ -112,3 +112,35 @@ pub fn foto_para_ia(bytes: &[u8]) -> Option<(String, Vec<u8>)> {
     img.to_rgb8().write_to(&mut saida, image::ImageFormat::Jpeg).ok()?;
     Some(("image/jpeg".to_string(), saida.into_inner()))
 }
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+
+    #[test]
+    fn reconhece_tipo_pelo_conteudo() {
+        assert_eq!(tipo_imagem(b"\x89PNG\r\n\x1a\n...").map(|t| t.0), Some("image/png"));
+        assert_eq!(tipo_imagem(b"\xFF\xD8\xFF\xE0").map(|t| t.0), Some("image/jpeg"));
+        assert_eq!(tipo_imagem(b"GIF89a").map(|t| t.0), Some("image/gif"));
+        assert_eq!(tipo_imagem(b"RIFF\0\0\0\0WEBPVP8").map(|t| t.0), Some("image/webp"));
+        assert_eq!(tipo_midia(b"\0\0\0\x18ftypmp42").map(|t| t.0), Some("video/mp4"));
+        assert_eq!(tipo_midia(b"\0\0\0\x14ftypqt  ").map(|t| t.0), Some("video/quicktime"));
+        assert_eq!(tipo_midia(b"\x1A\x45\xDF\xA3").map(|t| t.0), Some("video/webm"));
+        // Vídeo não é imagem; texto não é nada.
+        assert!(tipo_imagem(b"\0\0\0\x18ftypmp42").is_none());
+        assert!(tipo_midia(b"<html>").is_none());
+    }
+
+    #[test]
+    fn foto_para_ia_reduz_e_vira_jpeg() {
+        let grande = image::RgbImage::from_pixel(3000, 2000, image::Rgb([200, 100, 50]));
+        let mut png = std::io::Cursor::new(Vec::new());
+        grande.write_to(&mut png, image::ImageFormat::Png).unwrap();
+        let (mime, bytes) = foto_para_ia(png.get_ref()).unwrap();
+        assert_eq!(mime, "image/jpeg");
+        let lida = image::load_from_memory(&bytes).unwrap();
+        assert_eq!((lida.width(), lida.height()), (1568, 1045));
+        // Não é imagem: recusa.
+        assert!(foto_para_ia(b"nada").is_none());
+    }
+}

@@ -349,5 +349,56 @@ mod testes {
         assert_ne!(hash(&narrador_padrao(), "oi"), hash(&narrador_padrao(), "olá"));
         assert_eq!(separar("pedro+ingles"), ("pedro", Some("ingles")));
         assert_eq!(separar("pedro"), ("pedro", None));
+        assert_eq!(separar("pedro+"), ("pedro", None));
+    }
+
+    #[test]
+    fn voz_do_sistema_com_ajustes() {
+        let v = voz_direta("voz:en-US-GuyNeural|-30|10").unwrap();
+        assert_eq!((v.id.as_str(), v.tom, v.velocidade), ("en-US-GuyNeural", -30, 10));
+        // Ajustes fora do limite são cortados; sem ajustes = 0.
+        let v = voz_direta("voz:en-US-GuyNeural|-999|999").unwrap();
+        assert_eq!((v.tom, v.velocidade), (-60, 40));
+        assert_eq!(voz_direta("voz:en-US-GuyNeural").unwrap().tom, 0);
+        assert!(voz_direta("voz:inventada").is_none());
+        assert!(voz_direta("pedro").is_none());
+        assert_eq!(nome_voz("en-US-GuyNeural"), "Guy");
+    }
+
+    #[test]
+    fn vozes_genericas_dos_links_publicos() {
+        assert_eq!(voz_generica("narrador", "narrador"), narrador_padrao());
+        assert_eq!(voz_generica("pedro", "crianca"), voz_por_tipo("crianca"));
+        assert_eq!(voz_generica("pedro", ""), narrador_padrao());
+        assert_eq!(voz_generica("voz:en-US-GuyNeural", "").id, "en-US-GuyNeural");
+        // Voz extra (outra língua) precisa ser multilíngue.
+        for tipo in ["crianca", "animal", "vilao", "robo", "criatura", "adulto"] {
+            assert!(voz_generica("pedro+ingles", tipo).id.contains("Multilingual"), "{tipo}");
+        }
+    }
+
+    #[test]
+    fn vozes_da_familia_resolvem_extras_e_sistema() {
+        let v = VozesFamilia {
+            narrador: narrador_padrao(),
+            personagens: vec![("pedro".into(), Voz::nova("en-US-AndrewMultilingualNeural", 25, 5))],
+            extras: vec![("pedro+ingles".into(), Voz::nova("en-US-AnaNeural", 0, 0))],
+        };
+        assert_eq!(v.de("narrador"), narrador_padrao());
+        assert_eq!(v.de("pedro").id, "en-US-AndrewMultilingualNeural");
+        assert_eq!(v.de("pedro+ingles").id, "en-US-AnaNeural");
+        // Voz extra que não existe mais: volta para a voz do personagem.
+        assert_eq!(v.de("pedro+frances").id, "en-US-AndrewMultilingualNeural");
+        assert_eq!(v.de("voz:en-US-GuyNeural").id, "en-US-GuyNeural");
+        assert_eq!(v.de("desconhecido"), narrador_padrao());
+    }
+
+    #[test]
+    fn todas_as_vozes_da_lista_sao_validas() {
+        for (id, nome) in VOZES {
+            assert_eq!(Voz::nova(id, 0, 0).validada().id, id);
+            assert!(!nome.is_empty());
+        }
+        assert!(LINGUAS.iter().any(|(n, _)| *n == "Inglês"));
     }
 }
