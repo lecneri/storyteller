@@ -26,6 +26,22 @@ pub struct Estado {
     pub mensagem: String,
     /// O CLI espera um código colado de volta (claude e agy).
     pub pede_codigo: bool,
+    /// Últimas linhas que o CLI mostrou (tokens escondidos), para entender quando algo não anda.
+    pub detalhes: String,
+}
+
+/// Esconde tokens e chaves no texto mostrado na tela.
+fn mascarar(t: &str) -> String {
+    let mut out = String::new();
+    let mut resto = t;
+    while let Some(i) = resto.find("sk-ant-") {
+        out.push_str(&resto[..i]);
+        out.push_str("sk-ant-••••");
+        let fim = resto[i..].find(|c: char| c.is_whitespace()).map(|f| i + f).unwrap_or(resto.len());
+        resto = &resto[fim..];
+    }
+    out.push_str(resto);
+    out
 }
 
 struct Sessao {
@@ -208,6 +224,9 @@ pub async fn iniciar(st: &AppState, nome: &str) -> anyhow::Result<Estado> {
                     let mut s = s_t.lock().await;
                     s.saida.push_str(&limpar(&String::from_utf8_lossy(&buf[..n])));
                     let texto = s.saida.clone();
+                    let linhas: Vec<&str> = texto.lines().map(str::trim).filter(|l| l.len() > 2).collect();
+                    let ultimas = linhas[linhas.len().saturating_sub(12)..].join("\n");
+                    s.estado.detalhes = mascarar(&ultimas).chars().rev().take(1500).collect::<Vec<_>>().into_iter().rev().collect();
                     if s.estado.url.is_none() {
                         s.estado.url = achar_url(&texto, &[
                             "https://claude.com/cai/oauth/", "https://claude.ai/oauth/", "https://auth.openai.com/",
@@ -320,7 +339,14 @@ pub async fn enviar_codigo(nome: &str, codigo: &str) -> anyhow::Result<Estado> {
     {
         let mut g = s.lock().await;
         let stdin = g.stdin.as_mut().ok_or_else(|| anyhow::anyhow!("o login já terminou; comece de novo"))?;
-        stdin.write_all(format!("{}\r", codigo.trim()).as_bytes()).await?;
+        // O código longo chega como "colagem" no CLI: o Enter precisa ir separado, depois.
+        let codigo = codigo.trim();
+        if !codigo.is_empty() {
+            stdin.write_all(codigo.as_bytes()).await?;
+            stdin.flush().await?;
+            tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+        }
+        stdin.write_all(b"\r").await?;
         stdin.flush().await?;
         g.estado.mensagem = "Código enviado, verificando…".into();
     }

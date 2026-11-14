@@ -31,7 +31,9 @@
     const campo = el('input', { placeholder: 'cole o código aqui', style: 'flex:1', autocomplete: 'off' });
     const enviar = el('button', { type: 'button', class: 'pequeno' }, 'Enviar código');
     const linhaCodigo = el('div', { class: 'linha' }, campo, enviar);
-    fluxo.replaceChildren(msg, passo1, passo2, linhaCodigo);
+    const detalhesTxt = el('pre', { class: 'cli-detalhes' });
+    const detalhes = el('details', {}, el('summary', { class: 'suave' }, 'ver detalhes (o que o CLI mostrou)'), detalhesTxt);
+    fluxo.replaceChildren(msg, passo1, passo2, linhaCodigo, detalhes);
     let ultimaUrl = null;
 
     enviar.addEventListener('click', async () => {
@@ -59,6 +61,7 @@
       passo2.hidden = !(ativo && e.codigo);
       if (ativo && e.codigo) passo2.replaceChildren('2. Digite este código lá: ', el('code', { class: 'codigo-grande' }, e.codigo));
       linhaCodigo.hidden = !(ativo && e.pede_codigo);
+      detalhesTxt.textContent = e.detalhes || '(nada ainda)';
       clearTimeout(timer);
       if (e.fase === 'aguardando' || e.fase === 'iniciando') {
         timer = setTimeout(async () => mostrar(await (await fetch('/sistema/cli/' + nome + '/estado')).json()), 3000);
