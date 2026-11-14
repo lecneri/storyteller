@@ -177,3 +177,9 @@ body.crianca { background:linear-gradient(180deg,#ffe9c7,#fff8ef 40%); min-heigh
 .tira.ativa { border-color:var(--pg); box-shadow:0 0 0 2px var(--cartao), 0 0 0 4px var(--pg); }
 .carrossel-nav button:disabled { opacity:.35; cursor:default; }
 .foto-kit { display:grid; gap:4px; justify-items:center; max-width:160px; text-align:center; }
+.envio { display:grid; gap:6px; justify-items:end; }
+.envio .zona-envio { width:100%; cursor:text; }
+.zona-envio .zona-pronta { display:none; }
+.zona-envio:focus { outline:none; border-style:solid; background:color-mix(in srgb, var(--cartao) 80%, var(--cor)); }
+.zona-envio:focus .zona-normal { display:none; }
+.zona-envio:focus .zona-pronta { display:inline; font-weight:700; }

@@ -242,17 +242,21 @@
     v.muted = true;
     return v;
   }
+  // Área de envio: tocar só seleciona (para colar com Ctrl+V) — não abre a janela de arquivos.
+  // Para procurar no computador, há o botão "Escolher arquivo" separado.
   function areaEnvio(pag) {
     const input = el('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime', hidden: true,
       onchange: (e) => e.target.files[0] && enviarArquivo(pag, e.target.files[0]) });
-    const zona = el('div', { class: 'zona-envio', tabindex: 0,
-      onclick: () => input.click(),
+    const zona = el('div', { class: 'zona-envio', tabindex: 0, title: 'Clique aqui e cole com Ctrl+V',
+      onclick: () => zona.focus(),
       ondragover: (e) => { e.preventDefault(); zona.classList.add('arrastando'); },
       ondragleave: () => zona.classList.remove('arrastando'),
       ondrop: (e) => { e.preventDefault(); zona.classList.remove('arrastando'); const f = e.dataTransfer.files[0]; if (f) enviarArquivo(pag, f); },
-      onpaste: (e) => { const f = [...(e.clipboardData || {}).files || []][0]; if (f) { e.preventDefault(); enviarArquivo(pag, f); } } },
-      pag.midia ? '⬆ Trocar: arraste, cole (Ctrl+V) ou clique' : '⬆ Arraste aqui, cole (Ctrl+V) ou clique para enviar a imagem, GIF ou vídeo', input);
-    return zona;
+      onpaste: (e) => { const f = [...(e.clipboardData || {}).files || []][0]; if (f) { e.preventDefault(); enviarArquivo(pag, f); } else aviso('Não há imagem copiada para colar.'); } },
+      el('span', { class: 'zona-normal' }, pag.midia ? '📋 Trocar: clique aqui e cole (Ctrl+V) ou arraste' : '📋 Clique aqui e cole (Ctrl+V) ou arraste a imagem, GIF ou vídeo'),
+      el('span', { class: 'zona-pronta' }, '✅ Pronto! Agora aperte Ctrl+V'));
+    return el('div', { class: 'envio' }, zona,
+      el('button', { type: 'button', class: 'pequeno secundario', onclick: () => input.click() }, '📁 Escolher arquivo'), input);
   }
 
   function ouvirSom(pag) {
