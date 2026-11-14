@@ -9,6 +9,12 @@
   };
   const personagens = dados.personagens || [];
   let sujo = false;
+  // Visualização: "lista" (todas as páginas) ou "carrossel" (uma por vez). Lembrada no navegador.
+  let modo = 'lista';
+  try { modo = localStorage.getItem('editor-modo') || 'lista'; } catch (_) { /* sem storage */ }
+  let atual = 0;
+  const NCORES = 5;
+  const cor = (n) => 'cor-' + (n % NCORES);
 
   const el = (tag, attrs = {}, ...filhos) => {
     const e = document.createElement(tag);
@@ -83,6 +89,7 @@
     const j = i + d;
     if (j < 0 || j >= lista.length) return;
     [lista[i], lista[j]] = [lista[j], lista[i]];
+    if (lista === estado.paginas && atual === i) atual = j;
     mudou(); desenhar();
   }
 
@@ -243,7 +250,7 @@
     window.Efeitos.aplicar(palco, nome);
   }
 
-  function lateralUI(pag) {
+  function lateralUI(pag, n) {
     const cena = el('textarea', { rows: 3, placeholder: 'O que aparece na ilustração desta página…',
       oninput: (e) => { pag.cena = e.target.value; mudou(); } });
     cena.value = pag.cena || '';
@@ -308,7 +315,7 @@
         el('button', { type: 'button', class: 'pequeno secundario', onclick: () => copiarTexto(promptAnimacao(pag)) }, '📋 Prompt de animação')) : null);
 
     return el('aside', { class: 'lateral' },
-      el('strong', {}, '🖼️ Ilustração'),
+      el('strong', {}, '🖼️ Ilustração da página ' + (n + 1)),
       el('label', {}, 'Cena', cena),
       el('div', {}, el('small', { class: 'suave' }, 'Personagens na cena'), el('div', { class: 'chips' }, naCena, addSel)),
       el('label', {}, 'Animação', anim),
@@ -327,18 +334,34 @@
     const add = (quem) => { pag.blocos.push({ quem, texto: '' }); mudou(); desenhar(); };
     // Um botão só: o bloco nasce como narrador e o seletor do bloco troca para um personagem.
     const botoes = [el('button', { type: 'button', class: 'secundario pequeno', onclick: () => add('narrador') }, '+ Texto')];
-    return el('section', { class: 'pagina' },
+    return el('section', { class: 'pagina ' + cor(n), id: 'pagina-' + (n + 1) },
       el('div', {},
-        el('h3', {}, '📄 Página ' + (n + 1),
+        el('h3', {}, el('span', { class: 'num-pagina' }, '📄 Página ' + (n + 1)),
           el('span', { class: 'acoes' },
             el('button', { type: 'button', class: 'link', onclick: () => mover(estado.paginas, n, -1) }, '↑'),
             el('button', { type: 'button', class: 'link', onclick: () => mover(estado.paginas, n, 1) }, '↓'),
             el('button', { type: 'button', class: 'link', onclick: () => {
-              if (confirm('Apagar a página ' + (n + 1) + '?')) { estado.paginas.splice(n, 1); mudou(); desenhar(); }
+              if (confirm('Apagar a página ' + (n + 1) + '?')) {
+                estado.paginas.splice(n, 1); atual = Math.max(0, Math.min(atual, estado.paginas.length - 1)); mudou(); desenhar();
+              }
             } }, 'apagar'))),
         pag.blocos.map((_, i) => blocoUI(pag, i)),
         el('div', { class: 'linha' }, botoes)),
-      lateralUI(pag));
+      lateralUI(pag, n));
+  }
+
+  // Carrossel: uma página por vez, com ◀ ▶ e miniaturas para pular.
+  function navCarrossel() {
+    const total = estado.paginas.length;
+    const ir = (i) => { atual = Math.max(0, Math.min(total - 1, i)); desenhar(); window.scrollTo({ top: raiz.offsetTop, behavior: 'smooth' }); };
+    const tiras = estado.paginas.map((p, i) => el('button', { type: 'button', title: 'Página ' + (i + 1),
+      class: 'tira ' + cor(i) + (i === atual ? ' ativa' : ''), onclick: () => ir(i) },
+      p.midia && p.midia.tipo.startsWith('image/') ? el('img', { src: '/midia/' + p.midia.id, alt: '' }) : null,
+      el('span', {}, String(i + 1))));
+    return el('div', { class: 'carrossel-nav' },
+      el('button', { type: 'button', class: 'secundario', disabled: atual === 0, onclick: () => ir(atual - 1) }, '◀'),
+      el('div', { class: 'tiras' }, tiras),
+      el('button', { type: 'button', class: 'secundario', disabled: atual >= total - 1, onclick: () => ir(atual + 1) }, '▶'));
   }
 
   // Divisória "+ Página" antes da primeira, entre as páginas e depois da última.
@@ -347,7 +370,7 @@
     return el('div', { class: 'inserir-pagina' },
       el('button', { type: 'button', class: 'secundario pequeno', onclick: () => {
         estado.paginas.splice(pos, 0, { cena: '', personagens: [], animacao: 'nenhuma', blocos: [{ quem: 'narrador', texto: '' }] });
-        mudou(); desenhar();
+        atual = pos; mudou(); desenhar();
       } }, rotulo));
   }
 
@@ -398,13 +421,19 @@
       el('div', { class: 'ed-topo' },
         el('label', {}, 'Título', titulo),
         el('label', {}, 'Narração', narr),
-        el('span', { class: 'suave' }, 'Faixa ' + dados.faixa + ' anos')),
+        el('span', { class: 'suave' }, 'Faixa ' + dados.faixa + ' anos'),
+        el('div', { class: 'modo-vista' },
+          ['lista', 'carrossel'].map((m) => el('button', { type: 'button', class: modo === m ? '' : 'secundario',
+            onclick: () => { modo = m; try { localStorage.setItem('editor-modo', m); } catch (_) { /* */ } desenhar(); } },
+            m === 'lista' ? '📜 Lista' : '🎠 Carrossel')))),
       dados.briefing ? el('p', { class: 'suave' }, el('em', {}, 'Briefing: '), dados.briefing) : null,
       (dados.continua || []).length ? el('p', { class: 'suave' }, '📚 Continua de: ',
         dados.continua.map((c, i) => [i ? ', ' : '', el('a', { href: '/historias/' + c.id }, c.titulo)])) : null,
       memoriaUI(),
-      inserirPaginaUI(0),
-      estado.paginas.map((p, n) => [paginaUI(p, n), inserirPaginaUI(n + 1)]),
+      modo === 'carrossel' && estado.paginas.length
+        ? (atual = Math.min(atual, estado.paginas.length - 1),
+           [navCarrossel(), inserirPaginaUI(atual), paginaUI(estado.paginas[atual], atual), inserirPaginaUI(atual + 1), navCarrossel()])
+        : [inserirPaginaUI(0), estado.paginas.map((p, n) => [paginaUI(p, n), inserirPaginaUI(n + 1)])],
       el('div', { class: 'barra-salvar' },
         el('a', { href: '/ler/' + dados.id, target: '_blank', rel: 'noopener' }, '📖 Abrir no player'),
         el('a', { href: '/compartilhar/historia/' + dados.id }, '🔗 Compartilhar'),

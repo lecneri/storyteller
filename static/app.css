@@ -47,7 +47,7 @@ code { background:var(--fundo); padding:1px 6px; border-radius:6px; }
 .centro-texto { text-align:center; justify-items:center; }
 .girando { font-size:48px; animation: gira 1.6s ease-in-out infinite; }
 @keyframes gira { 0%,100% { transform: rotate(-8deg); } 50% { transform: rotate(8deg); } }
-.ed-topo { display:grid; grid-template-columns:1fr auto auto; gap:12px; align-items:end; margin-bottom:12px; }
+.ed-topo { display:grid; grid-template-columns:1fr auto auto auto; gap:12px; align-items:end; margin-bottom:12px; }
 @media (max-width:640px) { .ed-topo { grid-template-columns:1fr; } }
 .ed-titulo { font-size:1.4em; font-weight:700; }
 .pagina { background:var(--cartao); border:1px solid var(--borda); border-radius:16px; padding:16px; margin-bottom:16px; display:grid; grid-template-columns:minmax(0,3fr) minmax(0,2fr); gap:16px; }
@@ -159,3 +159,20 @@ body.crianca { background:linear-gradient(180deg,#ffe9c7,#fff8ef 40%); min-heigh
 .chave-linha { border:1px solid var(--borda); border-radius:12px; padding:10px 12px; display:grid; gap:8px; }
 .chave-linha select { max-width:280px; }
 .cli-detalhes { white-space:pre-wrap; font-size:.8em; max-height:220px; overflow:auto; background:var(--fundo); padding:8px; border-radius:8px; }
+
+/* Editor: cada página com uma cor (fundo tingido, faixa à esquerda e número), para não se perder. */
+.pagina.cor-0 { --pg:#ff7a45; } .pagina.cor-1, .tira.cor-1 { --pg:#3a86ff; } .pagina.cor-2, .tira.cor-2 { --pg:#2a9d8f; }
+.pagina.cor-3, .tira.cor-3 { --pg:#9b5de5; } .pagina.cor-4, .tira.cor-4 { --pg:#e9a400; } .tira.cor-0 { --pg:#ff7a45; }
+.pagina[class*="cor-"] { background:color-mix(in srgb, var(--cartao) 90%, var(--pg)); border-color:color-mix(in srgb, var(--borda) 40%, var(--pg)); border-left:8px solid var(--pg); }
+.pagina[class*="cor-"] .num-pagina { background:var(--pg); color:#fff; padding:2px 12px; border-radius:999px; font-size:.9em; }
+.pagina[class*="cor-"] .lateral { border:2px solid color-mix(in srgb, transparent 45%, var(--pg)); }
+.pagina[class*="cor-"] .lateral > strong { color:var(--pg); }
+.modo-vista { display:flex; gap:4px; margin-left:auto; }
+.modo-vista button { padding:6px 10px; }
+.carrossel-nav { display:flex; gap:8px; align-items:center; margin:8px 0; position:sticky; top:0; z-index:5; background:var(--fundo); padding:6px 0; }
+.carrossel-nav .tiras { display:flex; gap:6px; overflow-x:auto; flex:1; padding:2px; }
+.tira { position:relative; flex:0 0 auto; width:52px; height:52px; padding:0; border-radius:10px; background:color-mix(in srgb, var(--cartao) 75%, var(--pg)); border:3px solid transparent; overflow:hidden; color:var(--texto); }
+.tira img { width:100%; height:100%; object-fit:cover; }
+.tira span { position:absolute; right:2px; bottom:2px; background:var(--pg); color:#fff; font-size:.75em; border-radius:6px; padding:0 5px; }
+.tira.ativa { border-color:var(--pg); box-shadow:0 0 0 2px var(--cartao), 0 0 0 4px var(--pg); }
+.carrossel-nav button:disabled { opacity:.35; cursor:default; }
