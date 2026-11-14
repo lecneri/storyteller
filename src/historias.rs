@@ -67,6 +67,9 @@ pub struct NaCena {
     pub voz: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub misto: bool,
+    /// Outras variantes citadas no mesmo briefing (ex.: "@pedro:normal ... vira o @pedro:ranger").
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tambem: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -143,8 +146,10 @@ pub fn detectar(briefing: &str, todos: &[PersonagemIA]) -> Vec<NaCena> {
     let mut achados: Vec<NaCena> = Vec::new();
     let mut add = |slug: &str, variante: Option<String>, voz: Option<(String, bool)>| {
         if let Some(a) = achados.iter_mut().find(|a| a.slug == slug) {
-            if a.variante.is_none() {
-                a.variante = variante;
+            match (&a.variante, variante) {
+                (None, v) => a.variante = v,
+                (Some(atual), Some(v)) if *atual != v && !a.tambem.contains(&v) => a.tambem.push(v),
+                _ => {}
             }
             if a.voz.is_none() {
                 if let Some((v, m)) = voz {
@@ -154,7 +159,7 @@ pub fn detectar(briefing: &str, todos: &[PersonagemIA]) -> Vec<NaCena> {
             }
         } else {
             let (voz, misto) = voz.map(|(v, m)| (Some(v), m)).unwrap_or((None, false));
-            achados.push(NaCena { slug: slug.to_string(), variante, voz, misto });
+            achados.push(NaCena { slug: slug.to_string(), variante, voz, misto, tambem: Vec::new() });
         }
     };
 
@@ -291,6 +296,12 @@ fn montar_prompt(
                 "variante_a_usar": variante.map(|v| json!({
                     "slug": v["slug"], "nome": v["nome"], "forma": v["forma"], "estilo": v["estilo"], "descricao": v["descricao"]
                 })),
+                // Variantes também citadas no briefing (transformação etc.): a IA usa cada uma onde fizer sentido.
+                "tambem_citadas": c.tambem.iter().filter_map(|t| {
+                    p.variantes.as_array()?.iter().find(|v| v["slug"] == *t).map(|v| json!({
+                        "slug": v["slug"], "nome": v["nome"], "forma": v["forma"], "estilo": v["estilo"], "descricao": v["descricao"]
+                    }))
+                }).collect::<Vec<_>>(),
                 "outras_variantes": p.variantes.as_array().map(|a| {
                     a.iter().filter(|v| v["arquivada"] != true).map(|v| v["slug"].clone()).collect::<Vec<_>>()
                 }),
@@ -328,7 +339,7 @@ fn montar_prompt(
          - Entre {pmin} e {pmax} páginas; cada página com {wmin} a {wmax} palavras no total.\n\
          - {modo}\n\
          - Em cada página: \"cena\" descreve a ilustração (lugar, ação, expressões, enquadramento), sem texto escrito na imagem; \
-           \"personagens\" lista quem aparece na ilustração com slug e variante (use a variante_a_usar, salvo se o briefing pedir outra das outras_variantes); \
+           \"personagens\" lista quem aparece na ilustração com slug e variante (use a variante_a_usar, salvo se o briefing pedir outra; as variantes em tambem_citadas também foram pedidas: use cada uma nas páginas em que fizer sentido, por exemplo depois de uma transformação, e escreva a cena com a aparência da variante daquela página); \
            \"animacao\" é um efeito leve que combine com a cena, ou \"nenhuma\".\n\
          - Use SOMENTE os personagens abaixo (pelos slugs). Personagens secundários sem ficha podem aparecer só na narração.\n\n\
          PERSONAGENS:\n{}\n\n\
@@ -409,12 +420,12 @@ pub async fn executar_geracao(st: &AppState, payload: &Value) -> anyhow::Result<
         match citados.iter_mut().find(|c| c.slug == slug) {
             Some(c) if c.variante.is_none() => c.variante = variante,
             Some(_) => {}
-            None => citados.push(NaCena { slug: slug.into(), variante, voz: None, misto: false }),
+            None => citados.push(NaCena { slug: slug.into(), variante, voz: None, misto: false, tambem: Vec::new() }),
         }
     }
     if citados.is_empty() {
         // Sem ninguém citado nem estante: a IA pode usar todos os personagens da família.
-        citados = todos.iter().map(|p| NaCena { slug: p.slug.clone(), variante: None, voz: None, misto: false }).collect();
+        citados = todos.iter().map(|p| NaCena { slug: p.slug.clone(), variante: None, voz: None, misto: false, tambem: Vec::new() }).collect();
     }
     let estilo = padroes["estilo"].as_str().unwrap_or_default();
 
@@ -905,6 +916,9 @@ mod testes {
         let r = detectar("O @leo:super-rangers e o Tito enfrentam o Zorgo!", &todos);
         let slugs: Vec<_> = r.iter().map(|n| (n.slug.as_str(), n.variante.as_deref())).collect();
         assert_eq!(slugs, vec![("leo", Some("super-rangers")), ("tito", None), ("zorgo", None)]);
+        // Mesmo personagem com duas variantes (transformação)
+        let r = detectar("O @leo:normal vira o @leo:super-rangers", &todos);
+        assert_eq!((r.len(), r[0].variante.as_deref(), r[0].tambem.clone()), (1, Some("normal"), vec!["super-rangers".to_string()]));
         // "Leonel" não é "Léo"
         assert!(detectar("A dona Leonel", &todos).is_empty());
         // Voz extra: "!ingles" (só inglês) e "!misto-ingles"; voz que não existe é ignorada.

@@ -88,17 +88,26 @@
       const t = '-' + norm(texto) + '-';
       const achados = [];
       for (const p of dados.personagens) {
-        const direto = new RegExp('@' + p.slug + '(?::([a-z0-9-]+))?(?:!([a-z0-9-]+))?(?![a-z0-9-])', 'i').exec(texto);
+        // Todas as menções diretas (o mesmo personagem pode vir com variantes diferentes: transformação).
+        const re = new RegExp('@' + p.slug + '(?::([a-z0-9-]+))?(?:!([a-z0-9-]+))?(?![a-z0-9-])', 'gi');
+        const diretas = [...texto.matchAll(re)];
         const nomes = [p.nome, ...(p.apelidos || [])].map(norm).filter(Boolean);
-        if (direto || nomes.some((n) => t.includes('-' + n + '-'))) {
+        const vistos = new Set();
+        for (const d of diretas) {
           let voz = '';
-          if (direto && direto[2]) {
-            const misto = direto[2].startsWith('misto-');
-            const v = (p.vozes || []).find((x) => x.slug === direto[2].replace(/^misto-/, ''));
+          if (d[2]) {
+            const misto = d[2].startsWith('misto-');
+            const v = (p.vozes || []).find((x) => x.slug === d[2].replace(/^misto-/, ''));
             if (v) voz = misto ? ' · 🔀 ' + v.nome + ' + português' : ' · 🌎 ' + v.nome;
           }
-          achados.push({ rot: '🧒 ' + p.nome + (direto && direto[1] ? ' · ' + direto[1] : '') + voz, remover: () => {
-            ta.value = ta.value.replace(new RegExp('@' + p.slug + '(:[a-z0-9-]+)?(![a-z0-9-]+)?\\s?', 'gi'), '');
+          const varNome = d[1] ? ((p.variantes || []).find((v) => v.slug === d[1]) || { nome: d[1] }).nome : '';
+          const rot = '🧒 ' + p.nome + (varNome ? ' · ' + varNome : '') + voz;
+          if (vistos.has(rot)) continue;
+          vistos.add(rot);
+          achados.push({ rot, remover: () => { ta.value = ta.value.split(d[0]).join('').replace(/  +/g, ' '); detectar(); } });
+        }
+        if (!diretas.length && nomes.some((n) => t.includes('-' + n + '-'))) {
+          achados.push({ rot: '🧒 ' + p.nome, remover: () => {
             for (const n of [p.nome, ...(p.apelidos || [])]) ta.value = ta.value.replace(new RegExp('\\b' + n + '\\b', 'gi'), '');
             detectar();
           } });
