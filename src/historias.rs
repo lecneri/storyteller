@@ -62,6 +62,11 @@ pub struct NaCena {
     pub slug: String,
     #[serde(default)]
     pub variante: Option<String>,
+    /// Voz extra pedida no briefing (`@pedro!ingles`) e se mistura com português (`@pedro!misto-ingles`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voz: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub misto: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -69,6 +74,19 @@ pub struct Bloco {
     /// "narrador" ou o slug do personagem.
     pub quem: String,
     pub texto: String,
+    /// Voz extra do personagem usada neste trecho (slug, ex.: "ingles").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voz: Option<String>,
+}
+
+impl Bloco {
+    /// Chave da voz do trecho: "pedro" ou "pedro+ingles".
+    pub fn chave_voz(&self) -> String {
+        match &self.voz {
+            Some(v) if self.quem != "narrador" && !v.is_empty() => format!("{}+{v}", self.quem),
+            _ => self.quem.clone(),
+        }
+    }
 }
 
 /// Limites de cada faixa etária: (páginas mín, páginas máx, palavras mín por página, palavras máx).
@@ -92,11 +110,19 @@ pub struct PersonagemIA {
     pub variante_atual: Option<String>,
     /// [{slug, nome, forma, estilo, descricao, referencias}]
     pub variantes: Value,
+    /// [{slug, nome, lingua, voz}]
+    pub vozes_extras: Value,
+}
+
+impl PersonagemIA {
+    fn tem_voz(&self, v: &str) -> bool {
+        self.vozes_extras.as_array().is_some_and(|a| a.iter().any(|x| x["slug"] == v))
+    }
 }
 
 async fn personagens_da_familia(st: &AppState, familia_id: Uuid) -> Result<Vec<PersonagemIA>, sqlx::Error> {
     sqlx::query_as::<_, PersonagemIA>(
-        "SELECT p.slug, p.nome, p.tipo, p.ficha, va.slug AS variante_atual,
+        "SELECT p.slug, p.nome, p.tipo, p.ficha, va.slug AS variante_atual, p.vozes_extras,
                 COALESCE((SELECT json_agg(json_build_object(
                             'slug', v.slug, 'nome', v.nome, 'forma', v.forma, 'estilo', v.estilo,
                             'descricao', v.descricao, 'referencias', v.referencias, 'arquivada', v.arquivada)
@@ -115,13 +141,20 @@ async fn personagens_da_familia(st: &AppState, familia_id: Uuid) -> Result<Vec<P
 /// Personagens citados no briefing: `@slug`, `@slug:variante`, ou o nome/apelido escrito normalmente.
 pub fn detectar(briefing: &str, todos: &[PersonagemIA]) -> Vec<NaCena> {
     let mut achados: Vec<NaCena> = Vec::new();
-    let mut add = |slug: &str, variante: Option<String>| {
+    let mut add = |slug: &str, variante: Option<String>, voz: Option<(String, bool)>| {
         if let Some(a) = achados.iter_mut().find(|a| a.slug == slug) {
             if a.variante.is_none() {
                 a.variante = variante;
             }
+            if a.voz.is_none() {
+                if let Some((v, m)) = voz {
+                    a.voz = Some(v);
+                    a.misto = m;
+                }
+            }
         } else {
-            achados.push(NaCena { slug: slug.to_string(), variante });
+            let (voz, misto) = voz.map(|(v, m)| (Some(v), m)).unwrap_or((None, false));
+            achados.push(NaCena { slug: slug.to_string(), variante, voz, misto });
         }
     };
 
@@ -129,8 +162,13 @@ pub fn detectar(briefing: &str, todos: &[PersonagemIA]) -> Vec<NaCena> {
     for parte in briefing.split('@').skip(1) {
         let token: String = parte
             .chars()
-            .take_while(|c| c.is_alphanumeric() || *c == '-' || *c == ':' || *c == '_')
+            .take_while(|c| c.is_alphanumeric() || *c == '-' || *c == ':' || *c == '_' || *c == '!')
             .collect();
+        // "@pedro:variante!ingles" ou "@pedro!misto-ingles"
+        let (token, voz) = match token.split_once('!') {
+            Some((t, v)) => (t.to_string(), Some(util::slug(v))),
+            None => (token, None),
+        };
         let (s, v) = match token.split_once(':') {
             Some((s, v)) => (util::slug(s), Some(util::slug(v))),
             None => (util::slug(&token), None),
@@ -139,7 +177,12 @@ pub fn detectar(briefing: &str, todos: &[PersonagemIA]) -> Vec<NaCena> {
             let v = v.filter(|v| {
                 p.variantes.as_array().is_some_and(|a| a.iter().any(|x| x["slug"] == *v && x["arquivada"] != true))
             });
-            add(&p.slug, v);
+            let voz = voz.and_then(|v| match v.strip_prefix("misto-") {
+                Some(x) => Some((x.to_string(), true)),
+                None => Some((v, false)),
+            });
+            let voz = voz.filter(|(v, _)| p.tem_voz(v));
+            add(&p.slug, v, voz);
         }
     }
 
@@ -151,7 +194,7 @@ pub fn detectar(briefing: &str, todos: &[PersonagemIA]) -> Vec<NaCena> {
             nomes.extend(a.iter().filter_map(|x| x.as_str().map(String::from)));
         }
         if nomes.iter().map(|n| util::slug(n)).any(|n| !n.is_empty() && texto.contains(&format!("-{n}-"))) {
-            add(&p.slug, None);
+            add(&p.slug, None, None);
         }
     }
     achados
@@ -189,8 +232,9 @@ fn schema_historia() -> Value {
                             "items": {
                                 "type": "object",
                     "additionalProperties": false,
-                                "required": ["quem", "texto"],
-                                "properties": { "quem": { "type": "string" }, "texto": { "type": "string" } }
+                                "required": ["quem", "texto", "voz"],
+                                "properties": { "quem": { "type": "string" }, "texto": { "type": "string" },
+                                                "voz": { "type": "string", "description": "\"\" (voz normal) ou o slug da voz extra do personagem" } }
                             }
                         }
                     }
@@ -227,9 +271,23 @@ fn montar_prompt(
                 .as_array()
                 .and_then(|a| a.iter().find(|v| Some(v["slug"].as_str().unwrap_or_default().to_string()) == var_slug))
                 .cloned();
+            // Voz extra pedida no briefing: como o personagem fala nesta história.
+            let extra = c.voz.as_ref().and_then(|v| {
+                p.vozes_extras.as_array()?.iter().find(|x| x["slug"] == *v).cloned()
+            });
+            let falas = extra.map(|x| {
+                let (vs, lingua) = (x["slug"].as_str().unwrap_or_default(), x["lingua"].as_str().unwrap_or("Português"));
+                let em = if lingua == "Português" { String::new() } else { format!(", escritas em {lingua} (frases curtas e palavras simples, para uma criança que está aprendendo)") };
+                if c.misto {
+                    format!("{} MISTURA as línguas: algumas falas curtas usam voz = \"{vs}\"{em}; logo depois, em outro bloco com voz = \"\", ele mesmo repete ou explica em português, para a criança aprender.", p.nome)
+                } else {
+                    format!("TODAS as falas de {} usam voz = \"{vs}\"{em}. O narrador pode contar em português o que ele disse.", p.nome)
+                }
+            });
             json!({
                 "slug": p.slug, "nome": p.nome, "tipo": p.tipo,
                 "ficha": p.ficha,
+                "falas": falas,
                 "variante_a_usar": variante.map(|v| json!({
                     "slug": v["slug"], "nome": v["nome"], "forma": v["forma"], "estilo": v["estilo"], "descricao": v["descricao"]
                 })),
@@ -243,7 +301,7 @@ fn montar_prompt(
     let modo = if narracao == "narrador" {
         "Narração SÓ COM NARRADOR: cada página tem exatamente UM bloco, com quem = \"narrador\". As falas dos personagens entram no texto do narrador com travessão (— Vamos lá! — disse Léo.)."
     } else {
-        "Narração POR PERSONAGEM: cada página tem vários blocos em sequência. Trechos narrados usam quem = \"narrador\"; cada fala usa quem = slug do personagem que fala, com o texto só da fala (sem \"disse fulano\"). Alterne narrador e falas de forma natural."
+        "Narração POR PERSONAGEM: cada página tem vários blocos em sequência. Trechos narrados usam quem = \"narrador\"; cada fala usa quem = slug do personagem que fala, com o texto só da fala (sem \"disse fulano\"). Alterne narrador e falas de forma natural. Em cada bloco, voz = \"\", salvo quando o campo \"falas\" do personagem pedir outra."
     };
     let briefing = if briefing.trim().is_empty() {
         "(sem briefing: invente uma história divertida com os personagens disponíveis)".to_string()
@@ -281,7 +339,7 @@ fn montar_prompt(
 }
 
 /// Ajusta a resposta da IA às regras do app (quem inválido vira narrador, modo narrador = 1 bloco).
-fn normalizar(mut c: Conteudo, narracao: &str, citados: &[NaCena]) -> Conteudo {
+fn normalizar(mut c: Conteudo, narracao: &str, citados: &[NaCena], todos: &[PersonagemIA]) -> Conteudo {
     for p in &mut c.paginas {
         p.personagens.retain(|n| citados.iter().any(|c| c.slug == n.slug));
         for n in &mut p.personagens {
@@ -297,11 +355,16 @@ fn normalizar(mut c: Conteudo, narracao: &str, citados: &[NaCena]) -> Conteudo {
                 b.quem = "narrador".into();
             }
             b.texto = b.texto.trim().to_string();
+            // Só vale voz extra que o personagem tem.
+            let valida = b.voz.as_deref().is_some_and(|v| todos.iter().any(|p| p.slug == b.quem && p.tem_voz(v)));
+            if !valida {
+                b.voz = None;
+            }
         }
         p.blocos.retain(|b| !b.texto.is_empty());
         if narracao == "narrador" && p.blocos.len() > 1 {
             let texto = p.blocos.iter().map(|b| b.texto.as_str()).collect::<Vec<_>>().join(" ");
-            p.blocos = vec![Bloco { quem: "narrador".into(), texto }];
+            p.blocos = vec![Bloco { quem: "narrador".into(), texto, voz: None }];
         }
     }
     c.paginas.retain(|p| !p.blocos.is_empty());
@@ -346,12 +409,12 @@ pub async fn executar_geracao(st: &AppState, payload: &Value) -> anyhow::Result<
         match citados.iter_mut().find(|c| c.slug == slug) {
             Some(c) if c.variante.is_none() => c.variante = variante,
             Some(_) => {}
-            None => citados.push(NaCena { slug: slug.into(), variante }),
+            None => citados.push(NaCena { slug: slug.into(), variante, voz: None, misto: false }),
         }
     }
     if citados.is_empty() {
         // Sem ninguém citado nem estante: a IA pode usar todos os personagens da família.
-        citados = todos.iter().map(|p| NaCena { slug: p.slug.clone(), variante: None }).collect();
+        citados = todos.iter().map(|p| NaCena { slug: p.slug.clone(), variante: None, voz: None, misto: false }).collect();
     }
     let estilo = padroes["estilo"].as_str().unwrap_or_default();
 
@@ -386,7 +449,7 @@ pub async fn executar_geracao(st: &AppState, payload: &Value) -> anyhow::Result<
     let resposta = ia::gerar_texto(st, h.familia_id, &pedido).await?;
     let titulo = resposta["titulo"].as_str().unwrap_or("Nova história").trim().to_string();
     let conteudo: Conteudo = serde_json::from_value(json!({ "paginas": resposta["paginas"] }))?;
-    let conteudo = normalizar(conteudo, &h.narracao, &citados);
+    let conteudo = normalizar(conteudo, &h.narracao, &citados, &todos);
     if conteudo.paginas.is_empty() {
         anyhow::bail!("a IA devolveu uma história vazia");
     }
@@ -828,6 +891,7 @@ mod testes {
             ficha: json!({ "apelidos": apelidos }),
             variante_atual: None,
             variantes: json!(variantes.iter().map(|v| json!({ "slug": v })).collect::<Vec<_>>()),
+            vozes_extras: json!([{ "slug": "ingles", "nome": "Inglês", "lingua": "Inglês" }]),
         }
     }
 
@@ -843,6 +907,10 @@ mod testes {
         assert_eq!(slugs, vec![("leo", Some("super-rangers")), ("tito", None), ("zorgo", None)]);
         // "Leonel" não é "Léo"
         assert!(detectar("A dona Leonel", &todos).is_empty());
+        // Voz extra: "!ingles" (só inglês) e "!misto-ingles"; voz que não existe é ignorada.
+        let r = detectar("@leo:normal!misto-ingles e @tito!ingles e @zorgo!frances", &todos);
+        let vozes: Vec<_> = r.iter().map(|n| (n.slug.as_str(), n.variante.as_deref(), n.voz.as_deref(), n.misto)).collect();
+        assert_eq!(vozes, vec![("leo", Some("normal"), Some("ingles"), true), ("tito", None, Some("ingles"), false), ("zorgo", None, None, false)]);
     }
 }
 
@@ -898,6 +966,8 @@ pub async fn mencoes(State(st): State<AppState>, s: Sessao) -> Response {
                 "slug": p.slug, "nome": p.nome, "apelidos": p.ficha["apelidos"],
                 "variantes": p.variantes.as_array().map(|a| a.iter().filter(|v| v["arquivada"] != true)
                     .map(|v| json!({ "slug": v["slug"], "nome": v["nome"] })).collect::<Vec<_>>()),
+                "vozes": p.vozes_extras.as_array().map(|a| a.iter()
+                    .map(|v| json!({ "slug": v["slug"], "nome": v["nome"], "lingua": v["lingua"] })).collect::<Vec<_>>()),
             })).collect::<Vec<_>>(),
             "historias": h.into_iter().map(|(slug, titulo)| json!({ "slug": slug, "titulo": titulo })).collect::<Vec<_>>(),
         }))

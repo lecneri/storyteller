@@ -12,7 +12,7 @@ use uuid::Uuid;
 use crate::{midia, AppState};
 
 /// Vozes disponíveis (edge-tts). As "Multilingual" também falam português.
-pub const VOZES: [(&str, &str); 12] = [
+pub const VOZES: [(&str, &str); 14] = [
     ("pt-BR-FranciscaNeural", "Francisca · mulher (BR)"),
     ("pt-BR-AntonioNeural", "Antonio · homem (BR)"),
     ("pt-BR-ThalitaMultilingualNeural", "Thalita · mulher jovem (BR)"),
@@ -25,7 +25,52 @@ pub const VOZES: [(&str, &str); 12] = [
     ("it-IT-GiuseppeMultilingualNeural", "Giuseppe · homem, sotaque leve"),
     ("en-AU-WilliamMultilingualNeural", "William · homem, sotaque leve"),
     ("ko-KR-HyunsuMultilingualNeural", "Hyunsu · homem jovem, sotaque leve"),
+    ("en-US-AnaNeural", "Ana · menina (só inglês)"),
+    ("en-GB-MaisieNeural", "Maisie · menina (só inglês britânico)"),
 ];
+
+/// Línguas oferecidas para as vozes extras de um personagem (nome, frase de teste).
+pub const LINGUAS: [(&str, &str); 9] = [
+    ("Português", "Oi! Vamos brincar?"),
+    ("Inglês", "Hello! Let's play together!"),
+    ("Espanhol", "¡Hola! ¿Vamos a jugar?"),
+    ("Francês", "Bonjour ! On joue ensemble ?"),
+    ("Italiano", "Ciao! Giochiamo insieme?"),
+    ("Alemão", "Hallo! Spielen wir zusammen?"),
+    ("Japonês", "こんにちは！いっしょにあそぼう！"),
+    ("Coreano", "안녕! 같이 놀자!"),
+    ("Chinês", "你好！我们一起玩吧！"),
+];
+
+/// Uma voz extra do personagem (ex.: "Inglês").
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct VozExtra {
+    #[serde(default)]
+    pub slug: String,
+    pub nome: String,
+    #[serde(default = "lingua_padrao")]
+    pub lingua: String,
+    pub voz: Voz,
+}
+
+fn lingua_padrao() -> String {
+    "Português".into()
+}
+
+/// Separa a chave de voz de um trecho: "pedro+ingles" → ("pedro", Some("ingles")).
+pub fn separar(chave: &str) -> (&str, Option<&str>) {
+    match chave.split_once('+') {
+        Some((q, v)) if !v.is_empty() => (q, Some(v)),
+        Some((q, _)) => (q, None),
+        None => (chave, None),
+    }
+}
+
+/// Voz genérica (links públicos) para uma voz extra: precisa ser multilíngue.
+pub fn generica_extra(tipo: &str) -> Voz {
+    let v = voz_por_tipo(tipo);
+    if v.id.contains("Multilingual") { v } else { Voz { id: "en-US-AndrewMultilingualNeural".into(), ..v } }
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Voz {
@@ -205,20 +250,27 @@ pub async fn no_cache(st: &AppState, familia_id: Uuid, texto: &str, voz: &Voz) -
     Ok(r.map(|(arquivo, duracao, palavras)| Audio { arquivo, duracao, palavras }))
 }
 
-/// Vozes de uma família: narrador + cada personagem (configurada ou padrão pelo tipo).
+/// Vozes de uma família: narrador + cada personagem (configurada ou padrão pelo tipo) + vozes extras.
 pub struct VozesFamilia {
     pub narrador: Voz,
     pub personagens: Vec<(String, Voz)>,
+    /// ("pedro+ingles", voz)
+    pub extras: Vec<(String, Voz)>,
 }
 
 impl VozesFamilia {
+    /// `quem` é "narrador", o slug do personagem ou a chave de uma voz extra ("pedro+ingles").
     pub fn de(&self, quem: &str) -> Voz {
         if quem == "narrador" {
             return self.narrador.clone();
         }
+        if let Some((_, v)) = self.extras.iter().find(|(k, _)| k == quem) {
+            return v.clone();
+        }
+        let (base, _) = separar(quem);
         self.personagens
             .iter()
-            .find(|(s, _)| s == quem)
+            .find(|(s, _)| s == base)
             .map(|(_, v)| v.clone())
             .unwrap_or_else(|| self.narrador.clone())
     }
@@ -230,16 +282,20 @@ pub async fn vozes_da_familia(st: &AppState, familia_id: Uuid) -> anyhow::Result
         .fetch_one(&st.db)
         .await?;
     let narrador = Voz::de_json(&config["narrador"]).unwrap_or_else(narrador_padrao);
-    let linhas: Vec<(String, String, Value)> =
-        sqlx::query_as("SELECT slug, tipo, voz_padrao FROM conteudo.personagens WHERE familia_id = $1")
+    let linhas: Vec<(String, String, Value, Value)> =
+        sqlx::query_as("SELECT slug, tipo, voz_padrao, vozes_extras FROM conteudo.personagens WHERE familia_id = $1")
             .bind(familia_id)
             .fetch_all(&st.db)
             .await?;
-    let personagens = linhas
-        .into_iter()
-        .map(|(slug, tipo, v)| (slug, Voz::de_json(&v).unwrap_or_else(|| voz_por_tipo(&tipo))))
-        .collect();
-    Ok(VozesFamilia { narrador, personagens })
+    let mut personagens = Vec::new();
+    let mut extras = Vec::new();
+    for (slug, tipo, v, ex) in linhas {
+        for e in serde_json::from_value::<Vec<VozExtra>>(ex).unwrap_or_default() {
+            extras.push((format!("{slug}+{}", e.slug), e.voz.validada()));
+        }
+        personagens.push((slug, Voz::de_json(&v).unwrap_or_else(|| voz_por_tipo(&tipo))));
+    }
+    Ok(VozesFamilia { narrador, personagens, extras })
 }
 
 #[cfg(test)]
@@ -252,5 +308,7 @@ mod testes {
         assert_eq!(v.id, VOZES[0].0);
         assert_eq!((v.tom, v.velocidade), (60, -40));
         assert_ne!(hash(&narrador_padrao(), "oi"), hash(&narrador_padrao(), "olá"));
+        assert_eq!(separar("pedro+ingles"), ("pedro", Some("ingles")));
+        assert_eq!(separar("pedro"), ("pedro", None));
     }
 }

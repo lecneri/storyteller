@@ -35,16 +35,20 @@ enum Vozes {
 }
 
 impl Vozes {
+    /// `quem`: "narrador", slug ou chave de voz extra ("pedro+ingles").
     fn de(&self, quem: &str, tipo: &str) -> tts::Voz {
+        let extra = tts::separar(quem).1.is_some();
         match self {
             Vozes::Familia(v) if quem == "narrador" => v.narrador.clone(),
             Vozes::Familia(v) => v
-                .personagens
+                .extras
                 .iter()
+                .chain(v.personagens.iter())
                 .find(|(s, _)| s == quem)
                 .map(|(_, voz)| voz.clone())
-                .unwrap_or_else(|| tts::voz_por_tipo(tipo)),
+                .unwrap_or_else(|| if extra { tts::generica_extra(tipo) } else { tts::voz_por_tipo(tipo) }),
             Vozes::Genericas if quem == "narrador" || tipo == "narrador" => tts::narrador_padrao(),
+            Vozes::Genericas if extra => tts::generica_extra(tipo),
             Vozes::Genericas => tts::voz_por_tipo(tipo),
         }
     }
@@ -80,7 +84,7 @@ async fn montar(
     for p in &c.paginas {
         let mut blocos = Vec::new();
         for b in p.blocos.iter().filter(|b| !b.texto.trim().is_empty()) {
-            let quem = if h.narracao == "narrador" { "narrador".to_string() } else { b.quem.clone() };
+            let quem = if h.narracao == "narrador" { "narrador".to_string() } else { b.chave_voz() };
             let (nome, tipo) = nomes
                 .iter()
                 .find(|(s, _, _)| *s == b.quem)
@@ -89,7 +93,7 @@ async fn montar(
             let tipo_voz = if quem == "narrador" { "narrador" } else { tipo.as_str() };
             let audio = tts::no_cache(st, familia_cache, &b.texto, &vozes.de(&quem, tipo_voz)).await?;
             blocos.push(json!({
-                "quem": b.quem, "nome": nome, "tipo": tipo, "texto": b.texto.trim(),
+                "quem": b.quem, "voz": quem, "nome": nome, "tipo": tipo, "texto": b.texto.trim(),
                 "audio": audio.as_ref().map(|a| url(&a.arquivo)),
                 "duracao": audio.as_ref().map(|a| a.duracao),
                 "palavras": audio.as_ref().map(|a| a.palavras.clone()),
@@ -136,7 +140,7 @@ pub async fn voz_para(st: &AppState, familia_leitora: Uuid, historia: Uuid, quem
           WHERE h.id = $1 AND p.slug = $2",
     )
     .bind(historia)
-    .bind(quem)
+    .bind(tts::separar(quem).0)
     .fetch_optional(&st.db)
     .await?
     .unwrap_or_else(|| "narrador".into());

@@ -87,6 +87,60 @@ pub async fn salvar_voz_personagem(
     }
 }
 
+/// GET /personagens/{slug}/vozes-extras: as vozes extras do personagem + as línguas oferecidas.
+pub async fn vozes_extras(State(st): State<AppState>, s: Sessao, Path(slug): Path<String>) -> Response {
+    let v: Option<Value> = match sqlx::query_scalar("SELECT vozes_extras FROM conteudo.personagens WHERE familia_id = $1 AND slug = $2")
+        .bind(s.familia_id)
+        .bind(&slug)
+        .fetch_optional(&st.db)
+        .await
+    {
+        Ok(v) => v,
+        Err(e) => return erro_interno(e.into()),
+    };
+    let Some(v) = v else { return StatusCode::NOT_FOUND.into_response() };
+    Json(json!({
+        "vozes_extras": v,
+        "linguas": tts::LINGUAS.iter().map(|(n, f)| json!({ "nome": n, "exemplo": f })).collect::<Vec<_>>(),
+    }))
+    .into_response()
+}
+
+/// POST /personagens/{slug}/vozes-extras: grava a lista inteira ([{nome, lingua, voz}]).
+pub async fn salvar_vozes_extras(
+    State(st): State<AppState>,
+    s: Sessao,
+    Path(slug): Path<String>,
+    Json(lista): Json<Vec<tts::VozExtra>>,
+) -> Response {
+    let mut limpas: Vec<tts::VozExtra> = Vec::new();
+    for mut e in lista.into_iter().take(10) {
+        e.nome = e.nome.trim().chars().take(40).collect();
+        e.slug = crate::util::slug(&e.nome);
+        if e.slug.is_empty() {
+            return erro("Dê um nome para cada voz (ex.: Inglês).");
+        }
+        if limpas.iter().any(|x| x.slug == e.slug) {
+            return erro("Duas vozes com o mesmo nome.");
+        }
+        if !tts::LINGUAS.iter().any(|(n, _)| *n == e.lingua) {
+            e.lingua = "Português".into();
+        }
+        e.voz = e.voz.validada();
+        limpas.push(e);
+    }
+    let r = sqlx::query("UPDATE conteudo.personagens SET vozes_extras = $3, atualizado_em = now() WHERE familia_id = $1 AND slug = $2")
+        .bind(s.familia_id)
+        .bind(&slug)
+        .bind(json!(limpas))
+        .execute(&st.db)
+        .await;
+    match r {
+        Ok(_) => Json(json!({ "ok": true, "vozes_extras": limpas })).into_response(),
+        Err(e) => erro_interno(e.into()),
+    }
+}
+
 /// POST /familia/narrador
 pub async fn salvar_narrador(State(st): State<AppState>, s: Sessao, Json(p): Json<PedidoVoz>) -> Response {
     let r = match p.voz {
@@ -176,7 +230,7 @@ fn blocos(h: &HistoriaNarrar) -> Vec<(usize, usize, String, String)> {
     for (pi, p) in c.paginas.iter().enumerate() {
         for (bi, b) in p.blocos.iter().enumerate() {
             if !b.texto.trim().is_empty() {
-                let quem = if h.narracao == "narrador" { "narrador".to_string() } else { b.quem.clone() };
+                let quem = if h.narracao == "narrador" { "narrador".to_string() } else { b.chave_voz() };
                 v.push((pi, bi, quem, b.texto.clone()));
             }
         }

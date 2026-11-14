@@ -555,13 +555,19 @@ pub async fn publico_audio(State(st): State<AppState>, Path(token): Path<String>
     }
     let tipo: String = sqlx::query_scalar("SELECT tipo FROM conteudo.personagens WHERE familia_id = $1 AND slug = $2")
         .bind(l.familia_id)
-        .bind(&p.quem)
+        .bind(tts::separar(&p.quem).0)
         .fetch_optional(&st.db)
         .await
         .ok()
         .flatten()
         .unwrap_or_default();
-    let voz = if p.quem == "narrador" || tipo.is_empty() { tts::narrador_padrao() } else { tts::voz_por_tipo(&tipo) };
+    let voz = if p.quem == "narrador" || tipo.is_empty() {
+        tts::narrador_padrao()
+    } else if tts::separar(&p.quem).1.is_some() {
+        tts::generica_extra(&tipo)
+    } else {
+        tts::voz_por_tipo(&tipo)
+    };
     let slug: String = sqlx::query_scalar("SELECT slug FROM acesso.familias WHERE id = $1")
         .bind(l.familia_id)
         .fetch_one(&st.db)

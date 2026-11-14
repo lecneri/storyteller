@@ -51,7 +51,7 @@ pub fn historia_md(titulo: &str, faixa: &str, narracao: &str, briefing: Option<&
             if b.quem == "narrador" {
                 s.push_str(&format!("\n{}\n", b.texto.trim()));
             } else {
-                s.push_str(&format!("\n[{}] — {}\n", b.quem, b.texto.trim()));
+                s.push_str(&format!("\n[{}] — {}\n", b.chave_voz(), b.texto.trim()));
             }
         }
     }

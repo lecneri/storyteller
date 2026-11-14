@@ -117,7 +117,7 @@
     // Ainda não gerado: pede ao servidor na hora (a família logada pode gerar).
     try {
       const r = await fetch(dados.audio_url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ historia: dados.id, quem: b.quem, texto: b.texto }) });
+        body: JSON.stringify({ historia: dados.id, quem: b.voz || b.quem, texto: b.texto }) });
       if (r.ok) { const j = await r.json(); Object.assign(b, { audio: j.audio, duracao: j.duracao, palavras: j.palavras }); }
     } catch (_) { /* segue sem áudio */ }
     return b;

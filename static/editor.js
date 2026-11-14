@@ -48,7 +48,7 @@
     botao.textContent = '⏳';
     try {
       const r = await fetch(location.pathname + '/bloco-audio', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ quem: b.quem, texto: b.texto }) });
+        body: JSON.stringify({ quem: b.voz && b.quem !== 'narrador' ? b.quem + '+' + b.voz : b.quem, texto: b.texto }) });
       const j = await r.json();
       if (!r.ok) throw new Error(j.erro || 'erro');
       if (tocando) tocando.pause();
@@ -91,8 +91,14 @@
     const opcoes = [el('option', { value: 'narrador', selected: b.quem === 'narrador' }, '🎙️ Narrador')].concat(
       personagens.map((p) => el('option', { value: p.slug, selected: b.quem === p.slug }, p.nome))
     );
-    const sel = el('select', { onchange: (e) => { b.quem = e.target.value; mudou(); desenhar(); } }, opcoes);
+    const sel = el('select', { onchange: (e) => { b.quem = e.target.value; delete b.voz; mudou(); desenhar(); } }, opcoes);
     if (estado.narracao === 'narrador') sel.disabled = true;
+    // Vozes extras do personagem (ex.: Inglês): escolhe qual voz este trecho usa.
+    const extras = b.quem === 'narrador' || estado.narracao === 'narrador' ? [] : ((personagem(b.quem) || {}).vozes_extras || []);
+    const selVoz = extras.length ? el('select', { title: 'Voz deste trecho', onchange: (e) => {
+      if (e.target.value) b.voz = e.target.value; else delete b.voz; mudou(); } },
+      el('option', { value: '' }, '🗣️ voz normal'),
+      extras.map((x) => el('option', { value: x.slug, selected: b.voz === x.slug }, '🌎 ' + x.nome))) : null;
     const txt = el('textarea', { rows: Math.max(2, Math.ceil((b.texto || '').length / 70)),
       placeholder: b.quem === 'narrador' ? 'Texto do narrador…' : 'Fala de ' + nomeDe(b.quem) + '…',
       oninput: (e) => { b.texto = e.target.value; mudou(); } });
@@ -100,7 +106,7 @@
     return el('div', { class: 'bloco' },
       avatar(b.quem),
       el('div', {},
-        el('div', { class: 'cab' }, sel,
+        el('div', { class: 'cab' }, sel, selVoz,
           el('span', { class: 'acoes' },
             el('button', { type: 'button', title: 'Ouvir este trecho', onclick: (e) => ouvirBloco(b, e.currentTarget) }, '▶'),
             el('button', { type: 'button', title: 'Subir', onclick: () => mover(pag.blocos, i, -1) }, '↑'),

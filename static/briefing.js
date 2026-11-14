@@ -1,4 +1,5 @@
-// Briefing: autocompletar de @personagem(:variante) e #historia, e chips do que foi detectado.
+// Briefing: autocompletar de @personagem(:variante)(!voz) e #historia, e chips do que foi detectado.
+// Voz extra: "@pedro!ingles" (só nessa voz/língua) ou "@pedro!misto-ingles" (mistura com português).
 (function () {
   const caixas = document.querySelectorAll('textarea[name="briefing"]');
   if (!caixas.length) return;
@@ -26,15 +27,23 @@
     function sugestoes() {
       const pos = ta.selectionStart;
       const antes = ta.value.slice(0, pos);
-      const m = antes.match(/([@#])([\p{L}\p{N}_:-]*)$/u);
+      const m = antes.match(/([@#])([\p{L}\p{N}_:!-]*)$/u);
       if (!m) { fechar(); return; }
       inicio = pos - m[0].length;
       const termo = norm(m[2]);
       if (m[1] === '@') {
         opcoes = [];
         for (const p of dados.personagens) {
-          if (!norm(p.slug + ' ' + p.nome).includes(termo.split(':')[0])) continue;
-          opcoes.push({ txt: '@' + p.slug, rot: '🧒 ' + p.nome });
+          if (!norm(p.slug + ' ' + p.nome).includes(termo.split(/[:!]/)[0])) continue;
+          const vozes = p.vozes || [];
+          opcoes.push({ txt: '@' + p.slug, rot: '🧒 ' + p.nome + (vozes.length ? ' · 🗣️ voz normal' : '') });
+          // Personagem com vozes extras: pergunta qual voz ele vai usar.
+          for (const v of vozes) {
+            opcoes.push({ txt: '@' + p.slug + '!' + v.slug, rot: '   🌎 ' + p.nome + ' falando ' + v.nome });
+            if (v.lingua && v.lingua !== 'Português') {
+              opcoes.push({ txt: '@' + p.slug + '!misto-' + v.slug, rot: '   🔀 ' + p.nome + ' misturando ' + v.nome + ' e português' });
+            }
+          }
           for (const v of p.variantes || []) {
             if (termo.includes(':') && !norm(v.slug).includes(termo.split(':')[1] || '')) continue;
             opcoes.push({ txt: '@' + p.slug + ':' + v.slug, rot: '   ↳ ' + p.nome + ' · ' + v.nome });
@@ -44,7 +53,7 @@
         opcoes = dados.historias.filter((h) => norm(h.slug + ' ' + h.titulo).includes(termo))
           .map((h) => ({ txt: '#' + h.slug, rot: '📖 ' + h.titulo }));
       }
-      opcoes = opcoes.slice(0, 8);
+      opcoes = opcoes.slice(0, 12);
       if (!opcoes.length) { fechar(); return; }
       ativa = 0;
       desenharLista();
@@ -79,11 +88,17 @@
       const t = '-' + norm(texto) + '-';
       const achados = [];
       for (const p of dados.personagens) {
-        const direto = new RegExp('@' + p.slug + '(?::([a-z0-9-]+))?(?![a-z0-9-])', 'i').exec(texto);
+        const direto = new RegExp('@' + p.slug + '(?::([a-z0-9-]+))?(?:!([a-z0-9-]+))?(?![a-z0-9-])', 'i').exec(texto);
         const nomes = [p.nome, ...(p.apelidos || [])].map(norm).filter(Boolean);
         if (direto || nomes.some((n) => t.includes('-' + n + '-'))) {
-          achados.push({ rot: '🧒 ' + p.nome + (direto && direto[1] ? ' · ' + direto[1] : ''), remover: () => {
-            ta.value = ta.value.replace(new RegExp('@' + p.slug + '(:[a-z0-9-]+)?\\s?', 'gi'), '');
+          let voz = '';
+          if (direto && direto[2]) {
+            const misto = direto[2].startsWith('misto-');
+            const v = (p.vozes || []).find((x) => x.slug === direto[2].replace(/^misto-/, ''));
+            if (v) voz = misto ? ' · 🔀 ' + v.nome + ' + português' : ' · 🌎 ' + v.nome;
+          }
+          achados.push({ rot: '🧒 ' + p.nome + (direto && direto[1] ? ' · ' + direto[1] : '') + voz, remover: () => {
+            ta.value = ta.value.replace(new RegExp('@' + p.slug + '(:[a-z0-9-]+)?(![a-z0-9-]+)?\\s?', 'gi'), '');
             for (const n of [p.nome, ...(p.apelidos || [])]) ta.value = ta.value.replace(new RegExp('\\b' + n + '\\b', 'gi'), '');
             detectar();
           } });

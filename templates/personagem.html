@@ -80,6 +80,12 @@
   </section>
 
   <section class="cartao largo">
+    <h2>🌎 Outras vozes de {{ p.nome }}</h2>
+    <p class="suave">Vozes extras, por exemplo {{ p.nome }} falando inglês. Na hora de criar a história, ao citar <code>@{{ p.slug }}</code>, você escolhe qual voz ele usa.</p>
+    <div data-vozes-extras="/personagens/{{ p.slug }}/vozes-extras" data-nome="{{ p.nome }}"><p class="suave">Carregando…</p></div>
+  </section>
+
+  <section class="cartao largo">
     <h2>Ficha</h2>
     <form method="post" action="/personagens/{{ p.slug }}" class="grade-form">
       <label>Nome <input name="nome" value="{{ p.nome }}" required></label>
@@ -97,4 +103,5 @@
 </main>
 <script src="/vozes.js" defer></script>
 <script src="/descrever.js" defer></script>
+<script src="/vozes-extras.js" defer></script>
 {% endblock %}

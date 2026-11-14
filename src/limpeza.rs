@@ -32,10 +32,17 @@ async fn audios_em_uso(st: &AppState, familia: Uuid) -> anyhow::Result<HashSet<S
             if texto.is_empty() {
                 continue;
             }
-            let quem = if narracao == "narrador" { "narrador" } else { b.quem.as_str() };
-            let tipo = tipos.iter().find(|(s, _)| s == quem).map(|(_, t)| t.as_str()).unwrap_or("narrador");
-            usados.insert(tts::hash_publico(&vozes.de(quem), texto));
-            let generica = if quem == "narrador" { tts::narrador_padrao() } else { tts::voz_por_tipo(tipo) };
+            let quem = if narracao == "narrador" { "narrador".to_string() } else { b.chave_voz() };
+            let (base, extra) = tts::separar(&quem);
+            let tipo = tipos.iter().find(|(s, _)| s == base).map(|(_, t)| t.as_str()).unwrap_or("narrador");
+            usados.insert(tts::hash_publico(&vozes.de(&quem), texto));
+            let generica = if quem == "narrador" {
+                tts::narrador_padrao()
+            } else if extra.is_some() {
+                tts::generica_extra(tipo)
+            } else {
+                tts::voz_por_tipo(tipo)
+            };
             usados.insert(tts::hash_publico(&generica, texto));
         }
     }
