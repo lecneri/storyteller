@@ -164,6 +164,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/vozes", get(narracao::vozes))
         .route("/tts/previa", post(narracao::previa))
         .route("/personagens/{slug}/voz", post(narracao::salvar_voz_personagem))
+        .route("/personagens/{slug}/virar-variante", post(personagens::virar_variante))
         .route("/personagens/{slug}/vozes-extras", get(narracao::vozes_extras).post(narracao::salvar_vozes_extras))
         .route("/familia/narrador", post(narracao::salvar_narrador))
         .layer(axum::extract::DefaultBodyLimit::max(midia::LIMITE_BYTES * 4))

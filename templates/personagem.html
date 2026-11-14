@@ -106,6 +106,19 @@
       <button type="submit">Salvar ficha</button>
     </form>
   </section>
+  {% if !outros.is_empty() %}
+  <section class="cartao largo">
+    <h2>🔀 Virar variante de outro personagem</h2>
+    <p class="suave">Ex.: “Pedro Pirata” salvo de uma história pode virar uma variante do Pedro. As variantes e imagens de {{ p.nome }} passam para o escolhido,
+      as histórias e estantes passam a usar o escolhido (com a variante certa), e {{ p.nome }} deixa de existir como personagem separado.
+      Nas falas, vale a voz do escolhido.</p>
+    <form method="post" action="/personagens/{{ p.slug }}/virar-variante" class="linha"
+          onsubmit="return confirm('Transformar {{ p.nome }} em variante de ' + this.destino.selectedOptions[0].text + '? Não dá para desfazer.')">
+      <select name="destino">{% for (os, on) in outros %}<option value="{{ os }}">{{ on }}</option>{% endfor %}</select>
+      <button type="submit">🔀 Virar variante</button>
+    </form>
+  </section>
+  {% endif %}
 </main>
 <script src="/vozes.js?v={{ crate::web::versao() }}" defer></script>
 <script src="/descrever.js?v={{ crate::web::versao() }}" defer></script>
