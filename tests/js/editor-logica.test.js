@@ -89,3 +89,14 @@ test('renomear secundário atualiza as páginas', () => {
   assert.deepEqual(paginas[0].secundarios, ['Pirata Caveira', 'Coruja']);
   assert.deepEqual(paginas[1].secundarios, []);
 });
+
+test('tipo do secundário: o da IA, ou deduzido pela descrição', () => {
+  assert.equal(L.adivinharTipo({ nome: 'X', tipo: 'vilao', descricao: 'menino' }), 'vilao');
+  assert.equal(L.adivinharTipo({ nome: 'Papagaio Pipo', descricao: 'penas verdes' }), 'animal');
+  assert.equal(L.adivinharTipo({ nome: 'Lelê', descricao: 'Menina de 6 anos, tranças' }), 'crianca');
+  assert.equal(L.adivinharTipo({ nome: 'Coruja Sábia', descricao: 'olhos grandes' }), 'animal');
+  assert.equal(L.adivinharTipo({ nome: 'Pirata Caveira', descricao: 'rosto de caveira, chapéu' }), 'criatura');
+  assert.equal(L.adivinharTipo({ nome: 'Capitão Trapalhão', descricao: 'pirata atrapalhado de bigode' }), 'vilao');
+  assert.equal(L.adivinharTipo({ nome: 'Robozinho', descricao: 'robô de lata' }), 'robo');
+  assert.equal(L.adivinharTipo({ nome: 'Dona Zelinda', descricao: 'senhora de óculos' }), 'adulto');
+});

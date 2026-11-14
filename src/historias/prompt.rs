@@ -16,8 +16,10 @@ pub fn schema_historia() -> Value {
                 "type": "array",
                 "description": "personagens sem ficha que aparecem nas ilustrações, com a aparência fixa",
                 "items": {
-                    "type": "object", "additionalProperties": false, "required": ["nome", "descricao"],
-                    "properties": { "nome": { "type": "string" }, "descricao": { "type": "string" } }
+                    "type": "object", "additionalProperties": false, "required": ["nome", "tipo", "descricao"],
+                    "properties": { "nome": { "type": "string" },
+                                    "tipo": { "type": "string", "enum": crate::personagens::TIPOS.iter().map(|(k, _)| *k).collect::<Vec<_>>() },
+                                    "descricao": { "type": "string" } }
                 }
             },
             "faixa": { "type": "string", "enum": FAIXAS, "description": "faixa etária escolhida para esta história" },
@@ -191,7 +193,7 @@ pub fn montar_prompt(
            \"personagens\" lista quem aparece na ilustração com slug e variante (use a variante_a_usar, salvo se o briefing pedir outra; as variantes em tambem_citadas também foram pedidas: use cada uma nas páginas em que fizer sentido, por exemplo depois de uma transformação, e escreva a cena com a aparência da variante daquela página); \
            \"animacao\" é um efeito leve que combine com a cena, ou \"nenhuma\".\n\
          - Personagens SECUNDÁRIOS (sem ficha) que aparecem nas ilustrações: descreva cada um uma vez em \"secundarios\" \
-           (nome + aparência FIXA e detalhada, como uma ficha para o ilustrador: espécie/idade, corpo, rosto, roupa, cores, acessórios), \
+           (nome, tipo — crianca, animal, robo, vilao, adulto ou criatura — e aparência FIXA e detalhada, como uma ficha para o ilustrador: espécie/idade, corpo, rosto, roupa, cores, acessórios), \
            e em cada página liste em \"secundarios\" os nomes dos que aparecem na ilustração. A aparência não muda entre as páginas.\n\
          - Use SOMENTE os personagens abaixo (pelos slugs). {secundarios}\n\n\
          PERSONAGENS:\n{}\n\n\
@@ -235,6 +237,9 @@ fn normalizar_secundarios(lista: &mut Vec<Secundario>) -> Vec<String> {
     for sec in lista.iter_mut() {
         sec.nome = sec.nome.trim().to_string();
         sec.descricao = sec.descricao.trim().to_string();
+        if !crate::personagens::TIPOS.iter().any(|(k, _)| *k == sec.tipo) {
+            sec.tipo = String::new();
+        }
     }
     lista.retain(|s| !s.nome.is_empty());
     lista.iter().map(|s| s.nome.clone()).collect()
@@ -371,7 +376,8 @@ mod testes {
     #[test]
     fn secundarios_usam_a_grafia_da_lista_e_paginas_vazias_somem() {
         let c: Conteudo = serde_json::from_value(json!({
-            "secundarios": [{ "nome": " Pirata Caveira ", "descricao": " esqueleto " }, { "nome": "  ", "descricao": "x" }],
+            "secundarios": [{ "nome": " Pirata Caveira ", "tipo": "vilao", "descricao": " esqueleto " }, { "nome": "  ", "descricao": "x" },
+                            { "nome": "Fada", "tipo": "princesa", "descricao": "asas" }],
             "paginas": [
                 { "secundarios": ["pirata caveira", "Pirata Caveira", "Fantasma"], "personagens": [{ "slug": "leo", "variante": "" }, { "slug": "zorgo" }],
                   "animacao": "fogos", "blocos": [{ "quem": "narrador", "texto": "a" }] },
@@ -379,8 +385,11 @@ mod testes {
             ]
         })).unwrap();
         let c = normalizar(c, "por-personagem", &[cena("leo")], &[]);
-        assert_eq!(c.secundarios.len(), 1);
+        assert_eq!(c.secundarios.len(), 2);
         assert_eq!(c.secundarios[0].descricao, "esqueleto");
+        assert_eq!(c.secundarios[0].tipo, "vilao");
+        // Tipo que não existe fica vazio (o editor deduz pela descrição).
+        assert_eq!(c.secundarios[1].tipo, "");
         assert_eq!(c.paginas.len(), 1);
         let p0 = &c.paginas[0];
         assert_eq!(p0.secundarios, vec!["Pirata Caveira".to_string()]);

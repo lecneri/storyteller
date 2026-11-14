@@ -415,7 +415,8 @@
   // e a história passa a usar o personagem novo nas falas e nas cenas.
   function salvarComoPersonagem(x) {
     const tipos = dados.tipos || [];
-    const sel = el('select', { title: 'Tipo do personagem' }, tipos.map((t) => el('option', { value: t.id, selected: t.id === 'adulto' }, t.nome)));
+    const sugerido = L.adivinharTipo(x);
+    const sel = el('select', { title: 'Tipo do personagem' }, tipos.map((t) => el('option', { value: t.id, selected: t.id === sugerido }, t.nome)));
     const botao = el('button', { type: 'button', class: 'pequeno', onclick: async () => {
       const voz = L.vozDoSecundario(estado.paginas, x.nome);
       botao.disabled = true; botao.textContent = '⏳ Salvando…';

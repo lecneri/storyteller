@@ -25,6 +25,9 @@ pub struct Secundario {
     pub nome: String,
     #[serde(default)]
     pub descricao: String,
+    /// Tipo sugerido (crianca, animal, robo, vilao, adulto, criatura), para "Salvar como personagem".
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub tipo: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]

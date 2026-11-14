@@ -112,7 +112,24 @@
     for (const p of paginas) p.secundarios = (p.secundarios || []).map((n) => (n === antigo ? novo : n));
   }
 
-  const api = { chaveVoz, nomeVoz, miniatura, varianteDe, referencias, promptImagem, promptAnimacao,
+  // Tipo de personagem pelo nome/descrição, para histórias geradas antes de a IA informar o tipo.
+  // Compara sem acentos (o \b do JavaScript não entende "robô").
+  const PALAVRAS_TIPO = [
+    ['robo', /\b(robos?|androide|maquina|carro|foguete|caminhao|trem|nave)\b/],
+    ['animal', /\b(cachorr\w*|cao|gat\w*|papagaio|coruja|passar\w*|bode|vaca|cavalo|coelh\w*|urso|leao|tigre|macac\w*|elefante|girafa|peixe|tartaruga|sapo|pato|galinha|porc\w*|rato|ratinho|raposa|lobo|esquilo|abelha|borboleta|baleia|golfinho|tubarao|dinossauro|filhote|bicho|animal|penas|pelos?|focinho|patas?)\b/],
+    ['criatura', /\b(dragao|monstr\w*|fantasma|caveira|esqueleto|alien\w*|fada|duende|gigante|unicornio|sereia|ogro|troll|zumbi|criatura|bruxa|mago)\b/],
+    ['crianca', /\b(menin[oa]s?|garot[oa]s?|crianca|bebe|\d+ anos)\b/],
+    ['vilao', /\b(vilao|vila|malvad\w*|bandid\w*|ladrao|pirata)\b/],
+  ];
+  const semAcento = (t) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  function adivinharTipo(sec) {
+    if (sec.tipo) return sec.tipo;
+    const texto = semAcento((sec.nome || '') + ' ' + (sec.descricao || ''));
+    const achado = PALAVRAS_TIPO.find(([, re]) => re.test(texto));
+    return achado ? achado[0] : 'adulto';
+  }
+
+  const api = { adivinharTipo, chaveVoz, nomeVoz, miniatura, varianteDe, referencias, promptImagem, promptAnimacao,
     vozDoSecundario, secundarioVirouPersonagem, renomearSecundario };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else raiz.EditorLogica = api;
