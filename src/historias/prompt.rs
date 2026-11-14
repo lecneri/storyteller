@@ -118,6 +118,8 @@ pub fn montar_prompt(
                     format!("TODAS as falas de {} usam voz = \"{vs}\"{em}. O narrador pode contar em português o que ele disse.", p.nome)
                 }
             });
+            // Sem pedido no briefing: a IA ainda conhece as vozes extras e usa quando a fala for toda naquela língua.
+            let falas = falas.or_else(|| falas_livres(&p.nome, &p.vozes_extras));
             json!({
                 "slug": p.slug, "nome": p.nome, "tipo": p.tipo,
                 "ficha": p.ficha,
@@ -145,7 +147,9 @@ pub fn montar_prompt(
          Personagens SECUNDÁRIOS sem ficha (ex.: um vilão só desta história, um bichinho, a professora) também podem falar: \
          use quem = \"voz:<id>\" com uma das VOZES DO SISTEMA abaixo, \"nome\" com o nome dele, e \"tom\"/\"velocidade\" para dar personalidade \
          (vilão: tom grave e mais lento; criaturinha: tom agudo e rápido). Mantenha a MESMA voz, nome, tom e velocidade para o mesmo secundário na história toda, \
-         e não use para ele a mesma voz de outro secundário. Vozes marcadas \"só inglês\" apenas para falas em inglês. \
+         e não use para ele a mesma voz de outro secundário. Vozes marcadas \"só inglês\" apenas para falas em inglês; \
+         se um secundário falar português E palavras em outra língua, use uma voz Multilingual (as que não dizem \"BR\" nem \"só inglês\"), \
+         porque as vozes brasileiras sem \"Multilingual\" pronunciam mal outras línguas. \
          Nos blocos dos personagens com ficha e do narrador: nome = \"\", tom = 0, velocidade = 0."
     };
     let briefing = if briefing.trim().is_empty() {
@@ -203,6 +207,20 @@ pub fn montar_prompt(
         regras.join("\n"),
         serde_json::to_string_pretty(&fichas).unwrap_or_default()
     )
+}
+
+/// Vozes extras disponíveis sem pedido no briefing: fala inteira na língua da voz → usa a voz;
+/// fala em português ou misturada → voz normal.
+fn falas_livres(nome: &str, vozes_extras: &Value) -> Option<String> {
+    let lista: Vec<String> = vozes_extras
+        .as_array()?
+        .iter()
+        .filter(|x| x["lingua"].as_str().is_some_and(|l| l != "Português"))
+        .map(|x| format!("voz = \"{}\" quando a fala for INTEIRA em {}", x["slug"].as_str().unwrap_or_default(), x["lingua"].as_str().unwrap_or_default()))
+        .collect();
+    (!lista.is_empty()).then(|| {
+        format!("{nome} tem vozes em outras línguas: {}. Falas em português ou misturadas usam voz = \"\" (se misturar, prefira separar a parte na outra língua num bloco próprio).", lista.join("; "))
+    })
 }
 
 /// Ajusta a resposta da IA às regras do app: secundários com nome conhecido, personagens só os citados,
@@ -396,6 +414,18 @@ mod testes {
         assert_eq!(p0.personagens.len(), 1);
         assert_eq!(p0.personagens[0].variante, None);
         assert_eq!(p0.animacao.as_deref(), Some("nenhuma"));
+    }
+
+    #[test]
+    fn vozes_extras_vao_para_a_ia_mesmo_sem_pedido() {
+        let extras = json!([{ "slug": "ingles", "nome": "Inglês", "lingua": "Inglês" }, { "slug": "robo", "nome": "Robô", "lingua": "Português" }]);
+        let t = falas_livres("Pedro", &extras).unwrap();
+        assert!(t.contains("voz = \"ingles\" quando a fala for INTEIRA em Inglês"));
+        assert!(!t.contains("robo"), "voz extra em português não é de outra língua");
+        assert_eq!(falas_livres("Noob", &json!([])), None);
+        // No prompt, sem @pedro!ingles: a ficha leva o aviso das vozes.
+        let t = montar_prompt("Pedro aprende inglês", &[], "por-personagem", &[cena("leo")], &[p("leo", "Léo", &[], &[])], "", &[], &[]);
+        assert!(t.contains("quando a fala for INTEIRA em Inglês"));
     }
 
     #[test]
