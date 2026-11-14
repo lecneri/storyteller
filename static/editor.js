@@ -374,7 +374,8 @@
     const total = estado.paginas.length;
     const ir = (i) => {
       atual = Math.max(0, Math.min(total - 1, i));
-      if (modo === 'carrossel') { desenhar(); window.scrollTo({ top: raiz.offsetTop, behavior: 'smooth' }); return; }
+      if (modo === 'carrossel') { desenhar(); if (soltarAncora) soltarAncora(); window.scrollTo({ top: raiz.offsetTop, behavior: 'smooth' }); return; }
+      if (soltarAncora) soltarAncora();
       const alvo = document.getElementById('pagina-' + (atual + 1));
       if (alvo) window.scrollTo({ top: alvo.getBoundingClientRect().top + window.scrollY - 80, behavior: 'smooth' });
       marcarAtiva();
@@ -451,9 +452,39 @@
     raiz.querySelectorAll('.pagina').forEach((p) => observador.observe(p));
   }
 
+  // Âncora da tela: a página visível e onde ela estava. Redesenhar (colar imagem, remover, + Texto)
+  // não pode tirar a pessoa do lugar, nem quando as imagens de cima terminam de carregar e empurram tudo.
+  function pegarAncora() {
+    const paginas = [...raiz.querySelectorAll('.pagina')];
+    const p = paginas.find((x) => x.getBoundingClientRect().bottom > 90);
+    return p ? { id: p.id, topo: p.getBoundingClientRect().top } : null;
+  }
+  let soltarAncora = null;
+  function manterAncora(a, rolagem) {
+    if (soltarAncora) soltarAncora();
+    const aplicar = () => {
+      const p = a && document.getElementById(a.id);
+      if (p) window.scrollBy(0, p.getBoundingClientRect().top - a.topo); else window.scrollTo(0, rolagem);
+    };
+    aplicar();
+    // Reaplica conforme as mídias carregam, por 3 s ou até a pessoa rolar a tela.
+    const midias = [...raiz.querySelectorAll('img, video')];
+    midias.forEach((m) => { m.addEventListener('load', aplicar); m.addEventListener('loadedmetadata', aplicar); });
+    const parar = () => soltarAncora && soltarAncora();
+    const eventos = ['wheel', 'touchstart', 'keydown', 'mousedown'];
+    eventos.forEach((e) => window.addEventListener(e, parar, { passive: true }));
+    const t = setTimeout(parar, 3000);
+    soltarAncora = () => {
+      clearTimeout(t);
+      midias.forEach((m) => { m.removeEventListener('load', aplicar); m.removeEventListener('loadedmetadata', aplicar); });
+      eventos.forEach((e) => window.removeEventListener(e, parar));
+      soltarAncora = null;
+    };
+  }
+
   function desenhar() {
-    // Guarda a rolagem: redesenhar não pode jogar a tela para outro lugar (ex.: ao trocar/remover imagem).
     const rolagem = window.scrollY;
+    const ancora = pegarAncora();
     const titulo = el('input', { class: 'ed-titulo', value: estado.titulo, oninput: (e) => { estado.titulo = e.target.value; mudou(); } });
     const narr = el('select', { onchange: (e) => { estado.narracao = e.target.value; mudou(); desenhar(); } },
       el('option', { value: 'por-personagem', selected: estado.narracao !== 'narrador' }, 'Por personagem'),
@@ -486,7 +517,7 @@
         status, el('button', { type: 'button', onclick: salvar }, '💾 Salvar')),
     ].flat(Infinity).filter(Boolean));
     raiz.querySelectorAll('textarea').forEach(ajustar);
-    window.scrollTo(0, rolagem);
+    manterAncora(ancora, rolagem);
     observarPaginas();
   }
 
