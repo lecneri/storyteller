@@ -26,6 +26,7 @@ struct LinhaFamilia {
     usar_chave_sistema: bool,
     limite_semana: Option<i64>,
     uso_semana: i64,
+    espaco_mb: f64,
 }
 
 #[derive(Template)]
@@ -73,7 +74,8 @@ async fn pagina(st: &AppState, s: Sessao, novo_link: Option<(String, String)>, a
                 COALESCE(c.usar_chave_sistema, false) AS usar_chave_sistema,
                 (c.limites->>'historias_semana')::bigint AS limite_semana,
                 (SELECT count(*) FROM ia.uso u WHERE u.familia_id = f.id AND u.criado_em > now() - interval '7 days'
-                    AND u.via IN ('cli', 'chave_sistema')) AS uso_semana
+                    AND u.via IN ('cli', 'chave_sistema')) AS uso_semana,
+                COALESCE((SELECT sum(a.bytes) FROM midia.arquivos a WHERE a.familia_id = f.id), 0)::float8 / 1048576.0 AS espaco_mb
            FROM acesso.familias f LEFT JOIN ia.config_familia c ON c.familia_id = f.id
           ORDER BY f.nome",
     )
@@ -305,4 +307,16 @@ pub async fn cli_testar(s: Sessao, Path(nome): Path<String>) -> Response {
         Ok(v) => axum::Json(serde_json::json!({ "ok": true, "resposta": v["resposta"] })).into_response(),
         Err(e) => axum::Json(serde_json::json!({ "ok": false, "erro": format!("{e:#}") })).into_response(),
     }
+}
+
+/// POST /sistema/limpar: roda a limpeza de arquivos agora.
+pub async fn limpar_agora(State(st): State<AppState>, s: Sessao) -> Response {
+    if let Some(r) = so_admin_sistema(&s) {
+        return r;
+    }
+    let aviso = match crate::limpeza::limpar(&st).await {
+        Ok((n, b)) => format!("Limpeza feita ✓ {n} arquivo(s) apagado(s), {:.1} MB liberados (arquivos com menos de 24 h ficam).", b as f64 / 1048576.0),
+        Err(e) => format!("A limpeza falhou: {e:#}"),
+    };
+    pagina(&st, s, None, Some(aviso)).await
 }

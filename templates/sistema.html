@@ -20,7 +20,7 @@
     <div class="tabela">
     {% for f in familias %}
       <form method="post" action="/sistema/familias/{{ f.id }}" class="linha-familia">
-        <span><strong>{{ f.nome }}</strong><br><small class="suave">@{{ f.slug }} · {{ f.membros }} membro(s) · {{ f.historias }} história(s) · uso 7d: {{ f.uso_semana }}</small></span>
+        <span><strong>{{ f.nome }}</strong><br><small class="suave">@{{ f.slug }} · {{ f.membros }} membro(s) · {{ f.historias }} história(s) · uso 7d: {{ f.uso_semana }} · 💾 {{ "{:.1}"|format(f.espaco_mb) }} MB</small></span>
         <label class="check"><input type="checkbox" name="cli" value="1"{% if f.cli_habilitado %} checked{% endif %}> CLI</label>
         <label class="check"><input type="checkbox" name="chave_sistema" value="1"{% if f.usar_chave_sistema %} checked{% endif %}> Chave do sistema</label>
         <label class="check">Limite/semana <input name="limite" type="number" min="0" style="width:80px" value="{% if let Some(l) = f.limite_semana %}{{ l }}{% endif %}" placeholder="∞"></label>
@@ -29,6 +29,10 @@
       </form>
     {% endfor %}
     </div>
+    <form method="post" action="/sistema/limpar" class="linha">
+      <span class="suave">Arquivos sem uso (imagens trocadas, histórias apagadas, áudios antigos) são apagados sozinhos uma vez por dia.</span>
+      <button type="submit" class="pequeno secundario">🧹 Limpar agora</button>
+    </form>
     <form method="post" action="/sistema/familias" class="linha">
       <input name="nome" placeholder="Nome da nova família (ex.: Família Souza)" required style="flex:1">
       <button type="submit">Criar família</button>

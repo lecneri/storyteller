@@ -16,6 +16,20 @@
     </form>
   </section>
   <section class="cartao largo">
+    <h2>🔐 Meus dados</h2>
+    <p class="suave">Baixe tudo o que o Storyteller guarda sobre você: dados da conta e o conteúdo das famílias de que você participa.</p>
+    <a href="/conta/dados"><button type="button">⬇ Baixar meus dados</button></a>
+  </section>
+  <section class="cartao largo perigo-caixa">
+    <h2>🗑 Apagar minha conta</h2>
+    <p class="suave">Não dá para desfazer. Famílias em que você é o único participante são apagadas junto (histórias, personagens, imagens e áudios). Nas outras você só sai — se for o único admin, promova outra pessoa antes. Baixe seus dados antes, se quiser guardar.</p>
+    <form method="post" action="/conta/apagar" class="linha" onsubmit="return confirm('Apagar a sua conta de vez?')">
+      <input type="password" name="senha" placeholder="sua senha" required autocomplete="current-password">
+      <input name="confirmacao" placeholder="digite APAGAR" required autocomplete="off">
+      <button type="submit" class="perigo-btn">Apagar minha conta</button>
+    </form>
+  </section>
+  <section class="cartao largo">
     <h2>📦 Exportar</h2>
     <p class="suave">Baixa tudo da família em Markdown (personagens, estantes, histórias, memórias) com as imagens e vídeos — no formato de pastas do projeto.</p>
     <a href="/exportar"><button type="button">⬇ Baixar .zip</button></a>

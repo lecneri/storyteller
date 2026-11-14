@@ -928,3 +928,41 @@ pub async fn gerar_imagem(State(st): State<AppState>, s: Sessao, Path(id): Path<
         Err(e) => (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "erro": format!("{e:#}") }))).into_response(),
     }
 }
+
+/// POST /historias/{id}/apagar: apaga a história (admin da família ou quem criou). As mídias que ficarem
+/// sem uso são apagadas pela limpeza (cópias em outras famílias continuam com os arquivos).
+pub async fn apagar(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) -> Response {
+    let dados: Option<(Uuid, Option<Uuid>)> = sqlx::query_as("SELECT familia_id, criado_por FROM conteudo.historias WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&st.db)
+        .await
+        .unwrap_or(None);
+    let Some((familia, criador)) = dados.filter(|(f, _)| *f == s.familia_id) else {
+        return Redirect::to("/historias").into_response();
+    };
+    if !s.admin_familia() && criador != Some(s.usuario_id) {
+        return Redirect::to(&format!("/historias/{id}")).into_response();
+    }
+    let r = async {
+        let mut tx = st.db.begin().await?;
+        sqlx::query("DELETE FROM partilha.destinos WHERE item_tipo = 'historia' AND item_id = $1").bind(id).execute(&mut *tx).await?;
+        sqlx::query("DELETE FROM partilha.links WHERE item_tipo = 'historia' AND item_id = $1").bind(id).execute(&mut *tx).await?;
+        sqlx::query("UPDATE conteudo.historias SET continua_de = array_remove(continua_de, $1) WHERE $1 = ANY(continua_de)")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM conteudo.historias WHERE id = $1 AND familia_id = $2").bind(id).bind(familia).execute(&mut *tx).await?;
+        tx.commit().await
+    }
+    .await;
+    if let Err(e) = r {
+        return erro_interno(e.into());
+    }
+    let st2 = st.clone();
+    tokio::spawn(async move {
+        if let Err(e) = crate::limpeza::limpar(&st2).await {
+            tracing::warn!("limpeza após apagar falhou: {e:#}");
+        }
+    });
+    Redirect::to("/historias").into_response()
+}

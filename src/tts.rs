@@ -91,6 +91,11 @@ fn hash(voz: &Voz, texto: &str) -> String {
     format!("{:x}", Sha256::digest(chave.as_bytes()))
 }
 
+/// Hash do cache de áudio (usado também pela limpeza).
+pub fn hash_publico(voz: &Voz, texto: &str) -> String {
+    hash(voz, texto.trim())
+}
+
 /// Devolve o áudio do cache ou gera com o edge-tts.
 pub async fn sintetizar(st: &AppState, familia_id: Uuid, familia_slug: &str, texto: &str, voz: &Voz) -> anyhow::Result<Audio> {
     let texto = texto.trim();

@@ -229,3 +229,103 @@ pub async fn instalar(
         Err(e) => erro_interno(e),
     }
 }
+
+// ───────────── meus dados e apagar conta (LGPD) ─────────────
+
+/// GET /conta/dados: zip com os dados da conta (JSON) + o conteúdo das famílias de que a pessoa participa.
+pub async fn meus_dados(State(st): State<AppState>, s: Sessao) -> Response {
+    let r = async {
+        let (nome, email, criado, notif): (String, String, chrono::DateTime<chrono::Utc>, bool) =
+            sqlx::query_as("SELECT nome, email, criado_em, notificacoes FROM acesso.usuarios WHERE id = $1")
+                .bind(s.usuario_id)
+                .fetch_one(&st.db)
+                .await?;
+        let familias: Vec<(Uuid, String, String, String)> = sqlx::query_as(
+            "SELECT f.id, f.slug, f.nome, m.papel FROM acesso.membros m JOIN acesso.familias f ON f.id = m.familia_id
+              WHERE m.usuario_id = $1",
+        )
+        .bind(s.usuario_id)
+        .fetch_all(&st.db)
+        .await?;
+        let conta = serde_json::json!({
+            "nome": nome, "email": email, "conta_criada_em": criado, "recebe_emails": notif,
+            "admin_do_sistema": s.admin_sistema,
+            "familias": familias.iter().map(|(_, slug, nome, papel)| serde_json::json!({ "nome": nome, "nome_unico": slug, "papel": papel })).collect::<Vec<_>>(),
+        });
+        let mut arquivos = vec![("conta.json".to_string(), serde_json::to_vec_pretty(&conta)?)];
+        for (fid, slug, _, _) in &familias {
+            arquivos.extend(crate::exportar::arquivos_familia(&st, *fid, slug).await?);
+        }
+        crate::exportar::zipar(arquivos)
+    }
+    .await;
+    match r {
+        Ok(bytes) => (
+            [
+                (axum::http::header::CONTENT_TYPE, "application/zip".to_string()),
+                (axum::http::header::CONTENT_DISPOSITION, "attachment; filename=\"meus-dados-storyteller.zip\"".to_string()),
+            ],
+            axum::body::Body::from(bytes),
+        )
+            .into_response(),
+        Err(e) => erro_interno(e),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct FormApagar {
+    senha: String,
+    confirmacao: String,
+}
+
+/// POST /conta/apagar: apaga a conta. Famílias em que a pessoa é a única participante são apagadas junto;
+/// nas outras, ela só sai (precisa haver outro admin).
+pub async fn apagar_conta(State(st): State<AppState>, s: Sessao, Form(f): Form<FormApagar>) -> Response {
+    let hash: String = match sqlx::query_scalar("SELECT senha_hash FROM acesso.usuarios WHERE id = $1").bind(s.usuario_id).fetch_one(&st.db).await {
+        Ok(h) => h,
+        Err(e) => return erro_interno(e.into()),
+    };
+    if !auth::senha_confere(&f.senha, &hash) || f.confirmacao.trim().to_uppercase() != "APAGAR" {
+        return pagina(&st, s, Some("Para apagar, digite a sua senha e a palavra APAGAR.".into())).await;
+    }
+    if s.admin_sistema {
+        let outros: i64 = sqlx::query_scalar("SELECT count(*) FROM acesso.usuarios WHERE admin_sistema AND id <> $1")
+            .bind(s.usuario_id)
+            .fetch_one(&st.db)
+            .await
+            .unwrap_or(0);
+        if outros == 0 {
+            return pagina(&st, s, Some("Você é o único admin do sistema: não dá para apagar esta conta.".into())).await;
+        }
+    }
+    // Verifica as famílias antes de mexer em qualquer coisa.
+    let familias: Vec<(Uuid, String, String, i64, i64)> = match sqlx::query_as(
+        "SELECT f.id, f.nome, m.papel,
+                (SELECT count(*) FROM acesso.membros o WHERE o.familia_id = f.id AND o.usuario_id <> $1),
+                (SELECT count(*) FROM acesso.membros o WHERE o.familia_id = f.id AND o.usuario_id <> $1 AND o.papel = 'admin')
+           FROM acesso.membros m JOIN acesso.familias f ON f.id = m.familia_id WHERE m.usuario_id = $1",
+    )
+    .bind(s.usuario_id)
+    .fetch_all(&st.db)
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => return erro_interno(e.into()),
+    };
+    if let Some((_, nome, ..)) = familias.iter().find(|(_, _, papel, outros, admins)| papel == "admin" && *outros > 0 && *admins == 0) {
+        return pagina(&st, s, Some(format!("Antes, torne outra pessoa admin da {nome} (em Família)."))).await;
+    }
+    for (fid, _, _, outros, _) in &familias {
+        if *outros == 0 {
+            if let Err(e) = crate::limpeza::apagar_familia(&st, *fid).await {
+                return erro_interno(e);
+            }
+        }
+    }
+    if let Err(e) = sqlx::query("DELETE FROM acesso.usuarios WHERE id = $1").bind(s.usuario_id).execute(&st.db).await {
+        return erro_interno(e.into());
+    }
+    let jar = axum_extra::extract::cookie::CookieJar::new()
+        .remove(axum_extra::extract::cookie::Cookie::build(auth::COOKIE_SESSAO).path("/"));
+    (jar, Redirect::to("/entrar")).into_response()
+}

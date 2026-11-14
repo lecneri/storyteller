@@ -74,7 +74,11 @@ fn ext_de(mime: &str) -> &str {
 
 /// GET /exportar: baixa um .zip com tudo da família em Markdown + mídias (sem áudios gerados e sem fotos privadas).
 pub async fn exportar(State(st): State<AppState>, s: Sessao) -> Response {
-    match montar_zip(&st, &s).await {
+    let arquivos = match arquivos_familia(&st, s.familia_id, &s.familia_slug).await {
+        Ok(a) => a,
+        Err(e) => return erro_interno(e),
+    };
+    match zipar(arquivos) {
         Ok(bytes) => (
             [
                 (header::CONTENT_TYPE, "application/zip".to_string()),
@@ -87,15 +91,16 @@ pub async fn exportar(State(st): State<AppState>, s: Sessao) -> Response {
     }
 }
 
-async fn montar_zip(st: &AppState, s: &Sessao) -> anyhow::Result<Vec<u8>> {
-    let base = format!("familias/{}", s.familia_slug);
+/// Todos os arquivos (Markdown + mídias) de uma família, com o caminho dentro do zip.
+pub async fn arquivos_familia(st: &AppState, familia_id: Uuid, familia_slug: &str) -> anyhow::Result<Vec<(String, Vec<u8>)>> {
+    let base = format!("familias/{familia_slug}");
     let mut arquivos: Vec<(String, Vec<u8>)> = Vec::new();
     let mut add = |caminho: String, conteudo: Vec<u8>| arquivos.push((caminho, conteudo));
 
     // Mídia da família, para copiar os arquivos referenciados.
     let midias: Vec<(Uuid, String, String)> =
         sqlx::query_as("SELECT id, caminho, tipo_mime FROM midia.arquivos WHERE familia_id = $1")
-            .bind(s.familia_id)
+            .bind(familia_id)
             .fetch_all(&st.db)
             .await?;
     let ler = |id: &Uuid| midias.iter().find(|(m, _, _)| m == id).cloned();
@@ -103,14 +108,14 @@ async fn montar_zip(st: &AppState, s: &Sessao) -> anyhow::Result<Vec<u8>> {
     // familia.md
     let (nome, vis, config): (String, String, Value) =
         sqlx::query_as("SELECT nome, visibilidade_padrao, config FROM acesso.familias WHERE id = $1")
-            .bind(s.familia_id)
+            .bind(familia_id)
             .fetch_one(&st.db)
             .await?;
     add(
         format!("{base}/familia.md"),
         format!(
             "---\nid: {}\nnome: {}\nvisibilidade_padrao: {vis}\nnarrador: {}\n---\n",
-            s.familia_slug,
+            familia_slug,
             yaml_str(&nome),
             config.get("narrador").map(|v| v.to_string()).unwrap_or_else(|| "padrão".into())
         )
@@ -120,7 +125,7 @@ async fn montar_zip(st: &AppState, s: &Sessao) -> anyhow::Result<Vec<u8>> {
     // leitores
     let leitores: Vec<(String, String, String)> =
         sqlx::query_as("SELECT slug, nome, faixa FROM acesso.leitores WHERE familia_id = $1")
-            .bind(s.familia_id)
+            .bind(familia_id)
             .fetch_all(&st.db)
             .await?;
     for (slug, nome, faixa) in leitores {
@@ -131,7 +136,7 @@ async fn montar_zip(st: &AppState, s: &Sessao) -> anyhow::Result<Vec<u8>> {
     let personagens: Vec<(Uuid, String, String, String, Value, Value)> = sqlx::query_as(
         "SELECT id, slug, nome, tipo, ficha, voz_padrao FROM conteudo.personagens WHERE familia_id = $1",
     )
-    .bind(s.familia_id)
+    .bind(familia_id)
     .fetch_all(&st.db)
     .await?;
     let mut pendentes: Vec<(String, String)> = Vec::new(); // (caminho no zip, caminho no disco)
@@ -183,14 +188,14 @@ async fn montar_zip(st: &AppState, s: &Sessao) -> anyhow::Result<Vec<u8>> {
     // estantes + histórias (história fica na estante principal; sem estante → pasta "sem-estante")
     let estantes: Vec<(Uuid, String, String, Value)> =
         sqlx::query_as("SELECT id, slug, nome, padroes FROM conteudo.estantes WHERE familia_id = $1")
-            .bind(s.familia_id)
+            .bind(familia_id)
             .fetch_all(&st.db)
             .await?;
     let historias: Vec<(Uuid, String, String, String, String, Option<String>, Value, Option<String>, Option<Uuid>)> = sqlx::query_as(
         "SELECT id, slug, titulo, faixa, narracao, briefing, conteudo, memoria, estante_principal
            FROM conteudo.historias WHERE familia_id = $1",
     )
-    .bind(s.familia_id)
+    .bind(familia_id)
     .fetch_all(&st.db)
     .await?;
     for (eid, eslug, enome, padroes) in &estantes {
@@ -232,7 +237,11 @@ async fn montar_zip(st: &AppState, s: &Sessao) -> anyhow::Result<Vec<u8>> {
         }
     }
 
-    // Monta o zip (em memória; o acervo de uma família é pequeno).
+    Ok(arquivos)
+}
+
+/// Monta o zip em memória (o acervo de uma família é pequeno).
+pub fn zipar(arquivos: Vec<(String, Vec<u8>)>) -> anyhow::Result<Vec<u8>> {
     let mut buf = std::io::Cursor::new(Vec::new());
     {
         let mut z = zip::ZipWriter::new(&mut buf);

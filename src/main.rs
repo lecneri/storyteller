@@ -11,6 +11,7 @@ mod historias;
 mod imagem;
 mod ia;
 mod jobs;
+mod limpeza;
 mod midia;
 mod narracao;
 mod partilha;
@@ -71,6 +72,7 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!("não carreguei as configurações do sistema: {e:#}");
     }
     tokio::spawn(jobs::worker(state.clone()));
+    tokio::spawn(limpeza::agendar(state.clone()));
     let app = Router::new()
         .route("/saude", get(saude))
         .route("/", get(estantes::inicio))
@@ -82,6 +84,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/entrar", get(web::pagina_entrar).post(web::entrar))
         .route("/sair", post(web::sair))
         .route("/conta", get(conta::ver).post(conta::salvar))
+        .route("/conta/dados", get(conta::meus_dados))
+        .route("/conta/apagar", post(conta::apagar_conta))
         .route("/instalar", get(conta::pagina_instalar).post(conta::instalar))
         .route("/esqueci", get(conta::pagina_esqueci).post(conta::esqueci))
         .route("/redefinir/{token}", get(conta::pagina_redefinir).post(conta::redefinir))
@@ -99,6 +103,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/historias", get(historias::lista).post(historias::criar))
         .route("/historias/{id}", get(historias::abrir))
         .route("/historias/{id}/regerar", post(historias::regerar))
+        .route("/historias/{id}/apagar", post(historias::apagar))
         .route("/mencoes", get(historias::mencoes))
         .route("/historias/{id}/memoria", post(historias::gerar_memoria_rota))
         .route("/historias/{id}/memoria/salvar", post(historias::salvar_memoria))
@@ -142,6 +147,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/sistema/chaves", post(sistema::salvar_chave))
         .route("/sistema/chaves/{provedor}/remover", post(sistema::remover_chave))
         .route("/sistema/config", post(sistema::salvar_config))
+        .route("/sistema/limpar", post(sistema::limpar_agora))
         .route("/sistema/email-teste", post(sistema::email_teste))
         .route("/sistema/cli/{nome}/iniciar", post(sistema::cli_iniciar))
         .route("/sistema/cli/{nome}/estado", get(sistema::cli_estado))
