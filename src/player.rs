@@ -128,8 +128,9 @@ pub async fn manifest(st: &AppState, historia: Uuid, familia_leitora: Uuid) -> a
 }
 
 /// Manifest de link público: vozes genéricas e mídia servida pelo link.
-pub async fn manifest_publico(st: &AppState, historia: Uuid, dona: Uuid, token: &str) -> anyhow::Result<Option<(String, Value)>> {
-    montar(st, historia, dona, Vozes::Genericas, &format!("/p/{token}/midia/"), &format!("/p/{token}/bloco-audio")).await
+pub async fn manifest_publico(st: &AppState, historia: Uuid, dona: Uuid, token: &str, vozes_familia: bool) -> anyhow::Result<Option<(String, Value)>> {
+    let vozes = if vozes_familia { Vozes::Familia(tts::vozes_da_familia(st, dona).await?) } else { Vozes::Genericas };
+    montar(st, historia, dona, vozes, &format!("/p/{token}/midia/"), &format!("/p/{token}/bloco-audio")).await
 }
 
 /// Voz de um trecho para a família leitora (usada também pelo áudio sob demanda).

@@ -138,6 +138,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/compartilhar/{tipo}/{id}", get(partilha::ver).post(partilha::salvar))
         .route("/compartilhar/{tipo}/{id}/link", post(partilha::criar_link))
         .route("/compartilhar/{tipo}/{id}/link/{hash}/revogar", post(partilha::revogar_link))
+        .route("/compartilhar/{tipo}/{id}/link/{hash}/vozes", post(partilha::alternar_vozes_link))
         .route("/historias/{id}/copiar", post(partilha::copiar_historia))
         .route("/p/{token}", get(partilha::publico))
         .route("/p/{token}/h/{historia}", get(partilha::publico_historia))

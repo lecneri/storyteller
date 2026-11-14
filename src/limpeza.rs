@@ -17,7 +17,7 @@ async fn audios_em_uso(st: &AppState, familia: Uuid) -> anyhow::Result<HashSet<S
     let vozes = tts::vozes_da_familia(st, familia).await?;
     let historias: Vec<(bool, String, Value)> = sqlx::query_as(
         "SELECT EXISTS (SELECT 1 FROM partilha.links l
-                         WHERE NOT l.revogado AND (l.expira_em IS NULL OR l.expira_em > now())
+                         WHERE NOT l.revogado AND NOT l.vozes_familia AND (l.expira_em IS NULL OR l.expira_em > now())
                            AND ((l.item_tipo = 'historia' AND l.item_id = h.id)
                              OR (l.item_tipo = 'estante' AND h.visibilidade <> 'privado' AND EXISTS (
                                    SELECT 1 FROM conteudo.estante_historias eh WHERE eh.estante_id = l.item_id AND eh.historia_id = h.id)))),

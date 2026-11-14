@@ -37,7 +37,7 @@
   {% if pode_link %}
   <section class="cartao largo">
     <h2>🌐 Link público de leitura</h2>
-    <p class="suave">Abre só o player, sem login. Usa apenas vozes genéricas de IA. Pode ser cancelado quando quiser.</p>
+    <p class="suave">Abre só o player, sem login. Pode ser cancelado quando quiser.</p>
     {% if let Some(l) = novo_link %}
     <p><strong>✅ Este é o link para quem não tem login:</strong></p>
     <div class="linha"><input id="link-publico" value="{{ l }}" readonly style="flex:1">
@@ -46,11 +46,13 @@
     {% endif %}
     <form method="post" action="/compartilhar/{{ tipo }}/{{ id }}/link" class="linha">
       <select name="dias"><option value="7">vale 7 dias</option><option value="30">vale 30 dias</option><option value="">sem prazo</option></select>
+      <label class="check"><input type="checkbox" name="vozes" value="1" checked> 🎙️ Usar as vozes da família</label>
       <button type="submit">Gerar link</button>
     </form>
     {% if !links.is_empty() %}
     <ul class="lista">
-      {% for (h, prazo) in links %}<li class="linha">Link ativo · {{ prazo }}
+      {% for (h, prazo, vf) in links %}<li class="linha">Link ativo · {{ prazo }} · {% if vf %}🎙️ vozes da família{% else %}🤖 vozes genéricas{% endif %}
+        <form method="post" action="/compartilhar/{{ tipo }}/{{ id }}/link/{{ h }}/vozes" class="inline"><button class="link">{% if vf %}usar genéricas{% else %}usar as da família{% endif %}</button></form>
         <form method="post" action="/compartilhar/{{ tipo }}/{{ id }}/link/{{ h }}/revogar" class="inline"><button class="link">cancelar</button></form></li>{% endfor %}
     </ul>
     {% endif %}

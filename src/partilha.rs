@@ -256,7 +256,8 @@ struct PaginaCompartilhar {
     visibilidade: String,
     conectadas: Vec<(Uuid, String, String)>,
     escolhidas: Vec<Uuid>,
-    links: Vec<(String, String)>,
+    /// (hash, prazo, usa vozes da família)
+    links: Vec<(String, String, bool)>,
     novo_link: Option<String>,
     pode_link: bool,
 }
@@ -296,8 +297,8 @@ async fn pagina(st: &AppState, s: Sessao, tipo: String, id: Uuid, novo_link: Opt
         Err(e) => return erro_interno(e.into()),
     };
     let escolhidas = destinos(st, &tipo, id).await;
-    let links: Vec<(String, String)> = sqlx::query_as(
-        "SELECT token_hash, COALESCE('vence ' || to_char(expira_em, 'DD/MM/YYYY'), 'sem prazo')
+    let links: Vec<(String, String, bool)> = sqlx::query_as(
+        "SELECT token_hash, COALESCE('vence ' || to_char(expira_em, 'DD/MM/YYYY'), 'sem prazo'), vozes_familia
            FROM partilha.links WHERE item_tipo = $1 AND item_id = $2 AND NOT revogado
             AND (expira_em IS NULL OR expira_em > now()) ORDER BY criado_em DESC",
     )
@@ -369,7 +370,7 @@ pub async fn salvar(
         .await
         .unwrap_or(true);
         if !tem_link {
-            return match gerar_link(&st, s.familia_id, &tipo, id, None).await {
+            return match gerar_link(&st, s.familia_id, &tipo, id, None, true).await {
                 Ok(link) => pagina(&st, s, tipo, id, Some(link)).await,
                 Err(e) => erro_interno(e.into()),
             };
@@ -384,6 +385,9 @@ pub async fn salvar(
 pub struct FormLink {
     #[serde(default)]
     dias: String,
+    /// checkbox "usar as vozes da família"
+    #[serde(default)]
+    vozes: Option<String>,
 }
 
 pub async fn criar_link(
@@ -396,28 +400,36 @@ pub async fn criar_link(
         return Redirect::to("/").into_response();
     }
     let dias: Option<i32> = f.dias.parse().ok().filter(|d| *d > 0);
-    match gerar_link(&st, s.familia_id, &tipo, id, dias).await {
+    match gerar_link(&st, s.familia_id, &tipo, id, dias, f.vozes.is_some()).await {
         Ok(link) => pagina(&st, s, tipo, id, Some(link)).await,
         Err(e) => erro_interno(e.into()),
     }
 }
 
 /// Cria um link público (o token só existe aqui; no banco fica o hash) e devolve a URL.
-async fn gerar_link(st: &AppState, familia: Uuid, tipo: &str, id: Uuid, dias: Option<i32>) -> Result<String, sqlx::Error> {
+async fn gerar_link(st: &AppState, familia: Uuid, tipo: &str, id: Uuid, dias: Option<i32>, vozes_familia: bool) -> Result<String, sqlx::Error> {
     let mut bytes = [0u8; 24];
     rand::thread_rng().fill_bytes(&mut bytes);
     let token = URL_SAFE_NO_PAD.encode(bytes);
     sqlx::query(
-        "INSERT INTO partilha.links (token_hash, item_tipo, item_id, familia_id, expira_em)
-         VALUES ($1, $2, $3, $4, CASE WHEN $5::int IS NULL THEN NULL ELSE now() + make_interval(days => $5::int) END)",
+        "INSERT INTO partilha.links (token_hash, item_tipo, item_id, familia_id, expira_em, vozes_familia)
+         VALUES ($1, $2, $3, $4, CASE WHEN $5::int IS NULL THEN NULL ELSE now() + make_interval(days => $5::int) END, $6)",
     )
     .bind(auth::hash_token(&token))
     .bind(tipo)
     .bind(id)
     .bind(familia)
     .bind(dias)
+    .bind(vozes_familia)
     .execute(&st.db)
     .await?;
+    narrar_link(st, familia, tipo, id, vozes_familia).await;
+    Ok(format!("{}/p/{token}", crate::email::url_publica()))
+}
+
+/// Gera em segundo plano a narração das histórias do link (vozes da família ou genéricas),
+/// para o link não ficar esperando cada trecho.
+async fn narrar_link(st: &AppState, familia: Uuid, tipo: &str, id: Uuid, vozes_familia: bool) {
     // Já gera em segundo plano a narração com as vozes genéricas, para o link não ficar esperando cada trecho.
     let historias: Vec<Uuid> = if tipo == "historia" {
         vec![id]
@@ -431,12 +443,35 @@ async fn gerar_link(st: &AppState, familia: Uuid, tipo: &str, id: Uuid, dias: Op
         .await
         .unwrap_or_default()
     };
+    let job = if vozes_familia { "gerar_narracao" } else { "narrar_publico" };
     for h in historias {
-        if let Err(e) = crate::jobs::enfileirar(st, "narrar_publico", familia, serde_json::json!({ "historia_id": h })).await {
-            tracing::warn!("não enfileirei a narração pública: {e:#}");
+        if let Err(e) = crate::jobs::enfileirar(st, job, familia, serde_json::json!({ "historia_id": h })).await {
+            tracing::warn!("não enfileirei a narração do link: {e:#}");
         }
     }
-    Ok(format!("{}/p/{token}", crate::email::url_publica()))
+}
+
+/// POST /compartilhar/{tipo}/{id}/link/{hash}/vozes: liga/desliga as vozes da família num link existente.
+pub async fn alternar_vozes_link(
+    State(st): State<AppState>,
+    s: Sessao,
+    Path((tipo, id, hash)): Path<(String, Uuid, String)>,
+) -> Response {
+    let r: Result<Option<bool>, _> = sqlx::query_scalar(
+        "UPDATE partilha.links SET vozes_familia = NOT vozes_familia WHERE token_hash = $1 AND familia_id = $2 RETURNING vozes_familia",
+    )
+    .bind(hash)
+    .bind(s.familia_id)
+    .fetch_optional(&st.db)
+    .await;
+    match r {
+        Ok(Some(v)) => {
+            narrar_link(&st, s.familia_id, &tipo, id, v).await;
+            Redirect::to(&format!("/compartilhar/{tipo}/{id}")).into_response()
+        }
+        Ok(None) => Redirect::to(&format!("/compartilhar/{tipo}/{id}")).into_response(),
+        Err(e) => erro_interno(e.into()),
+    }
 }
 
 pub async fn revogar_link(
@@ -460,11 +495,12 @@ struct LinkValido {
     item_tipo: String,
     item_id: Uuid,
     familia_id: Uuid,
+    vozes_familia: bool,
 }
 
 async fn link_valido(st: &AppState, token: &str) -> Option<LinkValido> {
     sqlx::query_as::<_, LinkValido>(
-        "SELECT item_tipo, item_id, familia_id FROM partilha.links
+        "SELECT item_tipo, item_id, familia_id, vozes_familia FROM partilha.links
           WHERE token_hash = $1 AND NOT revogado AND (expira_em IS NULL OR expira_em > now())",
     )
     .bind(auth::hash_token(token))
@@ -534,7 +570,7 @@ pub async fn publico_historia(State(st): State<AppState>, Path((token, historia)
     if !historia_no_link(&st, &l, historia).await {
         return (StatusCode::NOT_FOUND, "História não disponível neste link.").into_response();
     }
-    match player::manifest_publico(&st, historia, l.familia_id, &token).await {
+    match player::manifest_publico(&st, historia, l.familia_id, &token, l.vozes_familia).await {
         Ok(Some((titulo, dados))) => render(player::PaginaPlayer {
             titulo,
             dados: dados.to_string().replace("</", "<\\/"),
@@ -571,7 +607,7 @@ pub struct PedidoBloco {
     texto: String,
 }
 
-/// POST /p/{token}/bloco-audio: gera áudio com voz genérica (nunca clonada).
+/// POST /p/{token}/bloco-audio: gera áudio com a voz genérica ou, se o link permitir, com a voz da família.
 pub async fn publico_audio(State(st): State<AppState>, Path(token): Path<String>, Json(p): Json<PedidoBloco>) -> Response {
     let Some(l) = link_valido(&st, &token).await else {
         return StatusCode::NOT_FOUND.into_response();
@@ -601,7 +637,14 @@ pub async fn publico_audio(State(st): State<AppState>, Path(token): Path<String>
         .ok()
         .flatten()
         .unwrap_or_default();
-    let voz = tts::voz_generica(&p.quem, &tipo);
+    let voz = if l.vozes_familia {
+        match player::voz_para(&st, l.familia_id, p.historia, &p.quem).await {
+            Ok(v) => v,
+            Err(_) => tts::voz_generica(&p.quem, &tipo),
+        }
+    } else {
+        tts::voz_generica(&p.quem, &tipo)
+    };
     let slug: String = sqlx::query_scalar("SELECT slug FROM acesso.familias WHERE id = $1")
         .bind(l.familia_id)
         .fetch_one(&st.db)
