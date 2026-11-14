@@ -19,9 +19,7 @@ use crate::{
     AppState,
 };
 
-fn erro(msg: &str) -> Response {
-    (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "erro": msg }))).into_response()
-}
+use crate::web::erro_json as erro;
 
 fn audio_json(a: &tts::Audio) -> Value {
     json!({ "audio": format!("/midia/{}", a.arquivo), "duracao": a.duracao, "palavras": a.palavras })
@@ -284,12 +282,7 @@ pub async fn executar_narracao_publica(st: &AppState, payload: &Value) -> anyhow
 
 /// POST /historias/{id}/narrar
 pub async fn narrar(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) -> Response {
-    let ok: Result<bool, _> =
-        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM conteudo.historias WHERE id = $1 AND familia_id = $2)")
-            .bind(id)
-            .bind(s.familia_id)
-            .fetch_one(&st.db)
-            .await;
+    let ok = crate::web::historia_da_familia(&st, s.familia_id, id).await;
     match ok {
         Ok(true) => {}
         Ok(false) => return StatusCode::NOT_FOUND.into_response(),

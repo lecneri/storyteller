@@ -255,7 +255,7 @@ pub async fn cli_iniciar(State(st): State<AppState>, s: Sessao, Path(nome): Path
     }
     match crate::cli_login::iniciar(&st, &nome).await {
         Ok(e) => axum::Json(e).into_response(),
-        Err(e) => (axum::http::StatusCode::UNPROCESSABLE_ENTITY, axum::Json(serde_json::json!({ "erro": format!("{e:#}") }))).into_response(),
+        Err(e) => crate::web::erro_json(format!("{e:#}")),
     }
 }
 
@@ -277,7 +277,7 @@ pub async fn cli_codigo(s: Sessao, Path(nome): Path<String>, axum::Json(p): axum
     }
     match crate::cli_login::enviar_codigo(&nome, &p.codigo).await {
         Ok(e) => axum::Json(e).into_response(),
-        Err(e) => (axum::http::StatusCode::UNPROCESSABLE_ENTITY, axum::Json(serde_json::json!({ "erro": format!("{e:#}") }))).into_response(),
+        Err(e) => crate::web::erro_json(format!("{e:#}")),
     }
 }
 

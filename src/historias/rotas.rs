@@ -17,7 +17,7 @@ use super::{Conteudo, ANIMACOES, FAIXAS};
 use crate::{
     auth::Sessao,
     jobs, midia, util,
-    web::{erro_interno, render},
+    web::{erro_interno, erro_json, historia_da_familia, render},
     AppState,
 };
 
@@ -229,12 +229,7 @@ pub async fn abrir(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) 
 }
 
 pub async fn regerar(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) -> Response {
-    let existe: Result<bool, _> =
-        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM conteudo.historias WHERE id = $1 AND familia_id = $2)")
-            .bind(id)
-            .bind(s.familia_id)
-            .fetch_one(&st.db)
-            .await;
+    let existe = historia_da_familia(&st, s.familia_id, id).await;
     match existe {
         Ok(true) => {}
         Ok(false) => return Redirect::to("/historias").into_response(),
@@ -261,8 +256,7 @@ pub async fn salvar(
 ) -> Response {
     let titulo = c.titulo.trim();
     if titulo.is_empty() {
-        return (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "erro": "Dê um título para a história." })))
-            .into_response();
+        return erro_json("Dê um título para a história.");
     }
     let narracao = if c.narracao == "narrador" { "narrador" } else { "por-personagem" };
     let valor = match serde_json::to_value(&c.conteudo) {
@@ -310,18 +304,13 @@ pub async fn salvar(
 /// POST /historias/{id}/midia: recebe a imagem/GIF/vídeo de uma página. Devolve {id, tipo};
 /// o editor coloca na página e salva (assim não sobrescreve edições não salvas).
 pub async fn enviar_midia(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>, mut mp: Multipart) -> Response {
-    let existe: Result<bool, _> =
-        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM conteudo.historias WHERE id = $1 AND familia_id = $2)")
-            .bind(id)
-            .bind(s.familia_id)
-            .fetch_one(&st.db)
-            .await;
+    let existe = historia_da_familia(&st, s.familia_id, id).await;
     match existe {
         Ok(true) => {}
         Ok(false) => return StatusCode::NOT_FOUND.into_response(),
         Err(e) => return erro_interno(e.into()),
     }
-    let erro = |msg: &str| (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "erro": msg }))).into_response();
+    let erro = |m: &str| erro_json(m);
     let bytes = loop {
         match mp.next_field().await {
             Ok(Some(campo)) if campo.file_name().is_some() => match campo.bytes().await {
@@ -357,7 +346,7 @@ pub struct PedidoSecundario {
 /// POST /personagens/de-secundario: transforma um personagem só da história em personagem da família
 /// (ficha com a aparência, variante "Principal" e voz). Devolve o personagem no formato do editor.
 pub async fn salvar_secundario(State(st): State<AppState>, s: Sessao, Json(p): Json<PedidoSecundario>) -> Response {
-    let erro = |m: &str| (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "erro": m }))).into_response();
+    let erro = |m: &str| erro_json(m);
     let nome = p.nome.trim().to_string();
     let slug = util::slug(&nome);
     if slug.is_empty() || !crate::personagens::TIPOS.iter().any(|(k, _)| *k == p.tipo) {
@@ -447,7 +436,7 @@ pub async fn gerar_imagem(State(st): State<AppState>, s: Sessao, Path(id): Path<
     let pasta = format!("historias/{id}/midia");
     match crate::imagem::gerar(&st, s.familia_id, &s.familia_slug, &pasta, &p.prompt, &refs).await {
         Ok((mid, tipo)) => Json(json!({ "id": mid, "tipo": tipo })).into_response(),
-        Err(e) => (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "erro": format!("{e:#}") }))).into_response(),
+        Err(e) => erro_json(format!("{e:#}")),
     }
 }
 

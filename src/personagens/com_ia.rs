@@ -203,7 +203,7 @@ pub async fn gerar_ref(State(st): State<AppState>, s: Sessao, Path((slug, vslug)
 /// POST /personagens/descrever-foto (multipart: fotos, nome, estilo): a IA olha as fotos e devolve
 /// a descrição da aparência para preencher o campo. As fotos não são guardadas.
 pub async fn descrever_foto(State(st): State<AppState>, s: Sessao, mp: Multipart) -> Response {
-    let erro = |m: String| (axum::http::StatusCode::UNPROCESSABLE_ENTITY, axum::Json(serde_json::json!({ "erro": m }))).into_response();
+    let erro = |m: String| crate::web::erro_json(m);
     let (campos, arquivos) = match ler_multipart(mp).await {
         Ok(x) => x,
         Err(m) => return erro(m),

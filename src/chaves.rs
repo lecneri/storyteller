@@ -65,9 +65,7 @@ async fn chave(st: &AppState, familia: Option<Uuid>, provedor: &str) -> Option<(
     segredos::decifrar(&c).ok().map(|k| (k, m))
 }
 
-fn erro(msg: impl Into<String>) -> Response {
-    (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "erro": msg.into() }))).into_response()
-}
+use crate::web::erro_json as erro;
 
 /// POST /chaves/{escopo}/{provedor}/modelos: lista os modelos que a chave enxerga.
 pub async fn modelos(State(st): State<AppState>, s: Sessao, Path((esc, provedor)): Path<(String, String)>) -> Response {

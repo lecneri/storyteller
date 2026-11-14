@@ -144,10 +144,9 @@ pub async fn apagar_familia(st: &AppState, familia: Uuid) -> anyhow::Result<()> 
         .fetch_all(&st.db)
         .await?;
     let mut tx = st.db.begin().await?;
-    for tabela in ["partilha.destinos", "partilha.links"] {
-        let col = if tabela == "partilha.links" { "familia_id" } else { "familia_id" };
-        sqlx::query(&format!("DELETE FROM {tabela} WHERE {col} = $1")).bind(familia).execute(&mut *tx).await?;
-    }
+    // Destinos e links apontam para a família sem cascata: saem antes.
+    sqlx::query("DELETE FROM partilha.destinos WHERE familia_id = $1").bind(familia).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM partilha.links WHERE familia_id = $1").bind(familia).execute(&mut *tx).await?;
     sqlx::query("DELETE FROM acesso.familias WHERE id = $1").bind(familia).execute(&mut *tx).await?;
     tx.commit().await?;
     // Arquivos: só sai do disco o que nenhuma cópia em outra família ainda usa.

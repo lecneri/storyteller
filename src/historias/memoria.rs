@@ -62,7 +62,7 @@ pub async fn gerar_memoria_rota(State(st): State<AppState>, s: Sessao, Path(id):
     }
     match gerar_memoria(&st, id).await {
         Ok(m) => Json(json!({ "memoria": m })).into_response(),
-        Err(e) => (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "erro": format!("{e:#}") }))).into_response(),
+        Err(e) => crate::web::erro_json(format!("{e:#}")),
     }
 }
 

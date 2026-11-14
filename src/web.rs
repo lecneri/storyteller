@@ -22,6 +22,20 @@ pub fn erro_interno(e: anyhow::Error) -> Response {
     (StatusCode::INTERNAL_SERVER_ERROR, "Algo deu errado. Tente de novo.").into_response()
 }
 
+/// Erro que a pessoa pode corrigir (422 + {"erro": "..."}), para as rotas chamadas pelo JavaScript.
+pub fn erro_json(msg: impl std::fmt::Display) -> Response {
+    (StatusCode::UNPROCESSABLE_ENTITY, axum::Json(serde_json::json!({ "erro": msg.to_string() }))).into_response()
+}
+
+/// A história existe e é desta família?
+pub async fn historia_da_familia(st: &AppState, familia: Uuid, historia: Uuid) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM conteudo.historias WHERE id = $1 AND familia_id = $2)")
+        .bind(historia)
+        .bind(familia)
+        .fetch_one(&st.db)
+        .await
+}
+
 pub fn render<T: Template>(t: T) -> Response {
     match t.render() {
         Ok(html) => Html(html).into_response(),
