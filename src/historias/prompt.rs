@@ -3,7 +3,7 @@
 use serde_json::{json, Value};
 
 use super::deteccao::PersonagemIA;
-use super::{regras_faixa, Bloco, Conteudo, NaCena, ANIMACOES, FAIXAS};
+use super::{regras_faixa, Bloco, Conteudo, NaCena, Secundario, ANIMACOES, FAIXAS};
 
 pub fn schema_historia() -> Value {
     json!({
@@ -203,25 +203,12 @@ pub fn montar_prompt(
     )
 }
 
-/// Ajusta a resposta da IA às regras do app (quem inválido vira narrador, modo narrador = 1 bloco).
+/// Ajusta a resposta da IA às regras do app: secundários com nome conhecido, personagens só os citados,
+/// animação válida, quem inválido vira narrador, voz extra só se existir, modo narrador = 1 bloco por página.
 pub fn normalizar(mut c: Conteudo, narracao: &str, citados: &[NaCena], todos: &[PersonagemIA]) -> Conteudo {
-    for sec in &mut c.secundarios {
-        sec.nome = sec.nome.trim().to_string();
-        sec.descricao = sec.descricao.trim().to_string();
-    }
-    c.secundarios.retain(|s| !s.nome.is_empty());
-    let nomes: Vec<String> = c.secundarios.iter().map(|s| s.nome.clone()).collect();
+    let nomes = normalizar_secundarios(&mut c.secundarios);
     for p in &mut c.paginas {
-        // Só nomes da lista (com a grafia dela), sem repetir.
-        let mut na_cena: Vec<String> = Vec::new();
-        for n in &p.secundarios {
-            if let Some(x) = nomes.iter().find(|x| x.to_lowercase() == n.trim().to_lowercase()) {
-                if !na_cena.contains(x) {
-                    na_cena.push(x.clone());
-                }
-            }
-        }
-        p.secundarios = na_cena;
+        p.secundarios = secundarios_na_cena(&p.secundarios, &nomes);
         p.personagens.retain(|n| citados.iter().any(|c| c.slug == n.slug));
         for n in &mut p.personagens {
             if n.variante.as_deref().is_some_and(|v| v.trim().is_empty()) {
@@ -232,36 +219,190 @@ pub fn normalizar(mut c: Conteudo, narracao: &str, citados: &[NaCena], todos: &[
             p.animacao = Some("nenhuma".into());
         }
         for b in &mut p.blocos {
-            // Secundário com voz do sistema: só voz conhecida; nome e ajustes ficam (limitados).
-            let sistema = b.quem.strip_prefix("voz:").is_some_and(|id| crate::tts::VOZES.iter().any(|(v, _)| *v == id));
-            if sistema && narracao != "narrador" {
-                b.nome = b.nome.take().map(|n| n.trim().chars().take(40).collect::<String>()).filter(|n| !n.is_empty());
-                b.tom = b.tom.map(|t| t.clamp(-60, 60)).filter(|t| *t != 0);
-                b.velocidade = b.velocidade.map(|v| v.clamp(-40, 40)).filter(|v| *v != 0);
-                b.voz = None;
-                b.texto = b.texto.trim().to_string();
-                continue;
-            }
-            b.nome = None;
-            b.tom = None;
-            b.velocidade = None;
-            if b.quem != "narrador" && !citados.iter().any(|c| c.slug == b.quem) {
-                b.quem = "narrador".into();
-            }
-            b.texto = b.texto.trim().to_string();
-            // Só vale voz extra que o personagem tem.
-            let valida = b.voz.as_deref().is_some_and(|v| todos.iter().any(|p| p.slug == b.quem && p.tem_voz(v)));
-            if !valida {
-                b.voz = None;
-            }
+            normalizar_bloco(b, narracao, citados, todos);
         }
         p.blocos.retain(|b| !b.texto.is_empty());
         if narracao == "narrador" && p.blocos.len() > 1 {
-            let texto = p.blocos.iter().map(|b| b.texto.as_str()).collect::<Vec<_>>().join(" ");
-            p.blocos = vec![Bloco { quem: "narrador".into(), texto, voz: None, nome: None, tom: None, velocidade: None }];
+            p.blocos = vec![juntar_em_narrador(&p.blocos)];
         }
     }
     c.paginas.retain(|p| !p.blocos.is_empty());
     c
 }
 
+/// Limpa a lista de secundários (sem nome vazio) e devolve os nomes.
+fn normalizar_secundarios(lista: &mut Vec<Secundario>) -> Vec<String> {
+    for sec in lista.iter_mut() {
+        sec.nome = sec.nome.trim().to_string();
+        sec.descricao = sec.descricao.trim().to_string();
+    }
+    lista.retain(|s| !s.nome.is_empty());
+    lista.iter().map(|s| s.nome.clone()).collect()
+}
+
+/// Secundários de uma página: só nomes da lista (com a grafia dela, sem diferenciar maiúsculas), sem repetir.
+fn secundarios_na_cena(pedidos: &[String], nomes: &[String]) -> Vec<String> {
+    let mut na_cena: Vec<String> = Vec::new();
+    for n in pedidos {
+        if let Some(x) = nomes.iter().find(|x| x.to_lowercase() == n.trim().to_lowercase()) {
+            if !na_cena.contains(x) {
+                na_cena.push(x.clone());
+            }
+        }
+    }
+    na_cena
+}
+
+/// Um bloco: voz do sistema (secundário) mantém nome/tom/velocidade dentro dos limites;
+/// os demais perdem esses campos, `quem` desconhecido vira narrador e voz extra inexistente sai.
+fn normalizar_bloco(b: &mut Bloco, narracao: &str, citados: &[NaCena], todos: &[PersonagemIA]) {
+    b.texto = b.texto.trim().to_string();
+    let sistema = b.quem.strip_prefix("voz:").is_some_and(|id| crate::tts::VOZES.iter().any(|(v, _)| *v == id));
+    if sistema && narracao != "narrador" {
+        b.nome = b.nome.take().map(|n| n.trim().chars().take(40).collect::<String>()).filter(|n| !n.is_empty());
+        b.tom = b.tom.map(|t| t.clamp(-60, 60)).filter(|t| *t != 0);
+        b.velocidade = b.velocidade.map(|v| v.clamp(-40, 40)).filter(|v| *v != 0);
+        b.voz = None;
+        return;
+    }
+    b.nome = None;
+    b.tom = None;
+    b.velocidade = None;
+    if b.quem != "narrador" && !citados.iter().any(|c| c.slug == b.quem) {
+        b.quem = "narrador".into();
+    }
+    let valida = b.voz.as_deref().is_some_and(|v| todos.iter().any(|p| p.slug == b.quem && p.tem_voz(v)));
+    if !valida {
+        b.voz = None;
+    }
+}
+
+/// Modo "só narrador": a página vira um bloco único com todo o texto.
+fn juntar_em_narrador(blocos: &[Bloco]) -> Bloco {
+    let texto = blocos.iter().map(|b| b.texto.as_str()).collect::<Vec<_>>().join(" ");
+    Bloco { quem: "narrador".into(), texto, voz: None, nome: None, tom: None, velocidade: None }
+}
+
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+    use crate::historias::deteccao::personagem_teste as p;
+
+    /// Saída estruturada estrita (Anthropic/OpenAI): todo objeto precisa de additionalProperties=false
+    /// e de todas as propriedades em "required". Se um campo novo esquecer disso, a IA recusa o pedido.
+    fn conferir_estrito(v: &Value, caminho: &str) {
+        if v["type"] == "object" {
+            assert_eq!(v["additionalProperties"], false, "{caminho}: falta additionalProperties=false");
+            let props: Vec<&String> = v["properties"].as_object().map(|o| o.keys().collect()).unwrap_or_default();
+            let req: Vec<&str> = v["required"].as_array().map(|a| a.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
+            for k in &props {
+                assert!(req.contains(&k.as_str()), "{caminho}: \"{k}\" não está em required");
+            }
+            for (k, filho) in v["properties"].as_object().into_iter().flatten() {
+                conferir_estrito(filho, &format!("{caminho}.{k}"));
+            }
+        }
+        if v["type"] == "array" {
+            conferir_estrito(&v["items"], &format!("{caminho}[]"));
+        }
+    }
+
+    #[test]
+    fn schema_da_historia_e_estrito() {
+        conferir_estrito(&schema_historia(), "historia");
+    }
+
+    fn bloco(quem: &str, texto: &str) -> Bloco {
+        Bloco { quem: quem.into(), texto: texto.into(), voz: None, nome: None, tom: None, velocidade: None }
+    }
+
+    fn cena(slug: &str) -> NaCena {
+        NaCena { slug: slug.into(), variante: None, voz: None, misto: false, tambem: vec![] }
+    }
+
+    fn conteudo(blocos: Vec<Bloco>) -> Conteudo {
+        serde_json::from_value(json!({ "paginas": [{ "cena": "", "blocos": blocos }] })).unwrap()
+    }
+
+    #[test]
+    fn quem_desconhecido_vira_narrador_e_vazios_somem() {
+        let c = conteudo(vec![bloco("leo", " Oi! "), bloco("intruso", "Olá"), bloco("leo", "   ")]);
+        let c = normalizar(c, "por-personagem", &[cena("leo")], &[p("leo", "Léo", &[], &[])]);
+        let b = &c.paginas[0].blocos;
+        assert_eq!(b.len(), 2);
+        assert_eq!((b[0].quem.as_str(), b[0].texto.as_str()), ("leo", "Oi!"));
+        assert_eq!(b[1].quem, "narrador");
+    }
+
+    #[test]
+    fn voz_extra_so_se_o_personagem_tiver() {
+        let mut ok = bloco("leo", "Hello");
+        ok.voz = Some("ingles".into());
+        let mut ruim = bloco("leo", "Bonjour");
+        ruim.voz = Some("frances".into());
+        let c = normalizar(conteudo(vec![ok, ruim]), "por-personagem", &[cena("leo")], &[p("leo", "Léo", &[], &[])]);
+        assert_eq!(c.paginas[0].blocos[0].voz.as_deref(), Some("ingles"));
+        assert_eq!(c.paginas[0].blocos[1].voz, None);
+    }
+
+    #[test]
+    fn secundario_com_voz_do_sistema_mantem_nome_e_limita_ajustes() {
+        let mut b = bloco("voz:en-US-GuyNeural", "Arrr!");
+        b.nome = Some("  Capitão  ".into());
+        b.tom = Some(-200);
+        b.velocidade = Some(0);
+        let c = normalizar(conteudo(vec![b, bloco("voz:voz-inventada", "x")]), "por-personagem", &[], &[]);
+        let b = &c.paginas[0].blocos;
+        assert_eq!(b[0].quem, "voz:en-US-GuyNeural");
+        assert_eq!((b[0].nome.as_deref(), b[0].tom, b[0].velocidade), (Some("Capitão"), Some(-60), None));
+        // Voz que não existe: vira narrador.
+        assert_eq!(b[1].quem, "narrador");
+    }
+
+    #[test]
+    fn modo_narrador_junta_tudo_num_bloco() {
+        let c = conteudo(vec![bloco("narrador", "Era uma vez."), bloco("leo", "— Oi! — disse Léo.")]);
+        let c = normalizar(c, "narrador", &[cena("leo")], &[]);
+        assert_eq!(c.paginas[0].blocos.len(), 1);
+        assert_eq!(c.paginas[0].blocos[0].texto, "Era uma vez. — Oi! — disse Léo.");
+    }
+
+    #[test]
+    fn secundarios_usam_a_grafia_da_lista_e_paginas_vazias_somem() {
+        let c: Conteudo = serde_json::from_value(json!({
+            "secundarios": [{ "nome": " Pirata Caveira ", "descricao": " esqueleto " }, { "nome": "  ", "descricao": "x" }],
+            "paginas": [
+                { "secundarios": ["pirata caveira", "Pirata Caveira", "Fantasma"], "personagens": [{ "slug": "leo", "variante": "" }, { "slug": "zorgo" }],
+                  "animacao": "fogos", "blocos": [{ "quem": "narrador", "texto": "a" }] },
+                { "blocos": [{ "quem": "narrador", "texto": " " }] }
+            ]
+        })).unwrap();
+        let c = normalizar(c, "por-personagem", &[cena("leo")], &[]);
+        assert_eq!(c.secundarios.len(), 1);
+        assert_eq!(c.secundarios[0].descricao, "esqueleto");
+        assert_eq!(c.paginas.len(), 1);
+        let p0 = &c.paginas[0];
+        assert_eq!(p0.secundarios, vec!["Pirata Caveira".to_string()]);
+        assert_eq!(p0.personagens.len(), 1);
+        assert_eq!(p0.personagens[0].variante, None);
+        assert_eq!(p0.animacao.as_deref(), Some("nenhuma"));
+    }
+
+    #[test]
+    fn prompt_traz_faixas_e_tira_vozes_ja_usadas() {
+        let todos = vec![p("leo", "Léo", &[], &[])];
+        let usadas = vec!["pt-BR-FranciscaNeural".to_string()];
+        let t = montar_prompt("O @leo na lua", &[("Pedro".into(), "4-6".into())], "por-personagem", &[cena("leo")], &todos, "", &[], &usadas);
+        for f in FAIXAS {
+            assert!(t.contains(&format!("{f} anos:")), "falta a regra da faixa {f}");
+        }
+        assert!(t.contains("Pedro (4-6 anos)"));
+        assert!(t.contains("voz:en-US-GuyNeural"));
+        assert!(!t.contains("voz:pt-BR-FranciscaNeural"), "voz do narrador não pode ir para secundários");
+        // Só narrador: sem lista de vozes do sistema.
+        let t = montar_prompt("", &[], "narrador", &[], &todos, "", &[], &[]);
+        assert!(!t.contains("VOZES DO SISTEMA"));
+        assert!(t.contains("sem briefing"));
+    }
+}

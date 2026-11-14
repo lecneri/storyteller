@@ -122,22 +122,26 @@ pub fn citar_historias(briefing: &str) -> Vec<String> {
 }
 
 
+/// Personagem de teste (com uma voz extra "ingles"), usado pelos testes de detecção e de prompt.
+#[cfg(test)]
+pub(crate) fn personagem_teste(slug: &str, nome: &str, apelidos: &[&str], variantes: &[&str]) -> PersonagemIA {
+    use serde_json::json;
+    PersonagemIA {
+        slug: slug.into(),
+        nome: nome.into(),
+        tipo: "crianca".into(),
+        ficha: json!({ "apelidos": apelidos }),
+        variante_atual: None,
+        variantes: json!(variantes.iter().map(|v| json!({ "slug": v })).collect::<Vec<_>>()),
+        vozes_extras: json!([{ "slug": "ingles", "nome": "Inglês", "lingua": "Inglês" }]),
+    }
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
-    use serde_json::json;
+    use super::personagem_teste as p;
 
-    fn p(slug: &str, nome: &str, apelidos: &[&str], variantes: &[&str]) -> PersonagemIA {
-        PersonagemIA {
-            slug: slug.into(),
-            nome: nome.into(),
-            tipo: "crianca".into(),
-            ficha: json!({ "apelidos": apelidos }),
-            variante_atual: None,
-            variantes: json!(variantes.iter().map(|v| json!({ "slug": v })).collect::<Vec<_>>()),
-            vozes_extras: json!([{ "slug": "ingles", "nome": "Inglês", "lingua": "Inglês" }]),
-        }
-    }
 
     #[test]
     fn detecta_mencoes() {
@@ -158,5 +162,11 @@ mod testes {
         let r = detectar("@leo:normal!misto-ingles e @tito!ingles e @zorgo!frances", &todos);
         let vozes: Vec<_> = r.iter().map(|n| (n.slug.as_str(), n.variante.as_deref(), n.voz.as_deref(), n.misto)).collect();
         assert_eq!(vozes, vec![("leo", Some("normal"), Some("ingles"), true), ("tito", None, Some("ingles"), false), ("zorgo", None, None, false)]);
+    }
+
+    #[test]
+    fn cita_historias_com_hashtag() {
+        assert_eq!(citar_historias("Continua #a-lua e #o-mar, e de novo #a-lua!"), vec!["a-lua", "o-mar"]);
+        assert!(citar_historias("sem citação # solta").is_empty());
     }
 }
