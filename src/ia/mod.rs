@@ -1,0 +1,174 @@
+//! IA de texto: escolhe a rota (CLI de assinatura → chave da família → chave do sistema → Gemini grátis)
+//! e chama o provedor. Os provedores ficam em `cli` (assinaturas) e `api` (chaves).
+
+mod api;
+mod cli;
+
+use std::time::Duration;
+
+use anyhow::{anyhow, bail, Context};
+use serde_json::Value;
+
+pub use api::{base_kimi, por_api};
+pub use cli::{claude_cli, codex_cli, testar_agy};
+use api::gemini_api;
+use cli::agy_cli;
+
+pub struct PedidoTexto {
+    pub sistema: String,
+    pub prompt: String,
+    /// JSON Schema da resposta (saída estruturada).
+    pub schema: Value,
+    /// Imagens anexadas (mime, bytes), ex.: fotos para a IA descrever o personagem.
+    pub imagens: Vec<(String, Vec<u8>)>,
+}
+
+/// Tempo máximo de uma chamada à IA.
+const TEMPO_MAXIMO: Duration = Duration::from_secs(300);
+
+fn b64(b: &[u8]) -> String {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.encode(b)
+}
+
+/// Corta mensagens longas (erros de CLI/API) para caberem num aviso.
+fn resumo(s: &str) -> String {
+    s.chars().take(400).collect()
+}
+
+/// Lê um objeto JSON de um texto da IA (com ou sem ```json, com texto antes/depois).
+pub fn extrair_json(texto: &str) -> anyhow::Result<Value> {
+    let t = texto.trim();
+    let t = t.strip_prefix("```json").or_else(|| t.strip_prefix("```")).unwrap_or(t);
+    let t = t.strip_suffix("```").unwrap_or(t).trim();
+    let ini = t.find('{').ok_or_else(|| anyhow!("sem objeto JSON"))?;
+    let fim = t.rfind('}').ok_or_else(|| anyhow!("sem objeto JSON"))?;
+    Ok(serde_json::from_str(&t[ini..=fim])?)
+}
+
+/// Chaves cifradas disponíveis (da família, ou do sistema quando familia = None), na ordem de preferência.
+async fn chaves(st: &crate::AppState, familia: Option<uuid::Uuid>) -> anyhow::Result<Vec<(String, String, Option<String>)>> {
+    let linhas: Vec<(String, Vec<u8>, Option<String>)> = sqlx::query_as(
+        "SELECT provedor, cifrada, modelo FROM ia.chaves WHERE familia_id IS NOT DISTINCT FROM $1
+          ORDER BY CASE provedor WHEN 'anthropic' THEN 1 WHEN 'gemini' THEN 2 WHEN 'openai' THEN 3 ELSE 4 END",
+    )
+    .bind(familia)
+    .fetch_all(&st.db)
+    .await?;
+    let mut v = Vec::new();
+    for (p, c, m) in linhas {
+        match crate::segredos::decifrar(&c) {
+            Ok(k) => v.push((p, k, m)),
+            Err(e) => tracing::warn!("chave {p} não decifrou: {e}"),
+        }
+    }
+    Ok(v)
+}
+
+async fn registrar_uso(st: &crate::AppState, familia: uuid::Uuid, via: &str, provedor: &str) {
+    let _ = sqlx::query("INSERT INTO ia.uso (familia_id, tarefa, via, provedor) VALUES ($1, 'texto', $2, $3)")
+        .bind(familia)
+        .bind(via)
+        .bind(provedor)
+        .execute(&st.db)
+        .await;
+}
+
+/// Gera texto pela melhor rota disponível para a família:
+/// CLI (assinaturas) → chave da família → chave do sistema → chave gratuita do Gemini (GEMINI_CHAVE_GRATIS).
+/// O limite semanal vale para o que o admin paga (CLI e chave do sistema).
+pub async fn gerar_texto(st: &crate::AppState, familia: uuid::Uuid, p: &PedidoTexto) -> anyhow::Result<Value> {
+    let (cli, sistema, limites): (bool, bool, Value) = sqlx::query_as(
+        "SELECT COALESCE(c.cli_habilitado, false), COALESCE(c.usar_chave_sistema, false), COALESCE(c.limites, '{}')
+           FROM acesso.familias f LEFT JOIN ia.config_familia c ON c.familia_id = f.id WHERE f.id = $1",
+    )
+    .bind(familia)
+    .fetch_one(&st.db)
+    .await?;
+    let usado: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM ia.uso WHERE familia_id = $1 AND criado_em > now() - interval '7 days' AND via IN ('cli', 'chave_sistema')",
+    )
+    .bind(familia)
+    .fetch_one(&st.db)
+    .await?;
+    let dentro_do_limite = limites["historias_semana"].as_i64().is_none_or(|l| usado < l);
+    let mut erros: Vec<String> = Vec::new();
+
+    if cli && dentro_do_limite {
+        let r = match crate::config::get("CLI_TEXTO").as_deref() {
+            // O agy não aceita imagens anexadas: com fotos, tenta o Claude e depois o Codex.
+            Some("agy") if !p.imagens.is_empty() => match claude_cli(p).await {
+                Ok(v) => Ok(v),
+                Err(_) => codex_cli(p).await.context("o Gemini (agy) não lê fotos, e Claude/Codex não responderam"),
+            },
+            Some("agy") => agy_cli(p).await,
+            Some("codex") => codex_cli(p).await,
+            _ => claude_cli(p).await,
+        };
+        match r {
+            Ok(v) => {
+                registrar_uso(st, familia, "cli", "assinatura").await;
+                return Ok(v);
+            }
+            Err(e) => erros.push(format!("CLI: {e:#}")),
+        }
+    }
+    for (prov, chave, modelo) in chaves(st, Some(familia)).await? {
+        match por_api(&prov, &chave, modelo.as_deref(), p).await {
+            Ok(v) => {
+                registrar_uso(st, familia, "chave_familia", &prov).await;
+                return Ok(v);
+            }
+            Err(e) => erros.push(format!("chave da família ({prov}): {e:#}")),
+        }
+    }
+    if sistema && dentro_do_limite {
+        for (prov, chave, modelo) in chaves(st, None).await? {
+            match por_api(&prov, &chave, modelo.as_deref(), p).await {
+                Ok(v) => {
+                    registrar_uso(st, familia, "chave_sistema", &prov).await;
+                    return Ok(v);
+                }
+                Err(e) => erros.push(format!("chave do sistema ({prov}): {e:#}")),
+            }
+        }
+    }
+    if let Some(chave) = crate::config::get("GEMINI_CHAVE_GRATIS") {
+        if !chave.trim().is_empty() {
+            match gemini_api(chave.trim(), None, p).await {
+                Ok(v) => {
+                    registrar_uso(st, familia, "gratis", "gemini").await;
+                    return Ok(v);
+                }
+                Err(e) => erros.push(format!("Gemini gratuito: {e:#}")),
+            }
+        }
+    }
+    if erros.is_empty() {
+        if !dentro_do_limite {
+            bail!("O limite de histórias desta semana foi atingido. Tente de novo em alguns dias ou crie a história manualmente.");
+        }
+        bail!("Esta família ainda não tem IA de texto configurada (sem CLI e sem chave de API). Peça ao admin, ou crie a história manualmente.");
+    }
+    bail!("Nenhuma IA conseguiu gerar: {}", erros.join(" | "))
+}
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+
+    #[test]
+    fn extrai_json_de_textos_da_ia() {
+        assert_eq!(extrair_json("{\"a\": 1}").unwrap()["a"], 1);
+        assert_eq!(extrair_json("```json\n{\"a\": 2}\n```").unwrap()["a"], 2);
+        assert_eq!(extrair_json("Claro! Aqui está: {\"a\": {\"b\": 3}} Espero ter ajudado.").unwrap()["a"]["b"], 3);
+        assert!(extrair_json("sem json aqui").is_err());
+        assert!(extrair_json("{ quebrado").is_err());
+    }
+
+    #[test]
+    fn resumo_corta_em_400_caracteres() {
+        assert_eq!(resumo(&"á".repeat(1000)).chars().count(), 400);
+        assert_eq!(resumo("curto"), "curto");
+    }
+}
