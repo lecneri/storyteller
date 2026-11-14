@@ -125,6 +125,7 @@ pub fn citar_historias(briefing: &str) -> Vec<String> {
 #[cfg(test)]
 mod testes {
     use super::*;
+    use serde_json::json;
 
     fn p(slug: &str, nome: &str, apelidos: &[&str], variantes: &[&str]) -> PersonagemIA {
         PersonagemIA {
