@@ -19,8 +19,8 @@ fn http() -> reqwest::Client {
     reqwest::Client::builder().timeout(Duration::from_secs(240)).build().unwrap_or_default()
 }
 
-async fn openai(chave: &str, prompt: &str, refs: &[Referencia]) -> anyhow::Result<Vec<u8>> {
-    let modelo = crate::config::get_ou("OPENAI_MODELO_IMAGEM", "gpt-image-1");
+async fn openai(chave: &str, modelo: Option<&str>, prompt: &str, refs: &[Referencia]) -> anyhow::Result<Vec<u8>> {
+    let modelo = modelo.map(String::from).unwrap_or_else(|| crate::config::get_ou("OPENAI_MODELO_IMAGEM", "gpt-image-1"));
     let r = if refs.is_empty() {
         http()
             .post("https://api.openai.com/v1/images/generations")
@@ -51,8 +51,8 @@ async fn openai(chave: &str, prompt: &str, refs: &[Referencia]) -> anyhow::Resul
     Ok(STANDARD.decode(b64)?)
 }
 
-async fn gemini(chave: &str, prompt: &str, refs: &[Referencia]) -> anyhow::Result<Vec<u8>> {
-    let modelo = crate::config::get_ou("GEMINI_MODELO_IMAGEM", "gemini-2.5-flash-image");
+async fn gemini(chave: &str, modelo: Option<&str>, prompt: &str, refs: &[Referencia]) -> anyhow::Result<Vec<u8>> {
+    let modelo = modelo.map(String::from).unwrap_or_else(|| crate::config::get_ou("GEMINI_MODELO_IMAGEM", "gemini-2.5-flash-image"));
     let mut partes = vec![json!({ "text": prompt })];
     for r in refs {
         partes.push(json!({ "inline_data": { "mime_type": r.mime, "data": STANDARD.encode(&r.bytes) } }));
@@ -81,7 +81,7 @@ async fn gemini(chave: &str, prompt: &str, refs: &[Referencia]) -> anyhow::Resul
 }
 
 /// Chaves de imagem disponíveis para a família, na ordem: família → sistema (se liberado e dentro do limite).
-async fn chaves_imagem(st: &AppState, familia: Uuid) -> anyhow::Result<Vec<(String, String, &'static str)>> {
+async fn chaves_imagem(st: &AppState, familia: Uuid) -> anyhow::Result<Vec<(String, String, &'static str, Option<String>)>> {
     let (sistema, limites): (bool, Value) = sqlx::query_as(
         "SELECT COALESCE(c.usar_chave_sistema, false), COALESCE(c.limites, '{}')
            FROM acesso.familias f LEFT JOIN ia.config_familia c ON c.familia_id = f.id WHERE f.id = $1",
@@ -97,8 +97,8 @@ async fn chaves_imagem(st: &AppState, familia: Uuid) -> anyhow::Result<Vec<(Stri
     .fetch_one(&st.db)
     .await?;
     let limite_ok = limites["imagens_semana"].as_i64().is_none_or(|l| usado < l);
-    let linhas: Vec<(Option<Uuid>, String, Vec<u8>)> = sqlx::query_as(
-        "SELECT familia_id, provedor, cifrada FROM ia.chaves
+    let linhas: Vec<(Option<Uuid>, String, Vec<u8>, Option<String>)> = sqlx::query_as(
+        "SELECT familia_id, provedor, cifrada, modelo_imagem FROM ia.chaves
           WHERE provedor IN ('openai', 'gemini') AND (familia_id = $1 OR (familia_id IS NULL AND $2))
           ORDER BY familia_id NULLS LAST, CASE provedor WHEN 'openai' THEN 1 ELSE 2 END",
     )
@@ -108,8 +108,8 @@ async fn chaves_imagem(st: &AppState, familia: Uuid) -> anyhow::Result<Vec<(Stri
     .await?;
     Ok(linhas
         .into_iter()
-        .filter_map(|(f, p, c)| {
-            segredos::decifrar(&c).ok().map(|k| (p, k, if f.is_some() { "chave_familia" } else { "chave_sistema" }))
+        .filter_map(|(f, p, c, m)| {
+            segredos::decifrar(&c).ok().map(|k| (p, k, if f.is_some() { "chave_familia" } else { "chave_sistema" }, m))
         })
         .collect())
 }
@@ -125,10 +125,10 @@ pub async fn gerar(st: &AppState, familia: Uuid, familia_slug: &str, pasta: &str
         bail!("Sem IA de imagem para esta família: use o modo manual (copie o prompt e as referências).");
     }
     let mut erros = Vec::new();
-    for (prov, chave, via) in chaves {
+    for (prov, chave, via, modelo) in chaves {
         let r = match prov.as_str() {
-            "openai" => openai(&chave, prompt, refs).await,
-            _ => gemini(&chave, prompt, refs).await,
+            "openai" => openai(&chave, modelo.as_deref(), prompt, refs).await,
+            _ => gemini(&chave, modelo.as_deref(), prompt, refs).await,
         };
         match r {
             Ok(bytes) => {

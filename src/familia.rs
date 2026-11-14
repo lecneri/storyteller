@@ -18,8 +18,12 @@ use crate::{
     AppState,
 };
 
-pub const PROVEDORES: [(&str, &str); 3] =
-    [("anthropic", "Anthropic (Claude)"), ("openai", "OpenAI (GPT / imagens)"), ("gemini", "Google Gemini")];
+pub const PROVEDORES: [(&str, &str); 4] = [
+    ("anthropic", "Anthropic (Claude)"),
+    ("openai", "OpenAI (GPT / imagens)"),
+    ("gemini", "Google Gemini (texto / imagens)"),
+    ("kimi", "Kimi (Moonshot)"),
+];
 
 #[derive(sqlx::FromRow)]
 struct Membro {

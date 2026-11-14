@@ -14,7 +14,9 @@ fn cache() -> &'static RwLock<HashMap<String, String>> {
 }
 
 /// Chaves editáveis pelo site: (chave, secreta?).
-pub const CHAVES: [(&str, bool); 14] = [
+pub const CHAVES: [(&str, bool); 16] = [
+    ("KIMI_BASE_URL", false),
+    ("KIMI_MODELO", false),
     ("URL_PUBLICA", false),
     ("CLI_TEXTO", false),
     ("ANTHROPIC_MODELO", false),

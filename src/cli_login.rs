@@ -32,6 +32,7 @@ struct Sessao {
     estado: Estado,
     saida: String,
     stdin: Option<ChildStdin>,
+    parar: Arc<tokio::sync::Notify>,
 }
 
 fn sessoes() -> &'static Mutex<HashMap<String, Arc<tokio::sync::Mutex<Sessao>>>> {
@@ -69,6 +70,10 @@ fn limpar(s: &str) -> String {
                     }
                     out.push(' ');
                 }
+                Some('(') | Some(')') => {
+                    it.next();
+                    it.next();
+                }
                 _ => {}
             }
         } else if c != '\r' {
@@ -104,12 +109,32 @@ fn achar_token_claude(texto: &str) -> Option<String> {
         .filter(|c| !c.is_whitespace())
         .take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
         .collect();
-    // O texto seguinte começa com uma palavra (ex.: "Store"); corta se tiver grudado.
-    let token = match token.find("Store") {
-        Some(j) => token[..j].to_string(),
-        None => token,
-    };
+    // O terminal gruda o texto seguinte no token (sem espaços): corta na primeira palavra conhecida.
+    let mut fim = token.len();
+    for palavra in ["Store", "Use", "Your", "This", "Token", "Save", "You", "Copy", "Keep", "Export", "Set", "Press"] {
+        if let Some(j) = token[20.min(token.len())..].find(palavra) {
+            fim = fim.min(j + 20);
+        }
+    }
+    let token = token[..fim].to_string();
     (token.len() > 40).then_some(token)
+}
+
+/// Confere se o token funciona com um pedido mínimo ao Claude.
+async fn token_funciona(token: &str) -> bool {
+    let saida = Command::new("claude")
+        .args(["-p", "--output-format", "json", "--tools", "", "--no-session-persistence", "--strict-mcp-config"])
+        .arg("Responda só: ok")
+        .env("CLAUDE_CODE_OAUTH_TOKEN", token)
+        .current_dir(std::env::temp_dir())
+        .stdin(Stdio::null())
+        .output();
+    match tokio::time::timeout(std::time::Duration::from_secs(60), saida).await {
+        Ok(Ok(o)) => serde_json::from_slice::<serde_json::Value>(&o.stdout)
+            .map(|v| v["is_error"] == false)
+            .unwrap_or(false),
+        _ => false,
+    }
 }
 
 pub async fn estado(nome: &str) -> Estado {
@@ -139,8 +164,15 @@ pub async fn iniciar(st: &AppState, nome: &str) -> anyhow::Result<Estado> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    // Um login novo encerra o anterior (que poderia ficar esperando para sempre).
+    let anterior = sessoes().lock().ok().and_then(|m| m.get(nome).cloned());
+    if let Some(a) = anterior {
+        a.lock().await.parar.notify_one();
+    }
     let mut filho = cmd.spawn()?;
+    let parar = Arc::new(tokio::sync::Notify::new());
     let sessao = Arc::new(tokio::sync::Mutex::new(Sessao {
+        parar: parar.clone(),
         estado: Estado {
             fase: "iniciando".into(),
             pede_codigo: nome != "codex",
@@ -161,8 +193,16 @@ pub async fn iniciar(st: &AppState, nome: &str) -> anyhow::Result<Estado> {
     let s_t = sessao.clone();
     tokio::spawn(async move {
         let mut buf = [0u8; 4096];
+        let mut token_visto: Option<String> = None;
         loop {
-            match stdout.read(&mut buf).await {
+            let lido = tokio::select! {
+                r = stdout.read(&mut buf) => r,
+                _ = parar.notified() => {
+                    let _ = filho.kill().await;
+                    return;
+                }
+            };
+            match lido {
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
                     let mut s = s_t.lock().await;
@@ -184,18 +224,55 @@ pub async fn iniciar(st: &AppState, nome: &str) -> anyhow::Result<Estado> {
                             _ => "Abra o link, autorize e cole aqui o código que aparecer.".into(),
                         };
                     }
-                    if nome_t == "claude" {
-                        if let Some(token) = achar_token_claude(&texto) {
-                            if config::salvar(&st_t, "CLAUDE_CODE_OAUTH_TOKEN", &token).await.is_ok() {
-                                s.estado.fase = "concluido".into();
-                                s.estado.mensagem = "Assinatura do Claude conectada ✓".into();
-                            }
+                    // Código recusado ou vencido: avisa e encerra (o CLI ficaria esperando um Enter).
+                    let baixo = texto.to_lowercase();
+                    if s.estado.fase == "aguardando"
+                        && (baixo.contains("oauth error") || baixo.contains("wasn't accepted") || baixo.contains("invalid code")
+                            || baixo.contains("authentication failed") || baixo.contains("expired"))
+                    {
+                        s.estado.fase = "erro".into();
+                        s.estado.mensagem = "O código não foi aceito (incompleto, vencido ou de uma tentativa anterior). Clique em Conectar de novo e use o código novo.".into();
+                        drop(s);
+                        let _ = filho.kill().await;
+                        return;
+                    }
+                    if nome_t == "claude" && token_visto.is_none() {
+                        token_visto = achar_token_claude(&texto);
+                        if token_visto.is_some() {
+                            s.estado.mensagem = "Token recebido, conferindo…".into();
                         }
                     }
                 }
             }
         }
         let status = filho.wait().await;
+        // Claude: confere o token antes de salvar (o terminal pode ter grudado texto nele).
+        if let Some(t) = token_visto {
+            let mut candidatos = vec![t.clone()];
+            if t.len() > 108 {
+                candidatos.push(t[..108].to_string());
+            }
+            let mut ok = None;
+            for c in candidatos {
+                if token_funciona(&c).await {
+                    ok = Some(c);
+                    break;
+                }
+            }
+            let mut s = s_t.lock().await;
+            match ok {
+                Some(c) if config::salvar(&st_t, "CLAUDE_CODE_OAUTH_TOKEN", &c).await.is_ok() => {
+                    s.estado.fase = "concluido".into();
+                    s.estado.mensagem = "Assinatura do Claude conectada ✓".into();
+                }
+                _ => {
+                    s.estado.fase = "erro".into();
+                    s.estado.mensagem = "Recebi o token, mas ele não funcionou. Tente Conectar de novo.".into();
+                }
+            }
+            s.stdin = None;
+            return;
+        }
         let mut s = s_t.lock().await;
         if s.estado.fase != "concluido" {
             let ok = status.map(|x| x.success()).unwrap_or(false);
@@ -234,7 +311,7 @@ pub async fn enviar_codigo(nome: &str, codigo: &str) -> anyhow::Result<Estado> {
         stdin.flush().await?;
         g.estado.mensagem = "Código enviado, verificando…".into();
     }
-    for _ in 0..30 {
+    for _ in 0..60 {
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         let e = s.lock().await.estado.clone();
         if e.fase == "concluido" || e.fase == "erro" {

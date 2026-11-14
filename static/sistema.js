@@ -24,22 +24,41 @@
     const fluxo = linha.querySelector('.cli-fluxo');
     let timer = null;
 
+    // Elementos fixos: a atualização periódica só troca textos, nunca recria o campo do código.
+    const msg = el('p', { class: 'suave' });
+    const passo1 = el('p', {});
+    const passo2 = el('p', {});
+    const campo = el('input', { placeholder: 'cole o código aqui', style: 'flex:1', autocomplete: 'off' });
+    const enviar = el('button', { type: 'button', class: 'pequeno' }, 'Enviar código');
+    const linhaCodigo = el('div', { class: 'linha' }, campo, enviar);
+    fluxo.replaceChildren(msg, passo1, passo2, linhaCodigo);
+    let ultimaUrl = null;
+
+    enviar.addEventListener('click', async () => {
+      const codigo = campo.value.trim();
+      if (!codigo) return;
+      clearTimeout(timer);
+      enviar.disabled = true; campo.disabled = true;
+      msg.className = 'suave'; msg.textContent = 'Código enviado, verificando… (pode levar até 1 minuto)';
+      const r = await post('/sistema/cli/' + nome + '/codigo', { codigo });
+      enviar.disabled = false; campo.disabled = false;
+      mostrar(r.ok ? r.j : { fase: 'erro', mensagem: r.j.erro || 'erro' });
+    });
+
     function mostrar(e) {
       fluxo.hidden = false;
-      const partes = [el('p', { class: e.fase === 'erro' ? 'erro' : e.fase === 'concluido' ? 'ok' : 'suave' }, e.mensagem || '')];
-      if (e.url && e.fase !== 'concluido') {
-        partes.push(el('p', {}, '1. ', el('a', { href: e.url, target: '_blank', rel: 'noopener' }, 'Abrir o link de login ↗')));
-        if (e.codigo) partes.push(el('p', {}, '2. Digite este código lá: ', el('code', { class: 'codigo-grande' }, e.codigo)));
-        if (e.pede_codigo) {
-          const campo = el('input', { placeholder: 'cole o código aqui', style: 'flex:1', autocomplete: 'off' });
-          partes.push(el('div', { class: 'linha' }, campo, el('button', { type: 'button', class: 'pequeno', onclick: async () => {
-            if (!campo.value.trim()) return;
-            const r = await post('/sistema/cli/' + nome + '/codigo', { codigo: campo.value });
-            mostrar(r.ok ? r.j : { fase: 'erro', mensagem: r.j.erro || 'erro' });
-          } }, 'Enviar código')));
-        }
+      msg.className = e.fase === 'erro' ? 'erro' : e.fase === 'concluido' ? 'ok' : 'suave';
+      msg.textContent = e.mensagem || '';
+      const ativo = e.url && e.fase !== 'concluido' && e.fase !== 'erro';
+      passo1.hidden = !ativo;
+      if (ativo && e.url !== ultimaUrl) {
+        ultimaUrl = e.url;
+        passo1.replaceChildren('1. ', el('a', { href: e.url, target: '_blank', rel: 'noopener' }, 'Abrir o link de login ↗'));
+        campo.value = '';
       }
-      fluxo.replaceChildren(...partes);
+      passo2.hidden = !(ativo && e.codigo);
+      if (ativo && e.codigo) passo2.replaceChildren('2. Digite este código lá: ', el('code', { class: 'codigo-grande' }, e.codigo));
+      linhaCodigo.hidden = !(ativo && e.pede_codigo);
       clearTimeout(timer);
       if (e.fase === 'aguardando' || e.fase === 'iniciando') {
         timer = setTimeout(async () => mostrar(await (await fetch('/sistema/cli/' + nome + '/estado')).json()), 3000);
@@ -47,6 +66,7 @@
         setTimeout(() => location.reload(), 2000);
       }
     }
+    fluxo.hidden = true;
 
     linha.querySelector('[data-acao="iniciar"]').addEventListener('click', async (ev) => {
       ev.target.disabled = true;

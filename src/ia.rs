@@ -94,8 +94,8 @@ fn http() -> reqwest::Client {
 }
 
 /// Anthropic Messages API com saída estruturada (output_config.format).
-async fn anthropic_api(chave: &str, p: &PedidoTexto) -> anyhow::Result<Value> {
-    let modelo = crate::config::get_ou("ANTHROPIC_MODELO", "claude-opus-5-5");
+async fn anthropic_api(chave: &str, modelo: Option<&str>, p: &PedidoTexto) -> anyhow::Result<Value> {
+    let modelo = modelo.map(String::from).unwrap_or_else(|| crate::config::get_ou("ANTHROPIC_MODELO", "claude-opus-5-5"));
     let corpo = serde_json::json!({
         "model": modelo,
         "max_tokens": 16000,
@@ -134,8 +134,8 @@ async fn anthropic_api(chave: &str, p: &PedidoTexto) -> anyhow::Result<Value> {
 }
 
 /// Gemini API (generateContent) pedindo JSON.
-async fn gemini_api(chave: &str, p: &PedidoTexto) -> anyhow::Result<Value> {
-    let modelo = crate::config::get_ou("GEMINI_MODELO", "gemini-2.5-flash");
+async fn gemini_api(chave: &str, modelo: Option<&str>, p: &PedidoTexto) -> anyhow::Result<Value> {
+    let modelo = modelo.map(String::from).unwrap_or_else(|| crate::config::get_ou("GEMINI_MODELO", "gemini-2.5-flash"));
     let corpo = serde_json::json!({
         "systemInstruction": { "parts": [{ "text": p.sistema }] },
         "contents": [{ "role": "user", "parts": [{ "text": format!(
@@ -157,9 +157,22 @@ async fn gemini_api(chave: &str, p: &PedidoTexto) -> anyhow::Result<Value> {
     extrair_json(texto).context("o Gemini não devolveu JSON válido")
 }
 
-/// OpenAI Chat Completions pedindo JSON.
-async fn openai_api(chave: &str, p: &PedidoTexto) -> anyhow::Result<Value> {
-    let modelo = crate::config::get_ou("OPENAI_MODELO", "gpt-4.1-mini");
+/// Chat Completions compatível com OpenAI (OpenAI e Kimi/Moonshot) pedindo JSON.
+async fn openai_api(chave: &str, modelo: Option<&str>, p: &PedidoTexto) -> anyhow::Result<Value> {
+    compat_api("https://api.openai.com/v1", "OpenAI", chave, &modelo.map(String::from).unwrap_or_else(|| crate::config::get_ou("OPENAI_MODELO", "gpt-4.1-mini")), p).await
+}
+
+pub fn base_kimi() -> String {
+    crate::config::get_ou("KIMI_BASE_URL", "https://api.moonshot.ai/v1").trim_end_matches('/').to_string()
+}
+
+async fn kimi_api(chave: &str, modelo: Option<&str>, p: &PedidoTexto) -> anyhow::Result<Value> {
+    let modelo = modelo.map(String::from).or_else(|| crate::config::get("KIMI_MODELO"))
+        .ok_or_else(|| anyhow!("escolha o modelo do Kimi na seção Chaves"))?;
+    compat_api(&base_kimi(), "Kimi", chave, &modelo, p).await
+}
+
+async fn compat_api(base: &str, nome: &str, chave: &str, modelo: &str, p: &PedidoTexto) -> anyhow::Result<Value> {
     let corpo = serde_json::json!({
         "model": modelo,
         "messages": [
@@ -169,7 +182,7 @@ async fn openai_api(chave: &str, p: &PedidoTexto) -> anyhow::Result<Value> {
         "response_format": { "type": "json_object" },
     });
     let r = http()
-        .post("https://api.openai.com/v1/chat/completions")
+        .post(format!("{base}/chat/completions"))
         .bearer_auth(chave)
         .json(&corpo)
         .send()
@@ -177,34 +190,35 @@ async fn openai_api(chave: &str, p: &PedidoTexto) -> anyhow::Result<Value> {
     let status = r.status();
     let json: Value = r.json().await?;
     if !status.is_success() {
-        bail!("OpenAI {status}: {}", resumo(&json["error"]["message"].to_string()));
+        bail!("{nome} {status}: {}", resumo(&json["error"]["message"].to_string()));
     }
     let texto = json["choices"][0]["message"]["content"].as_str().unwrap_or_default();
-    extrair_json(texto).context("a OpenAI não devolveu JSON válido")
+    extrair_json(texto).with_context(|| format!("{nome} não devolveu JSON válido"))
 }
 
-async fn por_api(provedor: &str, chave: &str, p: &PedidoTexto) -> anyhow::Result<Value> {
+pub async fn por_api(provedor: &str, chave: &str, modelo: Option<&str>, p: &PedidoTexto) -> anyhow::Result<Value> {
     match provedor {
-        "anthropic" => anthropic_api(chave, p).await,
-        "gemini" => gemini_api(chave, p).await,
-        "openai" => openai_api(chave, p).await,
+        "anthropic" => anthropic_api(chave, modelo, p).await,
+        "gemini" => gemini_api(chave, modelo, p).await,
+        "openai" => openai_api(chave, modelo, p).await,
+        "kimi" => kimi_api(chave, modelo, p).await,
         outro => bail!("provedor desconhecido: {outro}"),
     }
 }
 
 /// Chaves cifradas disponíveis (da família, ou do sistema quando familia = None), na ordem de preferência.
-async fn chaves(st: &crate::AppState, familia: Option<uuid::Uuid>) -> anyhow::Result<Vec<(String, String)>> {
-    let linhas: Vec<(String, Vec<u8>)> = sqlx::query_as(
-        "SELECT provedor, cifrada FROM ia.chaves WHERE familia_id IS NOT DISTINCT FROM $1
-          ORDER BY CASE provedor WHEN 'anthropic' THEN 1 WHEN 'gemini' THEN 2 ELSE 3 END",
+async fn chaves(st: &crate::AppState, familia: Option<uuid::Uuid>) -> anyhow::Result<Vec<(String, String, Option<String>)>> {
+    let linhas: Vec<(String, Vec<u8>, Option<String>)> = sqlx::query_as(
+        "SELECT provedor, cifrada, modelo FROM ia.chaves WHERE familia_id IS NOT DISTINCT FROM $1
+          ORDER BY CASE provedor WHEN 'anthropic' THEN 1 WHEN 'gemini' THEN 2 WHEN 'openai' THEN 3 ELSE 4 END",
     )
     .bind(familia)
     .fetch_all(&st.db)
     .await?;
     let mut v = Vec::new();
-    for (p, c) in linhas {
+    for (p, c, m) in linhas {
         match crate::segredos::decifrar(&c) {
-            Ok(k) => v.push((p, k)),
+            Ok(k) => v.push((p, k, m)),
             Err(e) => tracing::warn!("chave {p} não decifrou: {e}"),
         }
     }
@@ -253,8 +267,8 @@ pub async fn gerar_texto(st: &crate::AppState, familia: uuid::Uuid, p: &PedidoTe
             Err(e) => erros.push(format!("CLI: {e:#}")),
         }
     }
-    for (prov, chave) in chaves(st, Some(familia)).await? {
-        match por_api(&prov, &chave, p).await {
+    for (prov, chave, modelo) in chaves(st, Some(familia)).await? {
+        match por_api(&prov, &chave, modelo.as_deref(), p).await {
             Ok(v) => {
                 registrar_uso(st, familia, "chave_familia", &prov).await;
                 return Ok(v);
@@ -263,8 +277,8 @@ pub async fn gerar_texto(st: &crate::AppState, familia: uuid::Uuid, p: &PedidoTe
         }
     }
     if sistema && dentro_do_limite {
-        for (prov, chave) in chaves(st, None).await? {
-            match por_api(&prov, &chave, p).await {
+        for (prov, chave, modelo) in chaves(st, None).await? {
+            match por_api(&prov, &chave, modelo.as_deref(), p).await {
                 Ok(v) => {
                     registrar_uso(st, familia, "chave_sistema", &prov).await;
                     return Ok(v);
@@ -275,7 +289,7 @@ pub async fn gerar_texto(st: &crate::AppState, familia: uuid::Uuid, p: &PedidoTe
     }
     if let Some(chave) = crate::config::get("GEMINI_CHAVE_GRATIS") {
         if !chave.trim().is_empty() {
-            match gemini_api(chave.trim(), p).await {
+            match gemini_api(chave.trim(), None, p).await {
                 Ok(v) => {
                     registrar_uso(st, familia, "gratis", "gemini").await;
                     return Ok(v);
