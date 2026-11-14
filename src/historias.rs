@@ -223,9 +223,10 @@ fn schema_historia() -> Value {
     json!({
         "type": "object",
                     "additionalProperties": false,
-        "required": ["titulo", "paginas"],
+        "required": ["titulo", "faixa", "paginas"],
         "properties": {
             "titulo": { "type": "string" },
+            "faixa": { "type": "string", "enum": FAIXAS, "description": "faixa etária escolhida para esta história" },
             "paginas": {
                 "type": "array",
                 "items": {
@@ -249,9 +250,12 @@ fn schema_historia() -> Value {
                             "items": {
                                 "type": "object",
                     "additionalProperties": false,
-                                "required": ["quem", "texto", "voz"],
+                                "required": ["quem", "texto", "voz", "nome", "tom", "velocidade"],
                                 "properties": { "quem": { "type": "string" }, "texto": { "type": "string" },
-                                                "voz": { "type": "string", "description": "\"\" (voz normal) ou o slug da voz extra do personagem" } }
+                                                "voz": { "type": "string", "description": "\"\" (voz normal) ou o slug da voz extra do personagem" },
+                                                "nome": { "type": "string", "description": "só com quem = \"voz:<id>\": nome do personagem secundário; senão \"\"" },
+                                                "tom": { "type": "integer", "description": "só com quem = \"voz:<id>\": -60 (grave) a 60 (agudo); senão 0" },
+                                                "velocidade": { "type": "integer", "description": "só com quem = \"voz:<id>\": -40 a 40 (%); senão 0" } }
                             }
                         }
                     }
@@ -268,16 +272,31 @@ vilões são engraçados e atrapalhados, nunca cruéis; lutas são divertidas, s
 Respeite a ficha de cada personagem (aparência, personalidade, jeito de falar). \
 Responda apenas com o JSON pedido.";
 
+#[allow(clippy::too_many_arguments)]
 fn montar_prompt(
     briefing: &str,
-    faixa: &str,
+    leitores: &[(String, String)],
     narracao: &str,
     citados: &[NaCena],
     todos: &[PersonagemIA],
     estilo: &str,
     memorias: &[(String, String)],
+    vozes_usadas: &[String],
 ) -> String {
-    let (pmin, pmax, wmin, wmax) = regras_faixa(faixa);
+    // Faixa etária: a IA escolhe pelo briefing, pelas fichas (idade dos personagens) e pelas crianças da família.
+    let regras: Vec<String> = FAIXAS
+        .iter()
+        .map(|f| {
+            let (pmin, pmax, wmin, wmax) = regras_faixa(f);
+            format!("  {f} anos: {pmin} a {pmax} páginas, {wmin} a {wmax} palavras por página")
+        })
+        .collect();
+    let criancas = if leitores.is_empty() {
+        String::new()
+    } else {
+        let l: Vec<String> = leitores.iter().map(|(n, f)| format!("{n} ({f} anos)")).collect();
+        format!(" Crianças que leem nesta família: {}.", l.join(", "))
+    };
     let fichas: Vec<Value> = citados
         .iter()
         .filter_map(|c| todos.iter().find(|p| p.slug == c.slug).map(|p| (c, p)))
@@ -324,7 +343,12 @@ fn montar_prompt(
     let modo = if narracao == "narrador" {
         "Narração SÓ COM NARRADOR: cada página tem exatamente UM bloco, com quem = \"narrador\". As falas dos personagens entram no texto do narrador com travessão (— Vamos lá! — disse Léo.)."
     } else {
-        "Narração POR PERSONAGEM: cada página tem vários blocos em sequência. Trechos narrados usam quem = \"narrador\"; cada fala usa quem = slug do personagem que fala, com o texto só da fala (sem \"disse fulano\"). Alterne narrador e falas de forma natural. Em cada bloco, voz = \"\", salvo quando o campo \"falas\" do personagem pedir outra."
+        "Narração POR PERSONAGEM: cada página tem vários blocos em sequência. Trechos narrados usam quem = \"narrador\"; cada fala usa quem = slug do personagem que fala, com o texto só da fala (sem \"disse fulano\"). Alterne narrador e falas de forma natural. Em cada bloco, voz = \"\", salvo quando o campo \"falas\" do personagem pedir outra. \
+         Personagens SECUNDÁRIOS sem ficha (ex.: um vilão só desta história, um bichinho, a professora) também podem falar: \
+         use quem = \"voz:<id>\" com uma das VOZES DO SISTEMA abaixo, \"nome\" com o nome dele, e \"tom\"/\"velocidade\" para dar personalidade \
+         (vilão: tom grave e mais lento; criaturinha: tom agudo e rápido). Mantenha a MESMA voz, nome, tom e velocidade para o mesmo secundário na história toda, \
+         e não use para ele a mesma voz de outro secundário. Vozes marcadas \"só inglês\" apenas para falas em inglês. \
+         Nos blocos dos personagens com ficha e do narrador: nome = \"\", tom = 0, velocidade = 0."
     };
     let briefing = if briefing.trim().is_empty() {
         "(sem briefing: invente uma história divertida com os personagens disponíveis)".to_string()
@@ -337,6 +361,22 @@ fn montar_prompt(
     } else {
         format!("- Universo/estilo desta coleção: {}. Mantenha o clima desse universo no texto e nas cenas.\n", estilo.trim())
     };
+    let secundarios = if narracao == "narrador" {
+        "Personagens secundários sem ficha podem aparecer só na narração."
+    } else {
+        "Personagens secundários sem ficha podem aparecer e falar com as VOZES DO SISTEMA (quem = \"voz:<id>\")."
+    };
+    let vozes_sistema = if narracao == "narrador" {
+        String::new()
+    } else {
+        // Sem as vozes que o narrador e os personagens da família já usam (para não confundir quem fala).
+        let lista: Vec<String> = crate::tts::VOZES
+            .iter()
+            .filter(|(id, _)| !vozes_usadas.iter().any(|u| u == id))
+            .map(|(id, n)| format!("- voz:{id} — {n}"))
+            .collect();
+        format!("VOZES DO SISTEMA (para secundários sem ficha):\n{}\n\n", lista.join("\n"))
+    };
     let anteriores = if memorias.is_empty() {
         String::new()
     } else {
@@ -347,16 +387,19 @@ fn montar_prompt(
         )
     };
     format!(
-        "Escreva uma história para a faixa de {faixa} anos.\n{estilo}\
-         - Entre {pmin} e {pmax} páginas; cada página com {wmin} a {wmax} palavras no total.\n\
+        "Escreva uma história infantil.\n{estilo}\
+         - Faixa etária: escolha em \"faixa\" a que combina com o briefing (se ele citar idade ou série, siga) e com as fichas \
+           (ex.: protagonista \"menino de 4 anos\" → 4-6).{criancas} Na dúvida, 4-6. Siga o tamanho da faixa escolhida:\n{}\n\
          - {modo}\n\
          - Em cada página: \"cena\" descreve a ilustração (lugar, ação, expressões, enquadramento), sem texto escrito na imagem; \
            \"personagens\" lista quem aparece na ilustração com slug e variante (use a variante_a_usar, salvo se o briefing pedir outra; as variantes em tambem_citadas também foram pedidas: use cada uma nas páginas em que fizer sentido, por exemplo depois de uma transformação, e escreva a cena com a aparência da variante daquela página); \
            \"animacao\" é um efeito leve que combine com a cena, ou \"nenhuma\".\n\
-         - Use SOMENTE os personagens abaixo (pelos slugs). Personagens secundários sem ficha podem aparecer só na narração.\n\n\
+         - Use SOMENTE os personagens abaixo (pelos slugs). {secundarios}\n\n\
          PERSONAGENS:\n{}\n\n\
+         {vozes_sistema}\
          {anteriores}\
          BRIEFING DA FAMÍLIA:\n{briefing}\n",
+        regras.join("\n"),
         serde_json::to_string_pretty(&fichas).unwrap_or_default()
     )
 }
@@ -374,6 +417,19 @@ fn normalizar(mut c: Conteudo, narracao: &str, citados: &[NaCena], todos: &[Pers
             p.animacao = Some("nenhuma".into());
         }
         for b in &mut p.blocos {
+            // Secundário com voz do sistema: só voz conhecida; nome e ajustes ficam (limitados).
+            let sistema = b.quem.strip_prefix("voz:").is_some_and(|id| crate::tts::VOZES.iter().any(|(v, _)| *v == id));
+            if sistema && narracao != "narrador" {
+                b.nome = b.nome.take().map(|n| n.trim().chars().take(40).collect::<String>()).filter(|n| !n.is_empty());
+                b.tom = b.tom.map(|t| t.clamp(-60, 60)).filter(|t| *t != 0);
+                b.velocidade = b.velocidade.map(|v| v.clamp(-40, 40)).filter(|v| *v != 0);
+                b.voz = None;
+                b.texto = b.texto.trim().to_string();
+                continue;
+            }
+            b.nome = None;
+            b.tom = None;
+            b.velocidade = None;
             if b.quem != "narrador" && !citados.iter().any(|c| c.slug == b.quem) {
                 b.quem = "narrador".into();
             }
@@ -463,14 +519,22 @@ pub async fn executar_geracao(st: &AppState, payload: &Value) -> anyhow::Result<
         }
     }
 
+    let leitores: Vec<(String, String)> = sqlx::query_as("SELECT nome, faixa FROM acesso.leitores WHERE familia_id = $1 ORDER BY nome")
+        .bind(h.familia_id)
+        .fetch_all(&st.db)
+        .await?;
+    let vozes = crate::tts::vozes_da_familia(st, h.familia_id).await?;
+    let mut vozes_usadas: Vec<String> = vec![vozes.narrador.id.clone()];
+    vozes_usadas.extend(vozes.personagens.iter().chain(vozes.extras.iter()).map(|(_, v)| v.id.clone()));
     let pedido = ia::PedidoTexto {
         sistema: SISTEMA.into(),
         imagens: Vec::new(),
-        prompt: montar_prompt(&briefing, &h.faixa, &h.narracao, &citados, &todos, estilo, &memorias),
+        prompt: montar_prompt(&briefing, &leitores, &h.narracao, &citados, &todos, estilo, &memorias, &vozes_usadas),
         schema: schema_historia(),
     };
     let resposta = ia::gerar_texto(st, h.familia_id, &pedido).await?;
     let titulo = resposta["titulo"].as_str().unwrap_or("Nova história").trim().to_string();
+    let faixa = resposta["faixa"].as_str().filter(|f| FAIXAS.contains(f)).unwrap_or(&h.faixa).to_string();
     let conteudo: Conteudo = serde_json::from_value(json!({ "paginas": resposta["paginas"] }))?;
     let conteudo = normalizar(conteudo, &h.narracao, &citados, &todos);
     if conteudo.paginas.is_empty() {
@@ -482,7 +546,7 @@ pub async fn executar_geracao(st: &AppState, payload: &Value) -> anyhow::Result<
     let mut tx = st.db.begin().await?;
     sqlx::query(
         "UPDATE conteudo.historias SET titulo = $2, slug = $3, conteudo = $4, estado = 'texto', continua_de = $5,
-                atualizado_em = now()
+                faixa = $6, atualizado_em = now()
           WHERE id = $1",
     )
     .bind(id)
@@ -490,6 +554,7 @@ pub async fn executar_geracao(st: &AppState, payload: &Value) -> anyhow::Result<
     .bind(&slug)
     .bind(&valor)
     .bind(&continua_de)
+    .bind(&faixa)
     .execute(&mut *tx)
     .await?;
     sqlx::query("INSERT INTO conteudo.versoes (historia_id, conteudo) VALUES ($1, $2)")
@@ -632,18 +697,11 @@ struct ItemHistoria {
     paginas: i32,
 }
 
-#[derive(sqlx::FromRow)]
-struct LeitorOpcao {
-    nome: String,
-    faixa: String,
-}
-
 #[derive(Template)]
 #[template(path = "historias.html")]
 struct PaginaHistorias {
     s: Sessao,
     itens: Vec<ItemHistoria>,
-    leitores: Vec<LeitorOpcao>,
     personagens: Vec<(String, String)>,
     estantes: Vec<(String, String)>,
 }
@@ -656,12 +714,6 @@ pub async fn lista(State(st): State<AppState>, s: Sessao) -> Response {
     .bind(s.familia_id)
     .fetch_all(&st.db)
     .await;
-    let leitores = sqlx::query_as::<_, LeitorOpcao>(
-        "SELECT nome, faixa FROM acesso.leitores WHERE familia_id = $1 ORDER BY nome",
-    )
-    .bind(s.familia_id)
-    .fetch_all(&st.db)
-    .await;
     let personagens = personagens_da_familia(&st, s.familia_id).await;
     let estantes = sqlx::query_as::<_, (String, String)>(
         "SELECT slug, nome FROM conteudo.estantes WHERE familia_id = $1 ORDER BY ordem, nome",
@@ -669,15 +721,14 @@ pub async fn lista(State(st): State<AppState>, s: Sessao) -> Response {
     .bind(s.familia_id)
     .fetch_all(&st.db)
     .await;
-    match (itens, leitores, personagens, estantes) {
-        (Ok(itens), Ok(leitores), Ok(p), Ok(estantes)) => render(PaginaHistorias {
+    match (itens, personagens, estantes) {
+        (Ok(itens), Ok(p), Ok(estantes)) => render(PaginaHistorias {
             s,
             itens,
-            leitores,
             personagens: p.into_iter().map(|p| (p.slug, p.nome)).collect(),
             estantes,
         }),
-        (Err(e), ..) | (_, Err(e), ..) | (_, _, Err(e), _) | (.., Err(e)) => erro_interno(e.into()),
+        (Err(e), ..) | (_, Err(e), _) | (.., Err(e)) => erro_interno(e.into()),
     }
 }
 
@@ -685,6 +736,8 @@ pub async fn lista(State(st): State<AppState>, s: Sessao) -> Response {
 pub struct FormNova {
     #[serde(default)]
     briefing: String,
+    /// Opcional: sem ela, a IA escolhe (ou vale a criança mais nova da família).
+    #[serde(default)]
     faixa: String,
     narracao: String,
     /// "ia" ou "manual"
@@ -697,7 +750,21 @@ pub struct FormNova {
 }
 
 pub async fn criar(State(st): State<AppState>, s: Sessao, Form(f): Form<FormNova>) -> Response {
-    let faixa = if FAIXAS.contains(&f.faixa.as_str()) { f.faixa } else { "4-6".into() };
+    let faixa = if FAIXAS.contains(&f.faixa.as_str()) {
+        f.faixa.clone()
+    } else {
+        // Ponto de partida (a IA ajusta): a faixa da criança mais nova da família, ou 4-6.
+        sqlx::query_scalar::<_, String>(
+            "SELECT faixa FROM acesso.leitores WHERE familia_id = $1
+              ORDER BY array_position(ARRAY['2-3','4-6','7-9','10-12'], faixa) LIMIT 1",
+        )
+        .bind(s.familia_id)
+        .fetch_optional(&st.db)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "4-6".into())
+    };
     let narracao = if f.narracao == "narrador" { "narrador" } else { "por-personagem" };
     let manual = f.modo == "manual";
     let id = Uuid::new_v4();

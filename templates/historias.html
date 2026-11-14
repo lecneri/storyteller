@@ -9,15 +9,6 @@
       <label class="inteiro">Briefing <small class="suave">(opcional — cite personagens com @, ex.: @{% if let Some(p) = personagens.first() %}{{ p.0 }}{% else %}leo{% endif %}, ou pelo nome)</small>
         <textarea name="briefing" rows="4" placeholder="O Super Léo e o Tito precisam impedir o Zorgo gigante de roubar todos os brinquedos do parque..."></textarea>
       </label>
-      <label>Faixa etária
-        <select name="faixa">
-          {% for l in leitores %}<option value="{{ l.faixa }}"{% if loop.first %} selected{% endif %}>{{ l.nome }} · {{ l.faixa }} anos</option>{% endfor %}
-          <option value="2-3">2–3 anos</option>
-          <option value="4-6"{% if leitores.is_empty() %} selected{% endif %}>4–6 anos</option>
-          <option value="7-9">7–9 anos</option>
-          <option value="10-12">10–12 anos</option>
-        </select>
-      </label>
       <label>Narração
         <select name="narracao">
           <option value="por-personagem">Por personagem (várias vozes)</option>
