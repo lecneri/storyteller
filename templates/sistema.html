@@ -105,5 +105,5 @@
 {% let escopo = "sistema" %}{% let acao_chaves = "/sistema/chaves" %}
   {% include "chaves.html" %}
 </main>
-<script src="/sistema.js" defer></script>
+<script src="/sistema.js?v={{ crate::web::versao() }}" defer></script>
 {% endblock %}

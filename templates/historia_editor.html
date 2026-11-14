@@ -7,6 +7,6 @@
   <div id="editor" class="largo"></div>
 </main>
 <script id="dados" type="application/json">{{ dados|safe }}</script>
-<script src="/efeitos.js" defer></script>
-<script src="/editor.js" defer></script>
+<script src="/efeitos.js?v={{ crate::web::versao() }}" defer></script>
+<script src="/editor.js?v={{ crate::web::versao() }}" defer></script>
 {% endblock %}

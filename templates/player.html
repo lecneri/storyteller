@@ -7,14 +7,14 @@
   <meta name="robots" content="noindex, nofollow">
   <title>{{ titulo }}</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/app.css">
-  <link rel="stylesheet" href="/player.css">
+  <link rel="stylesheet" href="/app.css?v={{ crate::web::versao() }}">
+  <link rel="stylesheet" href="/player.css?v={{ crate::web::versao() }}">
 </head>
 <body class="player">
   <div id="livro" data-voltar="{{ voltar }}"></div>
   <div id="aviso" class="aviso" hidden></div>
   <script id="dados" type="application/json">{{ dados|safe }}</script>
-  <script src="/efeitos.js" defer></script>
-  <script src="/player.js" defer></script>
+  <script src="/efeitos.js?v={{ crate::web::versao() }}" defer></script>
+  <script src="/player.js?v={{ crate::web::versao() }}" defer></script>
 </body>
 </html>

@@ -208,3 +208,12 @@ pub async fn criar_leitor(State(st): State<AppState>, s: Sessao, Form(f): Form<F
         Err(e) => erro_interno(e.into()),
     }
 }
+
+/// Versão dos arquivos estáticos (muda a cada vez que o servidor sobe), usada como `?v=` nos
+/// <script>/<link> para o navegador e a Cloudflare não ficarem com JS/CSS antigos depois de um deploy.
+pub fn versao() -> &'static str {
+    static V: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    V.get_or_init(|| {
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or_default().to_string()
+    })
+}
