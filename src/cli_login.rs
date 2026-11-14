@@ -363,7 +363,14 @@ pub async fn enviar_codigo(nome: &str, codigo: &str) -> anyhow::Result<Estado> {
 
 /// Situação atual de cada CLI (sem gastar uso): token salvo / `codex login status` / arquivos do agy.
 pub async fn situacao() -> Vec<(String, String)> {
-    let claude = if config::get("CLAUDE_CODE_OAUTH_TOKEN").is_some() { "conectado (token salvo)" } else { "não conectado" };
+    let home = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/home/app".into()));
+    let claude = if config::get("CLAUDE_CODE_OAUTH_TOKEN").is_some() {
+        "conectado (token salvo)"
+    } else if home.join(".claude/.credentials.json").exists() {
+        "conectado (login feito no terminal)"
+    } else {
+        "não conectado"
+    };
     let codex = Command::new("codex")
         .args(["login", "status"])
         .output()
@@ -373,6 +380,12 @@ pub async fn situacao() -> Vec<(String, String)> {
             if t.to_lowercase().contains("logged in") && !t.to_lowercase().contains("not logged") { "conectado" } else { "não conectado" }
         })
         .unwrap_or("indisponível");
-    let agy = if config::get("GEMINI_API_KEY").is_some() { "chave de API configurada" } else { "use “Conectar” e depois “Testar”" };
+    let agy = if config::get("GEMINI_API_KEY").is_some() {
+        "chave de API configurada"
+    } else if home.join(".gemini/antigravity-cli").exists() || home.join(".gemini/oauth_creds.json").exists() {
+        "login encontrado — confira com “Testar”"
+    } else {
+        "não conectado"
+    };
     vec![("claude".into(), claude.into()), ("codex".into(), codex.into()), ("agy".into(), agy.into())]
 }
