@@ -240,6 +240,19 @@ pub async fn iniciar(st: &AppState, nome: &str) -> anyhow::Result<Estado> {
                         token_visto = achar_token_claude(&texto);
                         if token_visto.is_some() {
                             s.estado.mensagem = "Token recebido, conferindo…".into();
+                            // Não espera o CLI terminar (ele pode ficar esperando um Enter): encerra e confere já.
+                            drop(s);
+                            tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+                            if let Ok(n) = tokio::time::timeout(std::time::Duration::from_millis(300), stdout.read(&mut buf)).await.unwrap_or(Ok(0)) {
+                                if n > 0 {
+                                    let mais = limpar(&String::from_utf8_lossy(&buf[..n]));
+                                    let mut s = s_t.lock().await;
+                                    s.saida.push_str(&mais);
+                                    token_visto = achar_token_claude(&s.saida);
+                                }
+                            }
+                            let _ = filho.kill().await;
+                            break;
                         }
                     }
                 }
