@@ -45,7 +45,7 @@
     {% for h in itens %}
       <li><a href="/historias/{{ h.id }}"><strong>{{ h.titulo }}</strong></a>
         <span class="suave">· {{ h.faixa }} anos · {{ h.paginas }} páginas · {{ h.estado }}</span>
-        {% if h.paginas > 0 %} · <a href="/ler/{{ h.id }}">📖 ler</a>{% endif %}</li>
+        {% if h.paginas > 0 %} · <a href="/ler/{{ h.id }}">📖 ler</a> · <a href="/imprimir/{{ h.id }}">🖨️ imprimir</a>{% endif %}</li>
     {% endfor %}
     </ul>
   </section>

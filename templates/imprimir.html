@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>{{ titulo }} · Imprimir</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/imprimir.css?v={{ crate::web::versao() }}">
+  <style id="pagina-papel">@page { size: A4 portrait; margin: 12mm; }</style>
+</head>
+<body>
+  <div class="barra">
+    <a href="javascript:history.back()">← Voltar</a>
+    <label>Vídeo e GIF
+      <select id="modo">
+        <option value="primeiro">primeiro quadro</option>
+        <option value="aleatorio">quadro aleatório</option>
+      </select>
+    </label>
+    <button type="button" id="sortear" hidden>🎲 Sortear outros quadros</button>
+    <label>Folha
+      <select id="folha">
+        <option value="retrato">em pé (imagem em cima)</option>
+        <option value="paisagem">deitada (imagem | texto)</option>
+      </select>
+    </label>
+    <button type="button" id="imprimir">🖨️ Imprimir</button>
+    <span id="estado" class="suave"></span>
+  </div>
+  <main id="livro"></main>
+  <script id="dados" type="application/json">{{ dados|safe }}</script>
+  <script src="/imprimir.js?v={{ crate::web::versao() }}" defer></script>
+</body>
+</html>

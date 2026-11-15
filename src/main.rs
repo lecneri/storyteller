@@ -10,6 +10,7 @@ mod estantes;
 mod exportar;
 mod familia;
 mod historias;
+mod imprimir;
 mod imagem;
 mod ia;
 mod jobs;
@@ -105,6 +106,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/personagens/{slug}/variantes/{vslug}/arquivar", post(personagens::alternar_arquivo))
         .route("/personagens/{slug}/variantes/{vslug}/gerar-ref", post(personagens::gerar_ref))
         .route("/midia/{id}", get(midia::servir))
+        .route("/midia/{id}/quadro", get(imprimir::quadro))
+        .route("/imprimir/{id}", get(imprimir::pagina))
         .route("/historias", get(historias::lista).post(historias::criar))
         .route("/historias/{id}", get(historias::abrir))
         .route("/historias/{id}/regerar", post(historias::regerar))

@@ -3,7 +3,7 @@
 {% block corpo %}
 {% include "topo.html" %}
 <main class="conteudo">
-  <p class="largo"><a href="/historias">← Histórias</a></p>
+  <p class="largo linha" style="justify-content:space-between"><a href="/historias">← Histórias</a> <a href="/imprimir/{{ id }}">🖨️ Imprimir</a></p>
   <div id="editor" class="largo"></div>
 </main>
 <script id="dados" type="application/json">{{ dados|safe }}</script>

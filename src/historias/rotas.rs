@@ -170,6 +170,7 @@ struct PaginaEditor {
     s: Sessao,
     titulo: String,
     dados: String,
+    id: Uuid,
 }
 
 pub async fn abrir(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) -> Response {
@@ -225,7 +226,7 @@ pub async fn abrir(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) 
     });
     // JSON dentro de <script>: impede que um texto "</script>" feche a tag.
     let dados = dados.to_string().replace("</", "<\\/");
-    render(PaginaEditor { s, titulo: h.titulo, dados })
+    render(PaginaEditor { s, titulo: h.titulo, dados, id })
 }
 
 pub async fn regerar(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) -> Response {

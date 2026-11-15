@@ -71,24 +71,27 @@ pub async fn salvar(
 }
 
 /// GET /midia/{id}: só a família dona vê (o compartilhamento entra depois).
-pub async fn servir(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) -> Response {
-    let linha: Option<(String, String, Uuid)> = match sqlx::query_as(
-        "SELECT caminho, tipo_mime, familia_id FROM midia.arquivos WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(&st.db)
-    .await
-    {
-        Ok(l) => l,
-        Err(e) => return erro_interno(e.into()),
-    };
-    // A família dona vê; famílias conectadas também (para ler o que foi compartilhado).
-    let Some((caminho, tipo, dona)) = linha else {
-        return StatusCode::NOT_FOUND.into_response();
-    };
-    if dona != s.familia_id && !crate::partilha::conectado(&st, dona, s.familia_id).await {
-        return StatusCode::NOT_FOUND.into_response();
+/// Caminho e tipo de um arquivo que a família da sessão pode ver: a dona vê; famílias
+/// conectadas também (para ler o que foi compartilhado).
+pub async fn permitido(st: &AppState, s: &Sessao, id: Uuid) -> anyhow::Result<Option<(String, String)>> {
+    let linha: Option<(String, String, Uuid)> =
+        sqlx::query_as("SELECT caminho, tipo_mime, familia_id FROM midia.arquivos WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&st.db)
+            .await?;
+    let Some((caminho, tipo, dona)) = linha else { return Ok(None) };
+    if dona != s.familia_id && !crate::partilha::conectado(st, dona, s.familia_id).await {
+        return Ok(None);
     }
+    Ok(Some((caminho, tipo)))
+}
+
+pub async fn servir(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) -> Response {
+    let (caminho, tipo) = match permitido(&st, &s, id).await {
+        Ok(Some(l)) => l,
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(e) => return erro_interno(e),
+    };
     match tokio::fs::read(st.data_dir.join(caminho)).await {
         Ok(bytes) => (
             [
