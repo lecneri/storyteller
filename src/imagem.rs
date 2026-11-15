@@ -52,7 +52,8 @@ async fn openai(chave: &str, modelo: Option<&str>, prompt: &str, refs: &[Referen
 }
 
 async fn gemini(chave: &str, modelo: Option<&str>, prompt: &str, refs: &[Referencia]) -> anyhow::Result<Vec<u8>> {
-    let modelo = modelo.map(String::from).unwrap_or_else(|| crate::config::get_ou("GEMINI_MODELO_IMAGEM", "gemini-2.5-flash-image"));
+    let padrao = crate::config::get_ou("GEMINI_MODELO_IMAGEM", "gemini-2.5-flash-image");
+    let modelo = modelo.map(String::from).unwrap_or_else(|| padrao.clone());
     let mut partes = vec![json!({ "text": prompt })];
     for r in refs {
         partes.push(json!({ "inline_data": { "mime_type": r.mime, "data": STANDARD.encode(&r.bytes) } }));
@@ -61,17 +62,7 @@ async fn gemini(chave: &str, modelo: Option<&str>, prompt: &str, refs: &[Referen
         "contents": [{ "role": "user", "parts": partes }],
         "generationConfig": { "responseModalities": ["IMAGE"], "imageConfig": { "aspectRatio": "3:4" } },
     });
-    let r = http()
-        .post(format!("https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent"))
-        .header("x-goog-api-key", chave)
-        .json(&corpo)
-        .send()
-        .await?;
-    let status = r.status();
-    let j: Value = r.json().await?;
-    if !status.is_success() {
-        bail!("Gemini {status}: {}", j["error"]["message"]);
-    }
+    let j = crate::ia::gemini::gerar(chave, &modelo, &padrao, &corpo, Duration::from_secs(240)).await?;
     let partes = j["candidates"][0]["content"]["parts"].as_array().cloned().unwrap_or_default();
     let dado = partes
         .iter()

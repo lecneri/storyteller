@@ -67,7 +67,8 @@ async fn anthropic_api(chave: &str, modelo: Option<&str>, p: &PedidoTexto) -> an
 
 /// Gemini API (generateContent) pedindo JSON.
 pub(super) async fn gemini_api(chave: &str, modelo: Option<&str>, p: &PedidoTexto) -> anyhow::Result<Value> {
-    let modelo = modelo.map(String::from).unwrap_or_else(|| crate::config::get_ou("GEMINI_MODELO", "gemini-2.5-flash"));
+    let padrao = crate::config::get_ou("GEMINI_MODELO", "gemini-2.5-flash");
+    let modelo = modelo.map(String::from).unwrap_or_else(|| padrao.clone());
     let mut partes: Vec<Value> = p
         .imagens
         .iter()
@@ -80,17 +81,7 @@ pub(super) async fn gemini_api(chave: &str, modelo: Option<&str>, p: &PedidoText
         "contents": [{ "role": "user", "parts": partes }],
         "generationConfig": { "responseMimeType": "application/json" },
     });
-    let r = http()
-        .post(format!("https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent"))
-        .header("x-goog-api-key", chave)
-        .json(&corpo)
-        .send()
-        .await?;
-    let status = r.status();
-    let json: Value = r.json().await?;
-    if !status.is_success() {
-        bail!("Gemini {status}: {}", resumo(&json["error"]["message"].to_string()));
-    }
+    let json = super::gemini::gerar(chave, &modelo, &padrao, &corpo, Duration::from_secs(300)).await?;
     let texto = json["candidates"][0]["content"]["parts"][0]["text"].as_str().unwrap_or_default();
     extrair_json(texto).context("o Gemini não devolveu JSON válido")
 }

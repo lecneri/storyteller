@@ -3,6 +3,7 @@
 
 mod api;
 mod cli;
+pub mod gemini;
 
 use std::time::Duration;
 
