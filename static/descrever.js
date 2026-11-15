@@ -8,6 +8,7 @@ document.querySelectorAll("[data-descrever]").forEach((caixa) => {
   const aviso = Object.assign(document.createElement("small"), { className: "suave" });
   aviso.textContent = " A foto vai só para a IA e não fica guardada.";
   caixa.append(botao, entrada, aviso);
+  if (window.St) window.St.zonaColar(entrada, '📋 Ou clique aqui e cole a foto (Ctrl+V) para a IA descrever');
   botao.addEventListener("click", () => entrada.click());
   entrada.addEventListener("change", async () => {
     if (!entrada.files.length) return;
