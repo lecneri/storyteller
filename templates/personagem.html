@@ -25,6 +25,20 @@
       <p class="inteiro suave">Trocar o @ atualiza as histórias, briefings e estantes que citam {{ p.nome }}. A voz e a narração já gerada continuam.</p>
       <button type="submit">Salvar ficha</button>
     </form>
+    <details class="kit-personagem"{% if self.sem_imagem() %} open{% endif %}>
+      <summary>🎨 Kit do desenho de referência de {{ p.nome }}</summary>
+      <p class="suave">O desenho principal, pela aparência da ficha{% if !self.fotos().is_empty() %} e pelas fotos{% endif %}. Gere no ChatGPT/Gemini e envie a imagem na variante principal (ex.: "Normal"). Cada variante tem o kit dela, com a roupa que muda.</p>
+      {% if !self.fotos().is_empty() %}
+      <div class="minis">{% for ref_id in self.fotos() %}{% include "miniatura.html" %}{% endfor %}</div>
+      {% endif %}
+      <div class="linha-kit"><span>Prompt</span>
+        <button type="button" class="pequeno" data-copiar-texto="prompt-ficha">📋 Copiar prompt</button></div>
+      <textarea id="prompt-ficha" class="prompt" readonly title="Clique para ver o prompt inteiro">{{ self.prompt_kit_ficha() }}</textarea>
+      <div class="linha-kit">
+        <a href="https://chatgpt.com/" target="_blank" rel="noopener">Abrir ChatGPT ↗</a>
+        <a href="https://gemini.google.com/app" target="_blank" rel="noopener">Abrir Gemini ↗</a>
+      </div>
+    </details>
   </section>
 
   <section class="cartao largo" id="variantes" data-personagem="{{ p.slug }}">

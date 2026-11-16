@@ -249,6 +249,13 @@ impl PaginaPersonagem {
         let aparencia = super::com_ia::aparencia_variante(&self.p.campo("aparencia"), &v.nome, v.descricao.as_deref());
         prompt_model_sheet(&self.p.nome, &aparencia, v.estilo.as_deref(), !self.fotos().is_empty() || !v.referencias.is_empty())
     }
+    /// Kit da ficha: o desenho principal do personagem só pela aparência da ficha (e pelas fotos), sem variante.
+    fn prompt_kit_ficha(&self) -> String {
+        prompt_model_sheet(&self.p.nome, &self.p.campo("aparencia"), None, !self.fotos().is_empty())
+    }
+    fn sem_imagem(&self) -> bool {
+        self.variantes.iter().all(|v| v.referencias.is_empty())
+    }
     fn foto_na_variante(&self, v: &Variante, foto: &str) -> bool {
         v.referencias.iter().any(|r| r.to_string() == foto)
     }
