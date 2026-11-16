@@ -60,16 +60,18 @@ async fn proximo(st: &AppState) -> Result<Option<Job>, sqlx::Error> {
 async fn executar(st: &AppState, job: Job) {
     tracing::info!("job {} ({}) começou", job.id, job.tipo);
     let resultado = match job.tipo.as_str() {
-        "gerar_historia" => crate::historias::executar_geracao(st, &job.payload).await,
-        "gerar_narracao" => crate::narracao::executar_narracao(st, &job.payload).await,
-        "narrar_publico" => crate::narracao::executar_narracao_publica(st, &job.payload).await,
+        "gerar_historia" => crate::historias::executar_geracao(st, &job.payload).await.map(|_| None),
+        "editar_historia" => crate::historias::executar_ajuda(st, &job.payload).await.map(Some),
+        "gerar_narracao" => crate::narracao::executar_narracao(st, &job.payload).await.map(|_| None),
+        "narrar_publico" => crate::narracao::executar_narracao_publica(st, &job.payload).await.map(|_| None),
         outro => Err(anyhow::anyhow!("tipo de job desconhecido: {outro}")),
     };
     let r = match resultado {
-        Ok(()) => {
+        Ok(saida) => {
             tracing::info!("job {} terminou", job.id);
-            sqlx::query("UPDATE jobs.fila SET estado = 'feito', erro = NULL, atualizado_em = now() WHERE id = $1")
+            sqlx::query("UPDATE jobs.fila SET estado = 'feito', erro = NULL, resultado = $2, atualizado_em = now() WHERE id = $1")
                 .bind(job.id)
+                .bind(saida)
                 .execute(&st.db)
                 .await
         }

@@ -15,15 +15,16 @@ struct HistoriaGerar {
     faixa: String,
     narracao: String,
     padroes: Option<Value>,
+    conteudo: Value,
 }
 
 /// Tudo o que a geração precisa antes de chamar a IA (e para gravar a resposta depois).
 pub struct Preparo {
     pub familia_id: Uuid,
-    faixa: String,
-    narracao: String,
-    citados: Vec<NaCena>,
-    todos: Vec<super::deteccao::PersonagemIA>,
+    pub(super) faixa: String,
+    pub(super) narracao: String,
+    pub(super) citados: Vec<NaCena>,
+    pub(super) todos: Vec<super::deteccao::PersonagemIA>,
     continua_de: Vec<Uuid>,
     pub pedido: ia::PedidoTexto,
 }
@@ -31,7 +32,7 @@ pub struct Preparo {
 /// Monta o pedido à IA a partir do briefing, da estante, dos personagens e das histórias citadas.
 pub async fn preparar(st: &AppState, id: Uuid) -> anyhow::Result<Preparo> {
     let h = sqlx::query_as::<_, HistoriaGerar>(
-        "SELECT h.familia_id, h.briefing, h.faixa, h.narracao, e.padroes
+        "SELECT h.familia_id, h.briefing, h.faixa, h.narracao, e.padroes, h.conteudo
            FROM conteudo.historias h
            LEFT JOIN conteudo.estantes e ON e.id = h.estante_principal
           WHERE h.id = $1",
@@ -56,6 +57,21 @@ pub async fn preparar(st: &AppState, id: Uuid) -> anyhow::Result<Preparo> {
             Some(c) if c.variante.is_none() => c.variante = variante,
             Some(_) => {}
             None => citados.push(NaCena { slug: slug.into(), variante, voz: None, misto: false, tambem: Vec::new() }),
+        }
+    }
+    // História já escrita (ajuda da IA na edição): quem já está nas páginas também entra.
+    for pg in h.conteudo["paginas"].as_array().into_iter().flatten() {
+        for n in pg["personagens"].as_array().into_iter().flatten() {
+            let slug = n["slug"].as_str().unwrap_or_default();
+            if todos.iter().any(|t| t.slug == slug) && !citados.iter().any(|c| c.slug == slug) {
+                citados.push(NaCena { slug: slug.into(), variante: None, voz: None, misto: false, tambem: Vec::new() });
+            }
+        }
+        for b in pg["blocos"].as_array().into_iter().flatten() {
+            let slug = b["quem"].as_str().unwrap_or_default();
+            if todos.iter().any(|t| t.slug == slug) && !citados.iter().any(|c| c.slug == slug) {
+                citados.push(NaCena { slug: slug.into(), variante: None, voz: None, misto: false, tambem: Vec::new() });
+            }
         }
     }
     if citados.is_empty() {

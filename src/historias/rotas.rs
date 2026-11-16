@@ -198,7 +198,7 @@ pub async fn abrir(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) 
     let vazia = h.conteudo["paginas"].as_array().is_none_or(|a| a.is_empty());
     if vazia {
         let job: Option<(String, Option<String>)> = match sqlx::query_as(
-            "SELECT estado, erro FROM jobs.fila WHERE payload->>'historia_id' = $1 ORDER BY id DESC LIMIT 1",
+            "SELECT estado, erro FROM jobs.fila WHERE tipo = 'gerar_historia' AND payload->>'historia_id' = $1 ORDER BY id DESC LIMIT 1",
         )
         .bind(id.to_string())
         .fetch_optional(&st.db)

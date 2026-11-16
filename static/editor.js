@@ -21,7 +21,7 @@
   const cor = (n) => 'cor-' + (n % NCORES);
 
   const ajustar = (t) => { t.style.height = 'auto'; t.style.height = t.scrollHeight + 2 + 'px'; };
-  document.addEventListener('input', (e) => { if (e.target.matches('#editor textarea:not(.prompt)')) ajustar(e.target); });
+  document.addEventListener('input', (e) => { if (e.target.matches('#editor textarea:not(.prompt):not(.fixa)')) ajustar(e.target); });
   const mudou = () => { sujo = true; status.textContent = 'Alterações não salvas'; };
 
   const personagem = (slug) => personagens.find((p) => p.slug === slug);
@@ -529,6 +529,119 @@
         } }, '💾 Salvar memória'), st));
   }
 
+  // ───────────── Ajuda da IA para editar ─────────────
+  // A IA devolve a história inteira ajustada; o editor mostra, e a família salva ou desfaz.
+  const ajuda = { aberto: false, pedido: '', msg: '', ocupado: false, externo: false, prompt: '', resposta: '', backup: null };
+  function aplicarAjuda(r) {
+    ajuda.backup = JSON.parse(JSON.stringify({ titulo: estado.titulo, paginas: estado.paginas, secundarios: estado.secundarios }));
+    if (r.titulo) estado.titulo = r.titulo;
+    estado.paginas = (r.conteudo && r.conteudo.paginas) || [];
+    estado.secundarios = (r.conteudo && r.conteudo.secundarios) || [];
+    ajuda.msg = 'Pronto! Confira as páginas e clique em 💾 Salvar. Não gostou? Use ↩ Desfazer.';
+    ajuda.externo = false; ajuda.resposta = '';
+    mudou(); desenhar();
+    aviso('A IA ajustou a história. Confira e salve.', 4000);
+  }
+  async function antesDePedir() {
+    if (!ajuda.pedido.trim()) { aviso('Escreva o que a IA deve mudar.'); return false; }
+    if (sujo) { await salvar(); if (sujo) { aviso('Salve a história antes de pedir ajuda.'); return false; } }
+    return true;
+  }
+  async function pedirAjuda() {
+    if (ajuda.ocupado || !(await antesDePedir())) return;
+    ajuda.ocupado = true; ajuda.msg = '⏳ A IA está ajustando a história (de 30 s a 2 min)…'; desenhar();
+    try {
+      const r = await fetch(location.pathname + '/ajuda-ia', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pedido: ajuda.pedido }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.erro || 'erro ' + r.status);
+      const fim = Date.now() + 8 * 60 * 1000;
+      for (;;) {
+        await new Promise((ok) => setTimeout(ok, 3000));
+        const v = await fetch(location.pathname + '/ajuda-ia/' + j.job).then((x) => x.json()).catch(() => ({}));
+        if (v.estado === 'feito') { ajuda.ocupado = false; aplicarAjuda(v.resultado || {}); return; }
+        if (v.estado === 'erro') throw new Error(v.erro || 'falhou');
+        if (Date.now() > fim) throw new Error('demorou demais');
+      }
+    } catch (e) {
+      ajuda.msg = 'Não deu: ' + e.message + '. Tente de novo ou use outra IA.';
+    }
+    ajuda.ocupado = false; desenhar();
+  }
+  async function promptAjuda() {
+    if (ajuda.ocupado || !(await antesDePedir())) return;
+    ajuda.ocupado = true; ajuda.msg = 'Montando o prompt…'; desenhar();
+    try {
+      const r = await fetch(location.pathname + '/ajuda-ia', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pedido: ajuda.pedido, modo: 'prompt' }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.erro || 'erro ' + r.status);
+      ajuda.prompt = j.prompt; ajuda.externo = true;
+      ajuda.msg = 'Copie o prompt, cole numa IA e traga a resposta.';
+    } catch (e) {
+      ajuda.msg = 'Não deu: ' + e.message;
+    }
+    ajuda.ocupado = false; desenhar();
+  }
+  async function importarAjuda(botao) {
+    if (!ajuda.resposta.trim()) { aviso('Cole a resposta da IA ou escolha o arquivo.'); return; }
+    botao.disabled = true; botao.textContent = '⏳ Importando…';
+    try {
+      const r = await fetch(location.pathname + '/ajuda-ia/importar', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ texto: ajuda.resposta }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.erro || 'erro ' + r.status);
+      aplicarAjuda(j);
+    } catch (e) {
+      aviso(e.message, 6000);
+      botao.disabled = false; botao.textContent = '📥 Importar resposta';
+    }
+  }
+  function ajudaUI() {
+    const pedido = el('textarea', { rows: 3, maxlength: 2000, placeholder: 'Ex.: deixe a página 3 mais engraçada; troque "cachorro" por "dog" nas falas do Noob; acrescente uma página no final com o Pedro dormindo.' });
+    pedido.value = ajuda.pedido;
+    pedido.addEventListener('input', () => { ajuda.pedido = pedido.value; });
+    let externo = null;
+    if (ajuda.externo) {
+      const caixa = el('textarea', { readonly: true, class: 'prompt', id: 'prompt-ajuda', title: 'Clique para ver o prompt inteiro' });
+      caixa.value = ajuda.prompt;
+      const resp = el('textarea', { class: 'fixa', placeholder: 'Cole aqui a resposta inteira da IA (começa com { "titulo": ...)' });
+      resp.value = ajuda.resposta;
+      resp.addEventListener('input', () => { ajuda.resposta = resp.value; });
+      const arq = el('input', { type: 'file', accept: '.json,.txt,application/json,text/plain', 'data-sem-colar': true, onchange: async (e) => {
+        const f = e.target.files[0];
+        if (!f) return;
+        if (f.size > 2000000) { aviso('Arquivo grande demais.'); return; }
+        resp.value = ajuda.resposta = await f.text();
+      } });
+      externo = el('div', { class: 'kit' },
+        el('div', { class: 'linha-kit' }, el('span', {}, '1. Copie o prompt'),
+          el('button', { type: 'button', class: 'pequeno', onclick: () => copiarTexto(ajuda.prompt) }, '📋 Copiar prompt')),
+        caixa,
+        el('div', { class: 'linha-kit' }, el('span', {}, '2. Cole numa IA:'),
+          el('a', { href: 'https://chatgpt.com/', target: '_blank', rel: 'noopener' }, 'ChatGPT ↗'),
+          el('a', { href: 'https://gemini.google.com/app', target: '_blank', rel: 'noopener' }, 'Gemini ↗'),
+          el('a', { href: 'https://claude.ai/new', target: '_blank', rel: 'noopener' }, 'Claude ↗')),
+        el('span', {}, '3. Cole a resposta ou envie o arquivo (.json ou .txt):'),
+        resp,
+        el('div', { class: 'linha' }, arq,
+          el('button', { type: 'button', onclick: (e) => importarAjuda(e.currentTarget) }, '📥 Importar resposta')));
+    }
+    const det = el('details', { class: 'memoria', open: ajuda.aberto }, el('summary', {}, '🤖 Pedir ajuda à IA para editar'),
+      el('small', { class: 'suave' }, 'Diga o que mudar. A IA devolve a história ajustada aqui no editor; as imagens das páginas continuam. Nada é salvo até você clicar em 💾 Salvar.'),
+      pedido,
+      el('div', { class: 'linha' },
+        el('button', { type: 'button', class: 'pequeno', disabled: ajuda.ocupado, onclick: pedirAjuda }, '✨ Pedir à IA'),
+        el('button', { type: 'button', class: 'pequeno secundario', disabled: ajuda.ocupado, onclick: promptAjuda }, '📋 Usar outra IA'),
+        ajuda.backup ? el('button', { type: 'button', class: 'pequeno secundario', onclick: () => {
+          Object.assign(estado, ajuda.backup); ajuda.backup = null; ajuda.msg = 'Desfeito.'; mudou(); desenhar();
+        } }, '↩ Desfazer') : null),
+      ajuda.msg ? el('small', { class: 'suave' }, ajuda.msg) : null,
+      externo);
+    det.addEventListener('toggle', () => { ajuda.aberto = det.open; });
+    return det;
+  }
+
   const status = el('span', { class: 'suave' }, '');
   async function salvar() {
     status.textContent = 'Salvando…';
@@ -610,6 +723,7 @@
       (dados.continua || []).length ? el('p', { class: 'suave' }, '📚 Continua de: ',
         dados.continua.map((c, i) => [i ? ', ' : '', el('a', { href: '/historias/' + c.id }, c.titulo)])) : null,
       memoriaUI(),
+      ajudaUI(),
       secundariosUI(),
       modo === 'carrossel' && estado.paginas.length
         ? (atual = Math.min(atual, estado.paginas.length - 1),
@@ -628,7 +742,7 @@
         el('button', { type: 'button', class: 'secundario', onclick: gerarNarracao }, '🎙️ Gerar narração'),
         status, el('button', { type: 'button', onclick: salvar }, '💾 Salvar')),
     ].flat(Infinity).filter(Boolean));
-    raiz.querySelectorAll('textarea:not(.prompt)').forEach(ajustar);
+    raiz.querySelectorAll('textarea:not(.prompt):not(.fixa)').forEach(ajustar);
     manterAncora(ancora, rolagem);
     observarPaginas();
   }
