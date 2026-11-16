@@ -442,27 +442,46 @@ pub async fn estado(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>)
     }
 }
 
-/// GET /historias/{id}/video.mp4 — baixa (ou assiste) o vídeo pronto.
-pub async fn baixar(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>, req: Request) -> Response {
-    let titulo: Option<String> = sqlx::query_scalar("SELECT slug FROM conteudo.historias WHERE id = $1 AND familia_id = $2")
+/// GET /historias/{id}/video/baixar e /video/ver — o vídeo pronto, para baixar ou assistir.
+/// A URL não termina em .mp4 e toda resposta é "no-store": o Cloudflare guarda em cache arquivos .mp4
+/// (sem olhar o login) e chegou a servir um 404 antigo depois de o vídeo ficar pronto.
+pub async fn baixar(st: State<AppState>, s: Sessao, id: Path<Uuid>, req: Request) -> Response {
+    sem_cache(servir(st, s, id, req, true).await)
+}
+
+pub async fn ver(st: State<AppState>, s: Sessao, id: Path<Uuid>, req: Request) -> Response {
+    sem_cache(servir(st, s, id, req, false).await)
+}
+
+fn sem_cache(mut r: Response) -> Response {
+    r.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("private, no-store"));
+    r
+}
+
+async fn servir(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>, req: Request, anexo: bool) -> Response {
+    let slug: Option<String> = match sqlx::query_scalar("SELECT slug FROM conteudo.historias WHERE id = $1 AND familia_id = $2")
         .bind(id)
         .bind(s.familia_id)
         .fetch_optional(&st.db)
         .await
-        .unwrap_or(None);
-    let Some(slug) = titulo else { return StatusCode::NOT_FOUND.into_response() };
+    {
+        Ok(t) => t,
+        Err(e) => return erro_interno(e.into()),
+    };
+    let Some(slug) = slug else { return StatusCode::NOT_FOUND.into_response() };
     let caminho = arquivo(&st, id);
     if !caminho.exists() {
-        return StatusCode::NOT_FOUND.into_response();
+        // Ainda não fez (ou já passou das 24 h): volta para a página de exportar.
+        return Redirect::to(&format!("/historias/{id}/exportar")).into_response();
     }
     match tower_http::services::ServeFile::new(caminho).try_call(req).await {
         Ok(r) => {
             let mut r = r.map(Body::new);
-            let nome = format!("attachment; filename=\"{}.mp4\"", if slug.is_empty() { "historia" } else { &slug });
-            if let Ok(v) = HeaderValue::from_str(&nome) {
+            let nome = if slug.is_empty() { "historia" } else { &slug };
+            let disp = format!("{}; filename=\"{nome}.mp4\"", if anexo { "attachment" } else { "inline" });
+            if let Ok(v) = HeaderValue::from_str(&disp) {
                 r.headers_mut().insert(header::CONTENT_DISPOSITION, v);
             }
-            r.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("private, no-store"));
             r
         }
         Err(e) => erro_interno(e.into()),

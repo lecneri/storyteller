@@ -9,6 +9,7 @@ body { margin:0; font-family: system-ui, sans-serif; background:var(--fundo); co
 label { display:grid; gap:4px; font-weight:600; }
 input, select, button { font:inherit; padding:10px 12px; border-radius:10px; border:1px solid var(--borda); background:var(--fundo); color:var(--texto); }
 button { background:var(--cor); color:#fff; border:none; font-weight:700; cursor:pointer; }
+[hidden] { display:none !important; }
 a.botao { display:inline-block; padding:10px 12px; border-radius:10px; background:var(--cor); color:#fff; font-weight:700; text-decoration:none; }
 button.link { background:none; color:var(--cor); padding:0 0 0 8px; }
 .topo { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; padding:12px 16px; border-bottom:1px solid var(--borda); background:var(--cartao); }
@@ -205,3 +206,28 @@ body.crianca { background:linear-gradient(180deg,#ffe9c7,#fff8ef 40%); min-heigh
 .ajuste-voz { display:flex; align-items:center; gap:4px; font-weight:400; font-size:.85em; }
 .ajuste-voz input { width:90px; padding:0; }
 .sec-item { display:grid; grid-template-columns:200px 1fr auto auto; gap:8px; align-items:start; margin:6px 0; } @media (max-width:640px) { .sec-item { grid-template-columns:1fr; } } .sec-item textarea { width:100%; }
+
+/* Páginas de erro (4xx: livro com "?", 5xx: livro rasgado) */
+.pagina-erro { text-align:center; justify-items:center; }
+.pagina-erro h1 { margin:0; font-size:1.5rem; }
+.pagina-erro .linha { justify-content:center; }
+.codigo-erro { margin:0; font-weight:800; letter-spacing:.2em; color:var(--cor); }
+.livro-erro { width:min(260px, 80vw); height:auto; overflow:visible; }
+.livro-erro .sombra { fill:var(--borda); }
+.livro-erro .capa { fill:var(--cor); }
+.livro-erro .folha { fill:#fffaf2; stroke:var(--borda); stroke-width:2; }
+.livro-erro .lombada { stroke:#e6d6c0; stroke-width:2; }
+.livro-erro .linha-texto { stroke:#d9c7ae; stroke-width:4; stroke-linecap:round; }
+.livro-erro .ponto { fill:none; stroke:var(--cor); stroke-width:10; stroke-linecap:round; stroke-linejoin:round; }
+.livro-erro .pingo { fill:var(--cor); }
+.livro-erro .olho { fill:#4a3a2c; }
+.livro-erro .sobrancelha, .livro-erro .boca { fill:none; stroke:#4a3a2c; stroke-width:3; stroke-linecap:round; }
+.livro-erro .lagrima { fill:#7cc4ff; }
+.livro-erro .faisca { stroke:var(--suave); stroke-width:3; stroke-linecap:round; }
+.livro-erro.aberto .interrogacao { transform-origin:170px 80px; animation:balanca 2.4s ease-in-out infinite; }
+.livro-erro.rasgado .esq { transform-origin:112px 142px; transform:rotate(-6deg) translateX(-4px); }
+.livro-erro.rasgado .dir { transform-origin:132px 142px; transform:rotate(6deg) translateX(4px); }
+.livro-erro.rasgado .lagrima { animation:pinga 2s ease-in infinite; }
+@keyframes balanca { 0%,100% { transform:rotate(-8deg); } 50% { transform:rotate(8deg); } }
+@keyframes pinga { 0% { transform:translateY(0); opacity:1; } 80% { transform:translateY(22px); opacity:0; } 100% { opacity:0; } }
+@media (prefers-reduced-motion: reduce) { .livro-erro * { animation:none !important; } }

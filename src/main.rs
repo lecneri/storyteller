@@ -113,7 +113,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/historias/{id}/exportar", get(video::pagina))
         .route("/historias/{id}/video", post(video::fazer))
         .route("/historias/{id}/video/estado", get(video::estado))
-        .route("/historias/{id}/video.mp4", get(video::baixar))
+        .route("/historias/{id}/video/baixar", get(video::baixar))
+        .route("/historias/{id}/video/ver", get(video::ver))
         .route("/historias", get(historias::lista).post(historias::criar))
         .route("/historias/{id}", get(historias::abrir))
         .route("/historias/{id}/regerar", post(historias::regerar))
@@ -185,6 +186,7 @@ async fn main() -> anyhow::Result<()> {
         .fallback_service(ServeDir::new("static"))
         .layer(middleware::from_fn_with_state(state.clone(), crianca::trava))
         .layer(middleware::from_fn(web::checa_origem))
+        .layer(middleware::from_fn(web::paginas_de_erro))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 

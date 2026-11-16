@@ -61,6 +61,53 @@ pub async fn checa_origem(req: Request<Body>, next: Next) -> Response {
     next.run(req).await
 }
 
+#[derive(Template)]
+#[template(path = "erro.html")]
+struct PaginaErro {
+    codigo: u16,
+    titulo: &'static str,
+    texto: &'static str,
+    rasgado: bool,
+}
+
+/// Texto e desenho da página de erro: 4xx é o livro com "?", 5xx o livro rasgado.
+fn pagina_de_erro(status: StatusCode) -> PaginaErro {
+    let (titulo, texto) = match status.as_u16() {
+        404 => ("Essa página sumiu do livro", "Procuramos em todas as estantes e não achamos. Talvez o endereço esteja errado ou a história tenha sido apagada."),
+        403 => ("Essa página é de outro livro", "Você não tem acesso a ela. Se acha que deveria, peça para quem cuida da família."),
+        401 => ("Quem está lendo?", "Entre na sua conta para continuar a história."),
+        413 => ("Esse arquivo é grande demais", "Tente uma imagem ou vídeo menor."),
+        400..=499 => ("Hmm, essa página não fez sentido", "Algo no pedido veio estranho. Volte e tente de novo."),
+        503 => ("O livro está descansando", "O servidor está ocupado agora. Tente de novo daqui a pouquinho."),
+        _ => ("Ops, o livro rasgou!", "Algo deu errado do nosso lado. Já ficou anotado; tente de novo daqui a pouco."),
+    };
+    PaginaErro { codigo: status.as_u16(), titulo, texto, rasgado: status.is_server_error() }
+}
+
+/// Quem abre uma página no navegador e dá erro (404, 500…) vê uma página bonita em vez de texto puro.
+/// Só para navegação (Accept: text/html); chamadas do JavaScript e respostas JSON passam intactas.
+pub async fn paginas_de_erro(req: Request<Body>, next: Next) -> Response {
+    let navegando = matches!(*req.method(), Method::GET | Method::HEAD)
+        && req.headers().get(header::ACCEPT).and_then(|a| a.to_str().ok()).is_some_and(|a| a.contains("text/html"));
+    let r = next.run(req).await;
+    let status = r.status();
+    if !navegando || !(status.is_client_error() || status.is_server_error()) {
+        return r;
+    }
+    let tipo = r.headers().get(header::CONTENT_TYPE).and_then(|t| t.to_str().ok()).unwrap_or("");
+    if tipo.contains("json") || tipo.contains("html") {
+        return r;
+    }
+    match pagina_de_erro(status).render() {
+        Ok(html) => {
+            let mut nova = (status, Html(html)).into_response();
+            nova.headers_mut().insert(header::CACHE_CONTROL, header::HeaderValue::from_static("no-store"));
+            nova
+        }
+        Err(_) => r,
+    }
+}
+
 // ───────────── entrar / sair ─────────────
 
 #[derive(Template)]
