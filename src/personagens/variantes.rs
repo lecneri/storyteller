@@ -217,6 +217,30 @@ pub async fn usar_foto(
     }
 }
 
+/// POST /personagens/{slug}/variantes/{vslug}/tirar-ref/{ref}: tira uma imagem de referência da variante
+/// (ex.: um desenho que saiu errado). O arquivo sai do disco na limpeza, se nada mais usar.
+pub async fn tirar_ref(
+    State(st): State<AppState>,
+    s: Sessao,
+    Path((slug, vslug, ref_id)): Path<(String, String, Uuid)>,
+) -> Response {
+    let r = sqlx::query(
+        "UPDATE conteudo.variantes v SET referencias = array_remove(v.referencias, $4)
+           FROM conteudo.personagens p
+          WHERE v.personagem_id = p.id AND p.familia_id = $1 AND p.slug = $2 AND v.slug = $3",
+    )
+    .bind(s.familia_id)
+    .bind(&slug)
+    .bind(&vslug)
+    .bind(ref_id)
+    .execute(&st.db)
+    .await;
+    match r {
+        Ok(_) => Redirect::to(&format!("/personagens/{slug}")).into_response(),
+        Err(e) => erro_interno(e.into()),
+    }
+}
+
 /// POST /personagens/{slug}/variantes/{vslug}/arquivar: arquiva ou restaura (alterna).
 /// Arquivada não aparece para histórias novas; as antigas continuam usando.
 pub async fn alternar_arquivo(

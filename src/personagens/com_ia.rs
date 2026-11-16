@@ -195,33 +195,35 @@ pub async fn gerar_ref(State(st): State<AppState>, s: Sessao, Path((slug, vslug)
         return Redirect::to("/personagens").into_response();
     };
     let fotos: Vec<Uuid> = ficha["fotos"].as_array().into_iter().flatten().filter_map(|v| v.as_str()?.parse().ok()).collect();
-    let mut ids = refs_atuais.clone();
-    let mut emprestou = false;
-    if ids.is_empty() {
-        // Variante nova sem imagem: a imagem de outra variante (a atual, se tiver) vai como referência de rosto e traços.
-        let emprestada: Option<Uuid> = sqlx::query_scalar(
-            "SELECT v.referencias[1] FROM conteudo.variantes v JOIN conteudo.personagens p ON p.id = v.personagem_id
-              WHERE p.familia_id = $1 AND p.slug = $2 AND cardinality(v.referencias) > 0
-              ORDER BY (v.id = p.variante_atual) DESC, v.criado_em LIMIT 1",
-        )
-        .bind(s.familia_id)
-        .bind(&slug)
-        .fetch_optional(&st.db)
-        .await
-        .unwrap_or(None)
-        .flatten();
-        emprestou = emprestada.is_some();
-        ids.extend(emprestada);
-    }
+    // A imagem principal do personagem (da variante atual, ou a mais antiga com imagem) vai sempre na frente,
+    // como referência de rosto, idade e proporções: assim toda variante nova continua sendo o mesmo personagem.
+    let principal: Option<Uuid> = sqlx::query_scalar(
+        "SELECT v.referencias[1] FROM conteudo.variantes v JOIN conteudo.personagens p ON p.id = v.personagem_id
+          WHERE p.familia_id = $1 AND p.slug = $2 AND v.id <> $3 AND cardinality(v.referencias) > 0 AND NOT v.arquivada
+          ORDER BY (v.id = p.variante_atual) DESC, v.criado_em LIMIT 1",
+    )
+    .bind(s.familia_id)
+    .bind(&slug)
+    .bind(vid)
+    .fetch_optional(&st.db)
+    .await
+    .unwrap_or(None)
+    .flatten();
+    let emprestou = principal.is_some();
+    let mut ids: Vec<Uuid> = principal.into_iter().collect();
+    ids.extend(refs_atuais.iter().copied());
     ids.extend(fotos);
     let refs = crate::imagem::carregar_refs(&st, s.familia_id, &ids).await;
     let aparencia = aparencia_variante(ficha["aparencia"].as_str().unwrap_or_default(), &vnome, descricao.as_deref());
     let mut prompt = prompt_model_sheet(&nome, &aparencia, estilo.as_deref(), !refs.is_empty());
     if emprestou {
         prompt.push_str(
-            "\nA primeira imagem anexada é o mesmo personagem em outra versão: copie dela só o rosto, o cabelo e os traços. \
-             A roupa, a forma e o estilo são os descritos acima, não os da imagem.",
+            "\nA primeira imagem anexada é o mesmo personagem na versão principal: copie dela o rosto, o cabelo, a idade e as proporções do corpo. \
+             A roupa, a forma e o estilo são os descritos acima, não os dessa imagem.",
         );
+        if !refs_atuais.is_empty() {
+            prompt.push_str("\nAs outras imagens anexadas são desta versão: use para a roupa e os acessórios, mas a idade e o rosto vêm da primeira.");
+        }
     }
     match crate::imagem::gerar(&st, s.familia_id, &s.familia_slug, &format!("personagens/{slug}/refs"), &prompt, &refs).await {
         Ok((img, _)) => {

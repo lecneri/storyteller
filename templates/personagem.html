@@ -62,7 +62,10 @@
           </form>
         </details>
         <div class="minis">
-          {% for ref_id in v.referencias %}{% include "miniatura.html" %}{% endfor %}
+          {% for ref_id in v.referencias %}<div class="foto-kit">{% include "miniatura.html" %}
+            <form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/tirar-ref/{{ ref_id }}"
+                  onsubmit="return confirm('Tirar esta imagem da variante {{ v.nome }}? A IA deixa de usar ela como referência.')">
+              <button type="submit" class="pequeno secundario">🗑 Tirar</button></form></div>{% endfor %}
           {% if v.referencias.is_empty() %}<p class="suave">Sem imagem: a descrição será usada no prompt.</p>{% endif %}
         </div>
         {% if !v.arquivada %}
