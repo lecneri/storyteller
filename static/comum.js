@@ -56,10 +56,29 @@
       return !tipos.length || tipos.some((t) => (t.endsWith('/*') ? f.type.startsWith(t.slice(0, -1)) : f.type === t));
     };
     const lista = el('small', { class: 'suave' });
+    // Prévia: miniatura de cada imagem escolhida/colada/arrastada, com ✕ para tirar.
+    const previa = el('div', { class: 'previa-envio', hidden: '' });
+    let urls = [];
     const mostrar = () => {
       const n = input.files.length;
       lista.textContent = n ? '✅ ' + (n === 1 ? input.files[0].name || '1 imagem' : n + ' imagens') + ' pronta(s)' : '';
+      urls.forEach((u) => URL.revokeObjectURL(u));
+      urls = [];
+      const imagens = [...input.files].map((f, i) => ({ f, i })).filter(({ f }) => f.type.startsWith('image/'));
+      previa.hidden = !imagens.length;
+      previa.replaceChildren(...imagens.map(({ f, i }) => {
+        const u = URL.createObjectURL(f);
+        urls.push(u);
+        return el('figure', { title: f.name }, el('img', { src: u, alt: f.name }),
+          el('button', { type: 'button', class: 'tirar', title: 'Tirar esta imagem', onclick: () => tirar(i) }, '✕'));
+      }));
     };
+    function tirar(i) {
+      const dt = new DataTransfer();
+      [...input.files].forEach((f, j) => { if (j !== i) dt.items.add(f); });
+      input.files = dt.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
     function receber(arquivos) {
       const novos = [...arquivos].filter(aceita);
       if (!novos.length) { aviso('Não há imagem copiada para colar.'); return; }
@@ -97,7 +116,7 @@
       el('span', { class: 'zona-normal' }, texto || '📋 Clique aqui e cole (Ctrl+V) ou arraste a imagem'),
       el('span', { class: 'zona-pronta' }, '✅ Pronto! Agora aperte Ctrl+V'));
     input.addEventListener('change', mostrar);
-    const caixa = el('div', { class: 'envio colar' }, zona,
+    const caixa = el('div', { class: 'envio colar' }, zona, previa,
       el('span', { class: 'linha' }, lista,
         navigator.clipboard && navigator.clipboard.read ? el('button', { type: 'button', class: 'pequeno secundario', onclick: colarDoBotao }, '📋 Colar') : null));
     // Dentro de um <label>, clicar na área abriria a janela de arquivos: fica logo depois do label.

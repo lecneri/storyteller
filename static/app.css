@@ -253,3 +253,7 @@ body.crianca { background:linear-gradient(180deg,#ffe9c7,#fff8ef 40%); min-heigh
 .rodape { text-align:center; padding:12px 16px 20px; font-size:.85em; opacity:.7; }
 .rodape a { color:inherit; }
 .lista-creditos { margin:0; padding-left:20px; display:grid; gap:8px; }
+.previa-envio { display:flex; gap:8px; flex-wrap:wrap; margin-top:4px; justify-self:stretch; }
+.previa-envio figure { position:relative; margin:0; }
+.previa-envio img { width:96px; height:96px; object-fit:cover; border-radius:10px; border:1px solid var(--borda); display:block; }
+.previa-envio .tirar { position:absolute; top:-6px; right:-6px; width:24px; height:24px; padding:0; border-radius:50%; font-size:.8em; line-height:1; }
