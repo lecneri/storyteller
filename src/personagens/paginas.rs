@@ -139,7 +139,8 @@ pub async fn salvar_ficha(
         return detalhe_com(&st, s, &slug, Some("Preencha o nome e o tipo.".into())).await;
     }
     let r = sqlx::query(
-        "UPDATE conteudo.personagens SET nome = $3, tipo = $4, ficha = $5, atualizado_em = now()
+        // `||` mescla: o formulário não traz tudo (ex.: "fotos" do personagem criado com IA) e o resto fica.
+        "UPDATE conteudo.personagens SET nome = $3, tipo = $4, ficha = COALESCE(ficha, '{}'::jsonb) || $5, atualizado_em = now()
           WHERE familia_id = $1 AND slug = $2",
     )
     .bind(s.familia_id)
