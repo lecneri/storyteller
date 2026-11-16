@@ -23,6 +23,14 @@
       aviso('Não consegui copiar. Use ⬇ para baixar.');
     }
   }
+  // Prompt recolhido: um clique abre (altura fixa, com rolagem); ao sair dele, recolhe de novo.
+  document.addEventListener('click', (ev) => {
+    const ta = ev.target.closest('textarea.prompt');
+    if (ta && !ta.classList.contains('aberto')) { ta.classList.add('aberto'); ta.scrollTop = 0; }
+  });
+  document.addEventListener('focusout', (ev) => {
+    if (ev.target.matches && ev.target.matches('textarea.prompt')) ev.target.classList.remove('aberto');
+  });
   document.addEventListener('click', async (ev) => {
     const bt = ev.target.closest('[data-copiar-texto]');
     if (bt) {

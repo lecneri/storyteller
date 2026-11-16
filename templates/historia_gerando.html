@@ -25,7 +25,7 @@
     {% if !externo %}<h2>📋 Ou use outra IA</h2>{% endif %}
     <div class="linha-kit"><span><strong>1.</strong> Copie o prompt</span>
       <button type="button" class="pequeno" data-copiar-texto="prompt-historia">📋 Copiar prompt</button></div>
-    <textarea id="prompt-historia" class="prompt" rows="6" readonly>{{ p }}</textarea>
+    <textarea id="prompt-historia" class="prompt" readonly title="Clique para ver o prompt inteiro">{{ p }}</textarea>
     <div class="linha-kit">
       <span><strong>2.</strong> Cole numa IA:</span>
       <a href="https://chatgpt.com/" target="_blank" rel="noopener">ChatGPT ↗</a>
@@ -33,7 +33,7 @@
       <a href="https://claude.ai/new" target="_blank" rel="noopener">Claude ↗</a>
     </div>
     <p><strong>3.</strong> Traga a resposta: cole abaixo ou envie o arquivo (.json ou .txt).</p>
-    <textarea id="resposta-ia" rows="6" placeholder='Cole aqui a resposta inteira da IA (começa com { "titulo": ...)'></textarea>
+    <textarea id="resposta-ia" class="fixa" placeholder='Cole aqui a resposta inteira da IA (começa com { "titulo": ...)'></textarea>
     <div class="linha">
       <label class="check">Arquivo <input type="file" id="arquivo-ia" accept=".json,.txt,application/json,text/plain" data-sem-colar></label>
       <button type="button" id="importar-ia">📥 Importar resposta</button>

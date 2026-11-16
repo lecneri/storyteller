@@ -311,7 +311,7 @@
     const palco = el('div', { class: 'palco' + (pag.midia ? '' : ' vazio') }, midiaEl(pag.midia) || el('span', {}, '🖼️'));
 
     const prompt = promptImagem(pag);
-    const caixaPrompt = el('textarea', { rows: 6, readonly: true, class: 'prompt' });
+    const caixaPrompt = el('textarea', { readonly: true, class: 'prompt', title: 'Clique para ver o prompt inteiro' });
     caixaPrompt.value = prompt;
 
     const kit = el('div', { class: 'kit' },

@@ -46,7 +46,7 @@
           {% endif %}
           <div class="linha-kit"><span>Prompt</span>
             <button type="button" class="pequeno" data-copiar-texto="prompt-{{ v.slug }}">📋 Copiar prompt</button></div>
-          <textarea id="prompt-{{ v.slug }}" class="prompt" rows="5" readonly>{{ self.prompt_kit(v) }}</textarea>
+          <textarea id="prompt-{{ v.slug }}" class="prompt" readonly title="Clique para ver o prompt inteiro">{{ self.prompt_kit(v) }}</textarea>
           <div class="linha-kit">
             <a href="https://chatgpt.com/" target="_blank" rel="noopener">Abrir ChatGPT ↗</a>
             <a href="https://gemini.google.com/app" target="_blank" rel="noopener">Abrir Gemini ↗</a>

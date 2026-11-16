@@ -81,7 +81,11 @@ fieldset.padroes { border:1px solid var(--borda); border-radius:12px; padding:12
 .inserir-pagina::before, .inserir-pagina::after { content:''; flex:1; border-top:2px dashed var(--borda); }
 .kit { display:grid; gap:8px; border-top:1px dashed var(--borda); padding-top:10px; }
 .linha-kit { display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap; font-size:.9em; }
-textarea.prompt { font-size:.82em; font-family: ui-monospace, monospace; background:var(--cartao); }
+textarea.prompt { font-size:.82em; font-family: ui-monospace, monospace; background:var(--cartao);
+  height:4.2em; min-height:0; overflow:hidden; resize:none; cursor:pointer; transition:height .15s;
+  -webkit-mask-image:linear-gradient(#000 55%, transparent); mask-image:linear-gradient(#000 55%, transparent); }
+textarea.prompt.aberto { height:16em; overflow-y:auto; cursor:text; -webkit-mask-image:none; mask-image:none; }
+textarea.fixa { height:12em; min-height:0; overflow-y:auto; resize:none; }
 .chip { display:inline-flex; align-items:center; gap:4px; }
 .chip-img { width:18px; height:18px; border-radius:50%; object-fit:cover; }
 .chip .link { padding:0 0 0 4px; font-size:.85em; }
