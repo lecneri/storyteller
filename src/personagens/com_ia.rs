@@ -232,7 +232,7 @@ pub async fn gerar_ref(State(st): State<AppState>, s: Sessao, Path((slug, vslug)
                 .bind(img)
                 .execute(&st.db)
                 .await;
-            Redirect::to(&format!("/personagens/{slug}")).into_response()
+            super::variantes::ir_para(&slug, &vslug)
         }
         Err(e) => detalhe_com(&st, s, &slug, Some(format!("{e:#}"))).await,
     }

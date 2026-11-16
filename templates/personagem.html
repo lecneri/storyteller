@@ -31,7 +31,7 @@
     <h2>Variantes de {{ p.nome }}</h2>
     {% if variantes.is_empty() %}<p class="suave">Nenhuma variante ainda. Crie a primeira abaixo (ex.: "Super Léo · Power Rangers").</p>{% endif %}
     {% for v in variantes %}
-      <article class="variante{% if self.eh_atual(v) %} atual{% endif %}{% if v.arquivada %} arquivada{% endif %}" data-variante="{{ v.slug }}" data-nome="{{ v.nome }}"{% if let Some(r) = v.referencias.first() %} data-mini="/midia/{{ r }}"{% endif %}>
+      <article id="v-{{ v.slug }}" class="variante{% if self.eh_atual(v) %} atual{% endif %}{% if v.arquivada %} arquivada{% endif %}" data-variante="{{ v.slug }}" data-nome="{{ v.nome }}"{% if let Some(r) = v.referencias.first() %} data-mini="/midia/{{ r }}"{% endif %}>
         <header>
           <strong>{{ v.nome }}{% if v.arquivada %} <span class="suave">· 📦 arquivada</span>{% endif %}</strong>
           <span class="linha">

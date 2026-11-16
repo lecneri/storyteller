@@ -11,7 +11,9 @@
   const guardar = (k, v) => { try { localStorage.setItem(k, v); } catch (_) { /* */ } };
 
   let modo = ler('variantes-modo') === 'carrossel' ? 'carrossel' : 'lista';
-  let atual = Math.max(0, artigos.findIndex((a) => a.dataset.variante === ler(chave)));
+  // Âncora #v-slug (volta de salvar/adicionar imagem): abre essa variante; senão, a última aberta.
+  const daAncora = location.hash.startsWith('#v-') ? decodeURIComponent(location.hash.slice(3)) : null;
+  let atual = Math.max(0, artigos.findIndex((a) => a.dataset.variante === (daAncora || ler(chave))));
 
   const botoesModo = criar('div', { class: 'modo-vista' });
   const nav = criar('div', { class: 'carrossel-nav' });
@@ -35,4 +37,6 @@
       criar('strong', { class: 'nome-variante' }, artigos[atual].dataset.nome));
   }
   mostrar();
+  // No carrossel, a variante só aparece depois de mostrar(): rola até ela de novo.
+  if (daAncora && artigos[atual]) { guardar(chave, artigos[atual].dataset.variante); artigos[atual].scrollIntoView(); }
 })();

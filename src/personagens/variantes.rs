@@ -103,7 +103,7 @@ pub async fn criar_variante(
             return erro_interno(e.into());
         }
     }
-    Redirect::to(&format!("/personagens/{slug}")).into_response()
+    ir_para(&slug, &util::slug(&nome))
 }
 
 /// Personagem novo criado com imagem: a imagem vira a variante "Normal" (a atual), pronta para ser referência.
@@ -156,7 +156,7 @@ pub async fn marcar_atual(
     .execute(&st.db)
     .await;
     match r {
-        Ok(_) => Redirect::to(&format!("/personagens/{slug}")).into_response(),
+        Ok(_) => ir_para(&slug, &vslug),
         Err(e) => erro_interno(e.into()),
     }
 }
@@ -187,7 +187,7 @@ pub async fn adicionar_refs(
     .execute(&st.db)
     .await;
     match r {
-        Ok(_) => Redirect::to(&format!("/personagens/{slug}")).into_response(),
+        Ok(_) => ir_para(&slug, &vslug),
         Err(e) => erro_interno(e.into()),
     }
 }
@@ -212,7 +212,7 @@ pub async fn usar_foto(
     .execute(&st.db)
     .await;
     match r {
-        Ok(_) => Redirect::to(&format!("/personagens/{slug}")).into_response(),
+        Ok(_) => ir_para(&slug, &vslug),
         Err(e) => erro_interno(e.into()),
     }
 }
@@ -236,7 +236,7 @@ pub async fn tirar_ref(
     .execute(&st.db)
     .await;
     match r {
-        Ok(_) => Redirect::to(&format!("/personagens/{slug}")).into_response(),
+        Ok(_) => ir_para(&slug, &vslug),
         Err(e) => erro_interno(e.into()),
     }
 }
@@ -277,7 +277,7 @@ pub async fn alternar_arquivo(
     }
     .await;
     match r {
-        Ok(()) => Redirect::to(&format!("/personagens/{slug}")).into_response(),
+        Ok(()) => ir_para(&slug, &vslug),
         Err(e) => erro_interno(e.into()),
     }
 }
@@ -333,5 +333,10 @@ pub async fn editar_variante(
             return detalhe_com(&st, s, &slug, Some(format!("A variante foi salva, mas não troquei o @: {e:#}"))).await;
         }
     }
-    Redirect::to(&format!("/personagens/{slug}")).into_response()
+    ir_para(&slug, if !novo.is_empty() { &novo } else { &vslug })
+}
+
+/// Volta para a página do personagem já na variante (âncora #v-slug: rola até ela e, no carrossel, abre ela).
+pub(super) fn ir_para(slug: &str, vslug: &str) -> Response {
+    Redirect::to(&format!("/personagens/{slug}#v-{vslug}")).into_response()
 }
