@@ -1,4 +1,6 @@
 <label class="inteiro">Estilo de referência <input name="estilo" value="{{ estilo_atual }}" placeholder="Power Rangers, Pokémon, aquarela..."></label>
+<label class="inteiro">Instruções para a IA <small class="suave">(valem para toda história criada nesta estante)</small>
+  <textarea name="instrucoes" rows="3" maxlength="2000" placeholder="Ex.: ensine 3 a 5 palavras em inglês por história; o personagem fala a palavra em inglês e logo depois explica em português.">{{ instrucoes_atual }}</textarea></label>
 <fieldset class="inteiro padroes">
   <legend>Personagens desta estante <small class="suave">(já entram em toda história criada aqui)</small></legend>
   {% if personagens.is_empty() %}<p class="suave">Cadastre personagens primeiro.</p>{% endif %}

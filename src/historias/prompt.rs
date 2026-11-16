@@ -78,6 +78,7 @@ pub fn montar_prompt(
     citados: &[NaCena],
     todos: &[PersonagemIA],
     estilo: &str,
+    instrucoes: &str,
     memorias: &[(String, String)],
     vozes_usadas: &[String],
 ) -> String {
@@ -179,6 +180,12 @@ pub fn montar_prompt(
             .collect();
         format!("VOZES DO SISTEMA (para secundários sem ficha):\n{}\n\n", lista.join("\n"))
     };
+    // Instruções da estante (ex.: "Let's learn English": ensinar palavras em inglês).
+    let instrucoes = if instrucoes.trim().is_empty() {
+        String::new()
+    } else {
+        format!("INSTRUÇÕES DESTA COLEÇÃO (valem para toda história dela; siga junto com o briefing):\n{}\n\n", instrucoes.trim())
+    };
     let anteriores = if memorias.is_empty() {
         String::new()
     } else {
@@ -203,6 +210,7 @@ pub fn montar_prompt(
          PERSONAGENS:\n{}\n\n\
          {vozes_sistema}\
          {anteriores}\
+         {instrucoes}\
          BRIEFING DA FAMÍLIA:\n{briefing}\n",
         regras.join("\n"),
         serde_json::to_string_pretty(&fichas).unwrap_or_default()
@@ -424,7 +432,7 @@ mod testes {
         assert!(!t.contains("robo"), "voz extra em português não é de outra língua");
         assert_eq!(falas_livres("Noob", &json!([])), None);
         // No prompt, sem @pedro!ingles: a ficha leva o aviso das vozes.
-        let t = montar_prompt("Pedro aprende inglês", &[], "por-personagem", &[cena("leo")], &[p("leo", "Léo", &[], &[])], "", &[], &[]);
+        let t = montar_prompt("Pedro aprende inglês", &[], "por-personagem", &[cena("leo")], &[p("leo", "Léo", &[], &[])], "", "", &[], &[]);
         assert!(t.contains("quando a fala for INTEIRA em Inglês"));
     }
 
@@ -432,7 +440,7 @@ mod testes {
     fn prompt_traz_faixas_e_tira_vozes_ja_usadas() {
         let todos = vec![p("leo", "Léo", &[], &[])];
         let usadas = vec!["pt-BR-FranciscaNeural".to_string()];
-        let t = montar_prompt("O @leo na lua", &[("Pedro".into(), "4-6".into())], "por-personagem", &[cena("leo")], &todos, "", &[], &usadas);
+        let t = montar_prompt("O @leo na lua", &[("Pedro".into(), "4-6".into())], "por-personagem", &[cena("leo")], &todos, "", "", &[], &usadas);
         for f in FAIXAS {
             assert!(t.contains(&format!("{f} anos:")), "falta a regra da faixa {f}");
         }
@@ -440,8 +448,11 @@ mod testes {
         assert!(t.contains("voz:en-US-GuyNeural"));
         assert!(!t.contains("voz:pt-BR-FranciscaNeural"), "voz do narrador não pode ir para secundários");
         // Só narrador: sem lista de vozes do sistema.
-        let t = montar_prompt("", &[], "narrador", &[], &todos, "", &[], &[]);
+        let t = montar_prompt("", &[], "narrador", &[], &todos, "", "", &[], &[]);
         assert!(!t.contains("VOZES DO SISTEMA"));
         assert!(t.contains("sem briefing"));
+        assert!(!t.contains("INSTRUÇÕES DESTA COLEÇÃO"));
+        let t = montar_prompt("", &[], "narrador", &[], &todos, "", "Ensine palavras em inglês", &[], &[]);
+        assert!(t.contains("INSTRUÇÕES DESTA COLEÇÃO (valem para toda história dela; siga junto com o briefing):\nEnsine palavras em inglês"));
     }
 }

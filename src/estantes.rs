@@ -47,6 +47,9 @@ impl EstanteResumo {
     pub fn estilo(&self) -> String {
         self.padroes["estilo"].as_str().unwrap_or_default().to_string()
     }
+    pub fn instrucoes(&self) -> String {
+        self.padroes["instrucoes"].as_str().unwrap_or_default().to_string()
+    }
     pub fn resumo_personagens(&self) -> String {
         self.padroes["personagens"]
             .as_array()
@@ -190,7 +193,11 @@ fn ler_padroes(form: &[(String, String)]) -> (String, Value) {
             json!({ "slug": slug, "variante": Some(variante).filter(|v| !v.is_empty()) })
         })
         .collect();
-    (campo("nome"), json!({ "estilo": Some(campo("estilo")).filter(|e| !e.is_empty()), "personagens": personagens }))
+    (campo("nome"), json!({
+            "estilo": Some(campo("estilo")).filter(|e| !e.is_empty()),
+            "instrucoes": Some(campo("instrucoes")).filter(|e| !e.is_empty()),
+            "personagens": personagens,
+        }))
 }
 
 pub async fn criar(State(st): State<AppState>, s: Sessao, RawForm(corpo): RawForm) -> Response {

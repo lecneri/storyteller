@@ -52,6 +52,7 @@ pub async fn executar_geracao(st: &AppState, payload: &Value) -> anyhow::Result<
         citados = todos.iter().map(|p| NaCena { slug: p.slug.clone(), variante: None, voz: None, misto: false, tambem: Vec::new() }).collect();
     }
     let estilo = padroes["estilo"].as_str().unwrap_or_default();
+    let instrucoes = padroes["instrucoes"].as_str().unwrap_or_default();
 
     // Histórias citadas com #: entram pela memória (resumo), não pelo texto inteiro.
     let mut memorias = Vec::new();
@@ -85,7 +86,7 @@ pub async fn executar_geracao(st: &AppState, payload: &Value) -> anyhow::Result<
     let pedido = ia::PedidoTexto {
         sistema: SISTEMA.into(),
         imagens: Vec::new(),
-        prompt: montar_prompt(&briefing, &leitores, &h.narracao, &citados, &todos, estilo, &memorias, &vozes_usadas),
+        prompt: montar_prompt(&briefing, &leitores, &h.narracao, &citados, &todos, estilo, instrucoes, &memorias, &vozes_usadas),
         schema: schema_historia(),
     };
     let resposta = ia::gerar_texto(st, h.familia_id, &pedido).await?;

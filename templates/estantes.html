@@ -56,6 +56,7 @@
     <form method="post" action="/estantes" class="grade-form">
       <label class="inteiro">Nome <input name="nome" required placeholder="Super Léo"></label>
       {% let estilo_atual = String::new() %}
+      {% let instrucoes_atual = String::new() %}
       {% include "form_padroes.html" %}
       <button type="submit">Criar estante</button>
     </form>

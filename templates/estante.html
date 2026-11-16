@@ -21,7 +21,7 @@
 
   <section class="cartao largo" id="nova">
     <h2>✨ Nova história nesta estante</h2>
-    <p class="suave">Os personagens e o estilo da estante já entram automaticamente. Cite outros com @ se quiser.</p>
+    <p class="suave">Os personagens, o estilo e as instruções da estante já entram automaticamente. Cite outros com @ se quiser.</p>
     <form method="post" action="/historias" class="grade-form">
       <input type="hidden" name="estante" value="{{ e.slug }}">
       <label class="inteiro">Briefing <small class="suave">(opcional)</small>
@@ -59,6 +59,7 @@
     <form method="post" action="/estantes/{{ e.slug }}" class="grade-form">
       <label class="inteiro">Nome <input name="nome" value="{{ e.nome }}" required></label>
       {% let estilo_atual = e.estilo() %}
+      {% let instrucoes_atual = e.instrucoes() %}
       {% include "form_padroes.html" %}
       <button type="submit">Salvar</button>
     </form>
