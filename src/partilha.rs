@@ -669,8 +669,8 @@ pub async fn copiar_historia(State(st): State<AppState>, s: Sessao, Path(id): Pa
     }
     let r = async {
         let mut tx = st.db.begin().await?;
-        let (titulo, faixa, narracao, conteudo, dona, musica, musica_volume): (String, String, String, Value, Uuid, Option<Uuid>, f32) = sqlx::query_as(
-            "SELECT titulo, faixa, narracao, conteudo, familia_id, musica, musica_volume FROM conteudo.historias WHERE id = $1",
+        let (titulo, faixa, narracao, conteudo, dona, musica, musica_volume, musica_credito): (String, String, String, Value, Uuid, Option<Uuid>, f32, Option<String>) = sqlx::query_as(
+            "SELECT titulo, faixa, narracao, conteudo, familia_id, musica, musica_volume, musica_credito FROM conteudo.historias WHERE id = $1",
         )
         .bind(id)
         .fetch_one(&mut *tx)
@@ -734,8 +734,8 @@ pub async fn copiar_historia(State(st): State<AppState>, s: Sessao, Path(id): Pa
         };
         let novo = Uuid::new_v4();
         sqlx::query(
-            "INSERT INTO conteudo.historias (id, familia_id, slug, titulo, faixa, narracao, estado, conteudo, criado_por, visibilidade, musica, musica_volume)
-             VALUES ($1, $2, $3, $4, $5, $6, 'texto', $7, $8, 'privado', $9, $10)",
+            "INSERT INTO conteudo.historias (id, familia_id, slug, titulo, faixa, narracao, estado, conteudo, criado_por, visibilidade, musica, musica_volume, musica_credito)
+             VALUES ($1, $2, $3, $4, $5, $6, 'texto', $7, $8, 'privado', $9, $10, $11)",
         )
         .bind(novo)
         .bind(s.familia_id)
@@ -747,6 +747,7 @@ pub async fn copiar_historia(State(st): State<AppState>, s: Sessao, Path(id): Pa
         .bind(s.usuario_id)
         .bind(musica)
         .bind(musica_volume)
+        .bind(musica_credito)
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;

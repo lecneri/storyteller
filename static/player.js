@@ -103,7 +103,8 @@
             el('button', { type: 'button', onclick: () => irPara(0) }, '↺ Ler de novo'),
             raiz.dataset.voltar !== 'about:blank'
               ? el('button', { type: 'button', class: 'secundario', onclick: () => (location.href = raiz.dataset.voltar) }, '📚 Outra história')
-              : null))));
+              : null),
+          dados.musica && dados.musica.credito ? el('p', { class: 'credito-musica' }, '🎵 Música: ' + dados.musica.credito) : null)));
     }
     const p = dados.paginas[pos - 1];
     const imagem = el('div', { class: 'lado lado-imagem', onclick: () => efeito(p, true) }, midiaUI(p.midia));

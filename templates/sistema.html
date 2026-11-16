@@ -103,8 +103,15 @@
     </form>
   </section>
 
+  <section class="cartao largo" id="musicas-modelo">
+    <h2>🎵 Músicas da plataforma</h2>
+    <p class="suave">Modelos que qualquer família pode usar como música de fundo. Use só músicas que permitem redistribuir (CC0, domínio público, CC BY com crédito).</p>
+    <div class="carregando suave">Carregando…</div>
+  </section>
+
 {% let escopo = "sistema" %}{% let acao_chaves = "/sistema/chaves" %}
   {% include "chaves.html" %}
 </main>
 <script src="/sistema.js?v={{ crate::web::versao() }}" defer></script>
+<script src="/musicas-modelo.js?v={{ crate::web::versao() }}" defer></script>
 {% endblock %}

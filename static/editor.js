@@ -950,6 +950,37 @@
       } catch (err) { aviso('Não enviou: ' + err.message); }
       musicaUi.ocupado = false; desenhar();
     } });
+    // Modelos da plataforma, por clima; a idade indicada aparece no nome (quem escolhe é quem cria).
+    const modelos = dados.musicas_modelo || [];
+    const previaModelo = el('audio', { controls: true, preload: 'none', hidden: true });
+    const usarModelo = el('button', { type: 'button', class: 'pequeno', hidden: true, disabled: musicaUi.ocupado, onclick: async () => {
+      const id = escolhaModelo.value; if (!id) return;
+      musicaUi.ocupado = true; previaModelo.pause();
+      try {
+        const r = await fetch(location.pathname + '/musica/modelo', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ modelo: id }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.erro || 'erro ' + r.status);
+        const m = modelos.find((x) => x.id === id);
+        musica = { id: j.id, volume: musica ? musica.volume : 0.35, credito: m && m.credito };
+        aviso('Música "' + (m ? m.titulo : '') + '" na história ✓');
+      } catch (err) { aviso('Não salvou: ' + err.message); }
+      musicaUi.ocupado = false; desenhar();
+    } }, '✓ Usar esta');
+    const descModelo = el('small', { class: 'suave' });
+    const escolhaModelo = el('select', { onchange: (e) => {
+      const m = modelos.find((x) => x.id === e.target.value);
+      previaModelo.hidden = usarModelo.hidden = !m;
+      descModelo.textContent = m ? [m.descricao, m.credito ? 'Crédito: ' + m.credito : ''].filter(Boolean).join(' · ') : '';
+      if (m) { previaModelo.src = '/musicas-modelo/' + m.id; previaModelo.play().catch(() => {}); } else previaModelo.pause();
+    } }, el('option', { value: '' }, '🎼 Escolher uma música da plataforma…'),
+      (dados.climas || []).map((c) => {
+        const doClima = modelos.filter((m) => m.clima === c.id);
+        return doClima.length ? el('optgroup', { label: c.nome }, doClima.map((m) => el('option', { value: m.id },
+          m.titulo + ' (' + Math.floor(m.duracao / 60) + ':' + String(Math.round(m.duracao % 60)).padStart(2, '0') + ')' + (m.idade_min ? ' · ' + m.idade_min + '+ anos' : '')))) : null;
+      }));
+    const modelosUI = modelos.length ? el('div', { class: 'musica-modelos' },
+      el('div', { class: 'linha' }, escolhaModelo, usarModelo), previaModelo, descModelo) : null;
     const previa = musica ? el('audio', { src: '/midia/' + musica.id, controls: true, loop: true, preload: 'none' }) : null;
     if (previa) previa.volume = musica.volume;
     const rotulo = el('span', {}, musica ? Math.round(musica.volume * 100) + '%' : '');
@@ -964,7 +995,10 @@
             onchange: () => ajustarMusica({ volume: musica.volume }).then(() => aviso('Volume salvo ✓')).catch((err) => aviso('Não salvou: ' + err.message)) }),
           rotulo),
         el('small', { class: 'suave' }, 'Com narração, a música fica em 30% desse volume.'),
-      ] : el('p', { class: 'suave' }, 'Sugestão de músicas grátis e sem direitos autorais: Pixabay Music, YouTube Audio Library. Até 5 minutos (o resto é cortado).'),
+        musica.credito ? el('small', { class: 'suave' }, ' 🎵 Crédito (aparece no fim do leitor e do vídeo): ' + musica.credito) : null,
+      ] : null,
+      modelosUI,
+      el('p', { class: 'suave' }, 'Ou envie a sua: músicas grátis e sem direitos autorais em Pixabay Music, YouTube Audio Library. Até 5 minutos (o resto é cortado).'),
       el('div', { class: 'linha' },
         el('button', { type: 'button', class: 'pequeno secundario', disabled: musicaUi.ocupado, onclick: () => enviar.click() },
           musicaUi.ocupado ? '⏳ Preparando…' : musica ? '📤 Trocar música' : '📤 Enviar música'), enviar,

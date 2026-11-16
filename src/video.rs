@@ -336,6 +336,19 @@ async fn montar(st: &AppState, id: Uuid, familia: Uuid, tmp: &CaminhoFs) -> anyh
         ffmpeg(tmp, &args_pagina(visual.as_ref().map(|(c, t)| (c.as_path(), t.as_str())), &trechos, dur, &nome_ass, &nome_mp4)).await?;
         lista.push_str(&format!("file '{nome_mp4}'\n"));
     }
+    // Música com licença que pede crédito: cartão "Fim" com o crédito.
+    if let Some(credito) = dados["musica"]["credito"].as_str().filter(|c| !c.trim().is_empty()) {
+        let ass = format!(
+            "{}Dialogue: 0,{},{},Titulo,,0,0,0,,Fim!\\N\\N{{\\fs26\\b0}}Música: {}\n",
+            cabecalho_ass(),
+            tempo_ass(0.0),
+            tempo_ass(CAPA),
+            ass_seguro(credito)
+        );
+        tokio::fs::write(tmp.join("fim.ass"), ass).await?;
+        ffmpeg(tmp, &args_pagina(capa.as_ref().map(|(p, t)| (p.as_path(), t.as_str())), &[], CAPA, "fim.ass", "fim.mp4")).await?;
+        lista.push_str("file 'fim.mp4'\n");
+    }
     marcar(id, Estado { estado: "fazendo", progresso: "juntando as páginas".into(), erro: None, aviso: None });
     tokio::fs::write(tmp.join("lista.txt"), lista).await?;
     // Música de fundo (opcional): entra por último, por cima do vídeo já pronto.

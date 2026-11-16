@@ -26,6 +26,7 @@ struct HistoriaPlayer {
     capa: Option<Uuid>,
     musica: Option<Uuid>,
     musica_volume: f32,
+    musica_credito: Option<String>,
 }
 
 /// Como escolher as vozes de cada trecho.
@@ -69,7 +70,7 @@ async fn montar(
     audio_url: &str,
 ) -> anyhow::Result<Option<(String, Value)>> {
     let Some(h) = sqlx::query_as::<_, HistoriaPlayer>(
-        "SELECT id, titulo, familia_id, narracao, conteudo, capa, musica, musica_volume FROM conteudo.historias WHERE id = $1",
+        "SELECT id, titulo, familia_id, narracao, conteudo, capa, musica, musica_volume, musica_credito FROM conteudo.historias WHERE id = $1",
     )
     .bind(historia)
     .fetch_optional(&st.db)
@@ -132,7 +133,7 @@ async fn montar(
         h.titulo.clone(),
         json!({ "id": h.id, "titulo": h.titulo, "capa": capa, "narracao": h.narracao,
                 "audio_url": audio_url, "paginas": paginas,
-                "musica": h.musica.map(|m| json!({ "url": url(&m), "volume": h.musica_volume })) }),
+                "musica": h.musica.map(|m| json!({ "url": url(&m), "volume": h.musica_volume, "credito": h.musica_credito })) }),
     )))
 }
 

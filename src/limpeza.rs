@@ -96,7 +96,8 @@ pub async fn limpar(st: &AppState) -> anyhow::Result<(u64, i64)> {
     for (id, caminho, bytes) in orfaos {
         sqlx::query("DELETE FROM midia.arquivos WHERE id = $1").bind(id).execute(&st.db).await?;
         // O mesmo arquivo pode estar em outra família (cópia de história): só apaga do disco se ninguém mais usa.
-        let ainda_usado: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM midia.arquivos WHERE caminho = $1)")
+        let ainda_usado: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM midia.arquivos WHERE caminho = $1)
+                OR EXISTS (SELECT 1 FROM midia.musicas_modelo WHERE caminho = $1)")
             .bind(&caminho)
             .fetch_one(&st.db)
             .await?;
@@ -155,7 +156,8 @@ pub async fn apagar_familia(st: &AppState, familia: Uuid) -> anyhow::Result<()> 
     tx.commit().await?;
     // Arquivos: só sai do disco o que nenhuma cópia em outra família ainda usa.
     for c in caminhos {
-        let usado: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM midia.arquivos WHERE caminho = $1)")
+        let usado: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM midia.arquivos WHERE caminho = $1)
+                OR EXISTS (SELECT 1 FROM midia.musicas_modelo WHERE caminho = $1)")
             .bind(&c)
             .fetch_one(&st.db)
             .await?;
