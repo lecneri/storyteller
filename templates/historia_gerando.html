@@ -41,6 +41,7 @@
   </section>
   <script src="/importar.js?v={{ crate::web::versao() }}" defer></script>
   {% endif %}
-  <p class="largo"><a href="/historias">← Histórias</a></p>
+  <p class="largo linha" style="justify-content:space-between"><a href="/historias">← Histórias</a>
+    {% if pode_apagar %}<form method="post" action="/historias/{{ id }}/apagar" class="inline" onsubmit="return confirm('Apagar esta história?')"><button class="link perigo">🗑 Apagar esta história</button></form>{% endif %}</p>
 </main>
 {% endblock %}

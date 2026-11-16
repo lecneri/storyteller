@@ -171,6 +171,8 @@ struct PaginaGerando {
     externo: bool,
     /// Prompt para copiar (quando é externo ou a geração falhou).
     prompt: Option<String>,
+    /// Admin da família ou quem criou.
+    pode_apagar: bool,
 }
 
 #[derive(Template)]
@@ -225,7 +227,13 @@ pub async fn abrir(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) 
         } else {
             None
         };
-        return render(PaginaGerando { s, id, briefing: h.briefing.unwrap_or_default(), erro, externo, prompt });
+        let criador: Option<Uuid> = sqlx::query_scalar("SELECT criado_por FROM conteudo.historias WHERE id = $1")
+            .bind(id)
+            .fetch_one(&st.db)
+            .await
+            .unwrap_or(None);
+        let pode_apagar = s.admin_familia() || criador == Some(s.usuario_id);
+        return render(PaginaGerando { s, id, briefing: h.briefing.unwrap_or_default(), erro, externo, prompt, pode_apagar });
     }
 
     let personagens = match personagens_da_familia(&st, s.familia_id).await {
