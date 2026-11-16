@@ -79,12 +79,14 @@ async fn mudar_ficha(st: &AppState, familia: Uuid, slug: &str, f: impl FnOnce(&m
 /// Põe (ou troca) o estilo `nome` com esta imagem. O primeiro estilo criado vira o principal.
 pub(super) async fn definir(st: &AppState, familia: Uuid, slug: &str, nome: &str, imagem: Uuid) -> Result<(), sqlx::Error> {
     let nome = nome.trim();
-    let nome = if nome.is_empty() { "Principal" } else { nome };
+    let nome = if nome.is_empty() { "Base" } else { nome };
     let eslug = util::slug(nome);
     mudar_ficha(st, familia, slug, |ficha| {
         let mut lista = estilos(ficha);
         match lista.iter_mut().find(|e| e.slug == eslug) {
             Some(e) => e.imagem = imagem,
+            // A imagem base é sempre a primeira.
+            None if eslug == "base" => lista.insert(0, Estilo { slug: eslug, nome: nome.to_string(), imagem }),
             None => lista.push(Estilo { slug: eslug, nome: nome.to_string(), imagem }),
         }
         gravar_estilos(ficha, &lista);
@@ -96,7 +98,7 @@ fn ir_ficha(slug: &str) -> Response {
     Redirect::to(&format!("/personagens/{slug}#ficha")).into_response()
 }
 
-/// Personagem novo com imagem: vira o estilo principal.
+/// Personagem novo com imagem: vira a imagem base.
 pub(super) async fn criar(st: &AppState, s: &Sessao, slug: &str, nome_estilo: &str, arquivos: &[Vec<u8>]) -> Result<(), String> {
     let ids = salvar_refs(st, s, slug, &arquivos[..1]).await?;
     let Some(id) = ids.first() else { return Ok(()) };
@@ -127,8 +129,8 @@ async fn gerar_estilo(st: &AppState, s: &Sessao, slug: &str, nome_estilo: &str) 
     Ok(img)
 }
 
-/// POST /personagens/{slug}/estilos (multipart: nome, imagem opcional, gerar=1): novo estilo (ou troca a imagem
-/// de um que já existe). Com imagem, usa ela; sem imagem, gera pela IA.
+/// POST /personagens/{slug}/estilos (multipart: nome, imagem, acao=enviar|gerar): novo estilo (ou troca a imagem
+/// de um que já existe). "enviar" usa a imagem enviada; "gerar" desenha pela IA a partir da imagem base.
 pub async fn adicionar(State(st): State<AppState>, s: Sessao, Path(slug): Path<String>, mp: Multipart) -> Response {
     let (campos, arquivos) = match ler_multipart(mp).await {
         Ok(x) => x,
@@ -138,7 +140,11 @@ pub async fn adicionar(State(st): State<AppState>, s: Sessao, Path(slug): Path<S
     if util::slug(&nome).is_empty() {
         return detalhe_com(&st, s, &slug, Some("Dê um nome para o estilo (ex.: Pixar, Anime).".into())).await;
     }
-    let imagem = if arquivos.is_empty() {
+    let gerar = campos.get("acao").map(String::as_str) == Some("gerar");
+    if !gerar && arquivos.is_empty() {
+        return detalhe_com(&st, s, &slug, Some("Escolha a imagem do estilo (ou use ✨ Gerar estilo com IA).".into())).await;
+    }
+    let imagem = if gerar {
         match gerar_estilo(&st, &s, &slug, &nome).await {
             Ok(i) => i,
             Err(e) => return detalhe_com(&st, s, &slug, Some(format!("{e:#}"))).await,
@@ -215,8 +221,22 @@ pub async fn usar(State(st): State<AppState>, s: Sessao, Path((slug, ref_id)): P
     .fetch_optional(&st.db)
     .await
     .unwrap_or(None);
-    let Some(estilo) = estilo else { return ir_ficha(&slug) };
-    match definir(&st, s.familia_id, &slug, estilo.as_deref().unwrap_or("Principal"), ref_id).await {
+    // Foto antiga da ficha: vira a imagem base.
+    let foto: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM conteudo.personagens WHERE familia_id = $1 AND slug = $2 AND COALESCE(ficha->'fotos', '[]') ? $3::text)",
+    )
+    .bind(s.familia_id)
+    .bind(&slug)
+    .bind(ref_id)
+    .fetch_one(&st.db)
+    .await
+    .unwrap_or(false);
+    let nome = match (foto, estilo) {
+        (true, _) => "Base".to_string(),
+        (false, Some(e)) => e.unwrap_or_else(|| "Base".into()),
+        (false, None) => return ir_ficha(&slug),
+    };
+    match definir(&st, s.familia_id, &slug, &nome, ref_id).await {
         Ok(()) => ir_ficha(&slug),
         Err(e) => erro_interno(e.into()),
     }

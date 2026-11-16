@@ -143,7 +143,7 @@ pub async fn criar(State(st): State<AppState>, s: Sessao, mp: axum::extract::Mul
     match r {
         Ok(_) => {
             if !arquivos.is_empty() {
-                if let Err(msg) = super::estilos::criar(&st, &s, &slug, "Principal", &arquivos).await {
+                if let Err(msg) = super::estilos::criar(&st, &s, &slug, "Base", &arquivos).await {
                     return detalhe_com(&st, s, &slug, Some(msg)).await;
                 }
             }
@@ -265,6 +265,18 @@ impl PaginaPersonagem {
     }
     fn eh_estilo(&self, r: &Uuid) -> bool {
         self.estilos().iter().any(|e| e.imagem == *r)
+    }
+    fn estilo_sel(&self, v: &Variante, e: &super::estilos::Estilo) -> bool {
+        v.estilo.as_deref().map(util::slug).as_deref() == Some(e.slug.as_str())
+    }
+    /// Estilo antigo da variante (texto livre) que não é um estilo da ficha: aparece na lista para não se perder.
+    fn estilo_solto(&self, v: &Variante) -> Option<String> {
+        let e = v.estilo.as_deref().map(str::trim).filter(|e| !e.is_empty())?;
+        (!self.estilos().iter().any(|x| x.slug == util::slug(e))).then(|| e.to_string())
+    }
+    /// Imagem do estilo da ficha que a variante usa (para copiar no kit).
+    fn estilo_img(&self, v: &Variante) -> Option<String> {
+        super::estilos::imagem_do_estilo(&self.p.ficha, v.estilo.as_deref()).map(|(i, _)| i.to_string())
     }
     /// Estilo da ficha que a variante usa (pelo nome), se a ficha tiver estilos.
     fn estilo_da_variante(&self, v: &Variante) -> Option<String> {

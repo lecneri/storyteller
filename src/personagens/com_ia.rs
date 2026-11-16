@@ -35,7 +35,8 @@ pub fn aparencia_variante(base: &str, variante: &str, descricao: Option<&str>) -
 
 /// Prompt do "model sheet" (folha de referência) de uma variante.
 pub fn prompt_model_sheet(nome: &str, aparencia: &str, estilo: Option<&str>, com_fotos: bool) -> String {
-    let estilo = estilo.filter(|e| !e.trim().is_empty()).map(|e| format!("{e}, ")).unwrap_or_default();
+    // "Base" (a imagem base da ficha) não é um estilo de traço: o traço vem da imagem anexada.
+    let estilo = estilo.filter(|e| !e.trim().is_empty() && crate::util::slug(e) != "base").map(|e| format!("{e}, ")).unwrap_or_default();
     let fotos = if com_fotos {
         "\nUse as imagens anexadas só como referência de traços (rosto, cabelo, cores, roupa) e transforme em desenho; não faça foto realista."
     } else {
@@ -168,8 +169,8 @@ pub async fn criar_com_ia(State(st): State<AppState>, s: Sessao, mp: Multipart) 
                     .bind(img)
                     .execute(&st.db)
                     .await;
-                // O primeiro desenho também vira um estilo da ficha (o principal).
-                let _ = super::estilos::definir(&st, s.familia_id, &slug, &estilo, img).await;
+                // O primeiro desenho também vira a imagem base da ficha.
+                let _ = super::estilos::definir(&st, s.familia_id, &slug, "Base", img).await;
             }
             Err(e) => {
                 tracing::warn!("model sheet pela API falhou: {e:#}");
@@ -182,6 +183,14 @@ pub async fn criar_com_ia(State(st): State<AppState>, s: Sessao, mp: Multipart) 
 
 /// POST /personagens/{slug}/variantes/{vslug}/gerar-ref: gera mais um desenho de referência pela API.
 pub async fn gerar_ref(State(st): State<AppState>, s: Sessao, Path((slug, vslug)): Path<(String, String)>) -> Response {
+    match gerar_desenho_variante(&st, &s, &slug, &vslug).await {
+        Ok(()) => super::variantes::ir_para(&slug, &vslug),
+        Err(msg) => detalhe_com(&st, s, &slug, Some(msg)).await,
+    }
+}
+
+/// Gera mais um desenho de referência da variante pela API (usado pelo ✨ Gerar e ao criar a variante sem imagem).
+pub(super) async fn gerar_desenho_variante(st: &AppState, s: &Sessao, slug: &str, vslug: &str) -> Result<(), String> {
     let linha: Option<(Uuid, String, serde_json::Value, Option<String>, Option<String>, Vec<Uuid>, String)> = sqlx::query_as(
         "SELECT v.id, p.nome, p.ficha, v.descricao, v.estilo, v.referencias, v.nome
            FROM conteudo.variantes v JOIN conteudo.personagens p ON p.id = v.personagem_id
@@ -194,7 +203,7 @@ pub async fn gerar_ref(State(st): State<AppState>, s: Sessao, Path((slug, vslug)
     .await
     .unwrap_or(None);
     let Some((vid, nome, ficha, descricao, estilo, refs_atuais, vnome)) = linha else {
-        return Redirect::to("/personagens").into_response();
+        return Err("Variante não encontrada.".into());
     };
     let fotos: Vec<Uuid> = ficha["fotos"].as_array().into_iter().flatten().filter_map(|v| v.as_str()?.parse().ok()).collect();
     // A imagem do estilo da ficha que a variante usa (sem estilo na ficha, a da variante atual) vai sempre na frente,
@@ -217,7 +226,10 @@ pub async fn gerar_ref(State(st): State<AppState>, s: Sessao, Path((slug, vslug)
     let emprestou = principal.is_some();
     let mut ids: Vec<Uuid> = principal.into_iter().collect();
     ids.extend(refs_atuais.iter().copied());
-    ids.extend(fotos);
+    // Fotos só quando a ficha não tem estilo (o estilo já é o rosto certo, no traço certo).
+    if super::estilos::estilos(&ficha).is_empty() {
+        ids.extend(fotos);
+    }
     let refs = crate::imagem::carregar_refs(&st, s.familia_id, &ids).await;
     let aparencia = aparencia_variante(ficha["aparencia"].as_str().unwrap_or_default(), &vnome, descricao.as_deref());
     let mut prompt = prompt_model_sheet(&nome, &aparencia, estilo.as_deref(), !refs.is_empty());
@@ -237,9 +249,9 @@ pub async fn gerar_ref(State(st): State<AppState>, s: Sessao, Path((slug, vslug)
                 .bind(img)
                 .execute(&st.db)
                 .await;
-            super::variantes::ir_para(&slug, &vslug)
+            Ok(())
         }
-        Err(e) => detalhe_com(&st, s, &slug, Some(format!("{e:#}"))).await,
+        Err(e) => Err(format!("{e:#}")),
     }
 }
 

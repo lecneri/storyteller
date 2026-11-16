@@ -103,7 +103,14 @@ pub async fn criar_variante(
             return erro_interno(e.into());
         }
     }
-    ir_para(&slug, &util::slug(&nome))
+    // Sem imagem e com IA de imagem: já gera o desenho (rosto e traço do estilo escolhido na ficha).
+    let vslug = util::slug(&nome);
+    if refs.is_empty() && campos.get("gerar").is_some() && crate::imagem::disponivel(&st, s.familia_id).await {
+        if let Err(msg) = super::com_ia::gerar_desenho_variante(&st, &s, &slug, &vslug).await {
+            return detalhe_com(&st, s, &slug, Some(format!("A variante foi criada, mas o desenho não saiu: {msg}"))).await;
+        }
+    }
+    ir_para(&slug, &vslug)
 }
 
 async fn definir_atual(st: &AppState, personagem_id: Uuid, variante_id: Uuid) -> Result<(), sqlx::Error> {
