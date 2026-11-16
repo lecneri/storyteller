@@ -3,6 +3,7 @@
 mod com_ia;
 mod juntar;
 mod paginas;
+mod renomear;
 mod variantes;
 
 pub use com_ia::*;

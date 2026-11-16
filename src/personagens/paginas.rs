@@ -84,6 +84,9 @@ pub struct FormFicha {
     personalidade: String,
     #[serde(default)]
     jeito_falar: String,
+    /// Novo @ para citar (só na ficha de um personagem que já existe).
+    #[serde(default)]
+    arroba: String,
 }
 
 impl FormFicha {
@@ -146,10 +149,18 @@ pub async fn salvar_ficha(
     .bind(f.ficha())
     .execute(&st.db)
     .await;
-    match r {
-        Ok(_) => Redirect::to(&format!("/personagens/{slug}")).into_response(),
-        Err(e) => erro_interno(e.into()),
+    if let Err(e) = r {
+        return erro_interno(e.into());
     }
+    // Trocou o @: leva junto histórias, briefings e estantes.
+    let novo = util::slug(f.arroba.trim_start_matches('@'));
+    if !novo.is_empty() && novo != slug {
+        if let Err(e) = super::renomear::renomear_personagem(&st, s.familia_id, &slug, &novo).await {
+            return detalhe_com(&st, s, &slug, Some(format!("A ficha foi salva, mas não troquei o @: {e:#}"))).await;
+        }
+        return Redirect::to(&format!("/personagens/{novo}")).into_response();
+    }
+    Redirect::to(&format!("/personagens/{slug}")).into_response()
 }
 
 // ───────────── detalhe ─────────────

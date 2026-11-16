@@ -233,3 +233,56 @@ pub async fn alternar_arquivo(
     }
 }
 
+
+#[derive(serde::Deserialize)]
+pub struct FormEditarVariante {
+    nome: String,
+    #[serde(default)]
+    arroba: String,
+    #[serde(default)]
+    forma: String,
+    #[serde(default)]
+    estilo: String,
+    #[serde(default)]
+    descricao: String,
+}
+
+/// POST /personagens/{slug}/variantes/{vslug}/editar: nome, @, forma, estilo e descrição da variante.
+pub async fn editar_variante(
+    State(st): State<AppState>,
+    s: Sessao,
+    Path((slug, vslug)): Path<(String, String)>,
+    axum::extract::Form(f): axum::extract::Form<FormEditarVariante>,
+) -> Response {
+    let nome = f.nome.trim();
+    if nome.is_empty() {
+        return detalhe_com(&st, s, &slug, Some("Dê um nome para a variante.".into())).await;
+    }
+    let texto = |t: &str| Some(t.trim().to_string()).filter(|t| !t.is_empty());
+    let r = sqlx::query(
+        "UPDATE conteudo.variantes v SET nome = $4, forma = $5, estilo = $6, descricao = $7
+           FROM conteudo.personagens p
+          WHERE v.personagem_id = p.id AND p.familia_id = $1 AND p.slug = $2 AND v.slug = $3",
+    )
+    .bind(s.familia_id)
+    .bind(&slug)
+    .bind(&vslug)
+    .bind(nome)
+    .bind(texto(&f.forma))
+    .bind(texto(&f.estilo))
+    .bind(texto(&f.descricao))
+    .execute(&st.db)
+    .await;
+    match r {
+        Ok(r) if r.rows_affected() == 0 => return detalhe_com(&st, s, &slug, Some("Variante não encontrada.".into())).await,
+        Ok(_) => {}
+        Err(e) => return erro_interno(e.into()),
+    }
+    let novo = util::slug(f.arroba.trim_start_matches('@').rsplit(':').next().unwrap_or_default());
+    if !novo.is_empty() && novo != vslug {
+        if let Err(e) = super::renomear::renomear_variante(&st, s.familia_id, &slug, &vslug, &novo).await {
+            return detalhe_com(&st, s, &slug, Some(format!("A variante foi salva, mas não troquei o @: {e:#}"))).await;
+        }
+    }
+    Redirect::to(&format!("/personagens/{slug}")).into_response()
+}

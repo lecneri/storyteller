@@ -18,7 +18,7 @@
             <form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/atual" class="inline"><button class="link">Tornar atual</button></form>
           {% endif %}{% endif %}
             <form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/arquivar" class="inline"
-              {% if !v.arquivada %}onsubmit="return confirm('Arquivar {{ v.nome }}? As histórias que já usam continuam iguais; ela só não aparece para histórias novas.')"{% endif %}>
+              {% if !v.arquivada %}data-confirmar="Arquivar {{ v.nome }}? As histórias que já usam continuam iguais; ela só não aparece para histórias novas." onsubmit="return confirm(this.dataset.confirmar)"{% endif %}>
               <button class="link">{% if v.arquivada %}♻️ Restaurar{% else %}📦 Arquivar{% endif %}</button></form>
           </span>
         </header>
@@ -27,6 +27,19 @@
           {% if let Some(e) = v.estilo %} · Estilo: {{ e }}{% endif %}
         </p>
         {% if let Some(d) = v.descricao %}<p>{{ d }}</p>{% endif %}
+        <details class="editar-variante">
+          <summary>✏️ Editar variante</summary>
+          <form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/editar" class="grade-form">
+            <label>Nome <input name="nome" value="{{ v.nome }}" required></label>
+            <label>@ para citar <small class="suave">(no briefing: @{{ p.slug }}:{{ v.slug }})</small>
+              <input name="arroba" value="{{ v.slug }}" pattern="[A-Za-z0-9\- ]+" title="Letras, números e hífen"></label>
+            <label>Forma <input name="forma" value="{% if let Some(f) = v.forma %}{{ f }}{% endif %}" placeholder="normal, super, gigante..."></label>
+            <label>Estilo de referência <input name="estilo" value="{% if let Some(e) = v.estilo %}{{ e }}{% endif %}" placeholder="Power Rangers, Pokémon..."></label>
+            <label class="inteiro">Descrição <textarea name="descricao" rows="2">{% if let Some(d) = v.descricao %}{{ d }}{% endif %}</textarea></label>
+            <p class="inteiro suave">Trocar o @ atualiza as histórias, briefings e estantes que usam esta variante.</p>
+            <button type="submit">💾 Salvar variante</button>
+          </form>
+        </details>
         <div class="minis">
           {% for ref_id in v.referencias %}{% include "miniatura.html" %}{% endfor %}
           {% if v.referencias.is_empty() %}<p class="suave">Sem imagem: a descrição será usada no prompt.</p>{% endif %}
@@ -95,6 +108,8 @@
     <h2>Ficha</h2>
     <form method="post" action="/personagens/{{ p.slug }}" class="grade-form">
       <label>Nome <input name="nome" value="{{ p.nome }}" required></label>
+      <label>@ para citar <small class="suave">(no briefing: @{{ p.slug }})</small>
+        <input name="arroba" value="{{ p.slug }}" pattern="@?[A-Za-z0-9\- ]+" title="Letras, números e hífen"></label>
       <label>Tipo
         <select name="tipo">{% for (k, v) in tipos %}<option value="{{ k }}"{% if p.tipo == k.to_string() %} selected{% endif %}>{{ v }}</option>{% endfor %}</select>
       </label>
@@ -103,6 +118,7 @@
       <span class="inteiro" data-descrever data-alvo="aparencia-ficha"></span>
       <label class="inteiro">Personalidade <textarea name="personalidade" rows="2">{{ p.campo("personalidade") }}</textarea></label>
       <label class="inteiro">Jeito de falar <textarea name="jeito_falar" rows="2">{{ p.campo("jeito_falar") }}</textarea></label>
+      <p class="inteiro suave">Trocar o @ atualiza as histórias, briefings e estantes que citam {{ p.nome }}. A voz e a narração já gerada continuam.</p>
       <button type="submit">Salvar ficha</button>
     </form>
   </section>
@@ -113,7 +129,7 @@
       as histórias e estantes passam a usar o escolhido (com a variante certa), e {{ p.nome }} deixa de existir como personagem separado.
       Nas falas, vale a voz do escolhido.</p>
     <form method="post" action="/personagens/{{ p.slug }}/virar-variante" class="linha"
-          onsubmit="return confirm('Transformar {{ p.nome }} em variante de ' + this.destino.selectedOptions[0].text + '? Não dá para desfazer.')">
+          data-confirmar="Transformar {{ p.nome }} em variante de " onsubmit="return confirm(this.dataset.confirmar + this.destino.selectedOptions[0].text + '? Não dá para desfazer.')">
       <select name="destino">{% for (os, on) in outros %}<option value="{{ os }}">{{ on }}</option>{% endfor %}</select>
       <button type="submit">🔀 Virar variante</button>
     </form>
