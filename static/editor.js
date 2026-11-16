@@ -377,6 +377,7 @@
 
     return el('aside', { class: 'lateral' },
       el('strong', {}, '🖼️ Ilustração da página ' + (n + 1)),
+      palco,
       el('label', {}, 'Cena', cena),
       el('div', {}, el('small', { class: 'suave' }, 'Personagens na cena'), el('div', { class: 'chips' }, naCena, addSel)),
       estado.secundarios.length ? el('div', {}, el('small', { class: 'suave' }, 'Secundários na cena'),
@@ -398,7 +399,6 @@
         el('span', { class: 'linha' },
           el('button', { type: 'button', class: 'pequeno secundario', onclick: () => ouvirSom(pag) }, '🔊 Ouvir som'),
           el('button', { type: 'button', class: 'pequeno secundario', onclick: () => verAnimacao(pag, palco) }, '▶ Ver animação'))),
-      palco,
       kit);
   }
 
