@@ -89,6 +89,16 @@ pub struct Bloco {
     pub tom: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub velocidade: Option<i32>,
+    /// Voz gravada pela família para esta fala ("dublagem"): toca no lugar da voz automática.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gravacao: Option<Gravacao>,
+}
+
+/// Áudio gravado no editor (mp3 em midia.arquivos) e a duração em segundos.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Gravacao {
+    pub id: Uuid,
+    pub duracao: f32,
 }
 
 impl Bloco {

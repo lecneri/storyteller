@@ -98,12 +98,17 @@ async fn montar(
                     .unwrap_or_else(|| ("Narrador".into(), "narrador".into())),
             };
             let tipo_voz = if quem == "narrador" { "narrador" } else { tipo.as_str() };
-            let audio = tts::no_cache(st, familia_cache, &b.texto, &vozes.de(&quem, tipo_voz)).await?;
+            // Voz gravada pela família vale mais que a automática.
+            let audio = match &b.gravacao {
+                Some(g) => Some(tts::Audio { arquivo: g.id, duracao: g.duracao, palavras: tts::palavras_estimadas(b.texto.trim(), g.duracao) }),
+                None => tts::no_cache(st, familia_cache, &b.texto, &vozes.de(&quem, tipo_voz)).await?,
+            };
             blocos.push(json!({
                 "quem": b.quem, "voz": quem, "nome": nome, "tipo": tipo, "texto": b.texto.trim(),
                 "audio": audio.as_ref().map(|a| url(&a.arquivo)),
                 "duracao": audio.as_ref().map(|a| a.duracao),
                 "palavras": audio.as_ref().map(|a| a.palavras.clone()),
+                "gravada": b.gravacao.is_some(),
             }));
         }
         paginas.push(json!({

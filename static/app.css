@@ -240,3 +240,11 @@ body.crianca { background:linear-gradient(180deg,#ffe9c7,#fff8ef 40%); min-heigh
 .capa-acoes { flex:1; min-width:200px; display:grid; gap:8px; }
 .capa-acoes p { margin:0; }
 .capa-acoes > button, .capa-acoes > select { justify-self:start; }
+
+/* Editor: voz gravada (dublagem) */
+.bloco .linha-estado { display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:.9em; margin-top:4px; min-height:0; }
+.bloco .linha-estado:empty { display:none; }
+.estado-fala { color:var(--suave); }
+.estado-fala.gravada { color:var(--cor); font-weight:700; }
+.bloco button.gravando { color:#fff; background:var(--erro); animation:pulsa 1s ease-in-out infinite; }
+@keyframes pulsa { 50% { opacity:.6; } }

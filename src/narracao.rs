@@ -10,6 +10,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
+use crate::historias::Gravacao;
 use crate::{
     auth::Sessao,
     historias::Conteudo,
@@ -231,15 +232,15 @@ async fn carregar(st: &AppState, id: Uuid) -> anyhow::Result<HistoriaNarrar> {
     .await?)
 }
 
-/// Lista (página, bloco, quem, texto) dos blocos com texto.
-fn blocos(h: &HistoriaNarrar) -> Vec<(usize, usize, String, String)> {
+/// Lista (página, bloco, quem, texto, voz gravada) dos blocos com texto.
+fn blocos(h: &HistoriaNarrar) -> Vec<(usize, usize, String, String, Option<Gravacao>)> {
     let c: Conteudo = serde_json::from_value(h.conteudo.clone()).unwrap_or_default();
     let mut v = Vec::new();
     for (pi, p) in c.paginas.iter().enumerate() {
         for (bi, b) in p.blocos.iter().enumerate() {
             if !b.texto.trim().is_empty() {
                 let quem = if h.narracao == "narrador" { "narrador".to_string() } else { b.chave_voz() };
-                v.push((pi, bi, quem, b.texto.clone()));
+                v.push((pi, bi, quem, b.texto.clone(), b.gravacao.clone()));
             }
         }
     }
@@ -252,7 +253,8 @@ pub async fn executar_narracao(st: &AppState, payload: &Value) -> anyhow::Result
     let h = carregar(st, id).await?;
     let vozes = tts::vozes_da_familia(st, h.familia_id).await?;
     let mut falhas = 0;
-    for (_, _, quem, texto) in blocos(&h) {
+    // Fala com voz gravada não precisa da voz automática.
+    for (_, _, quem, texto, _) in blocos(&h).into_iter().filter(|b| b.4.is_none()) {
         if let Err(e) = tts::sintetizar(st, h.familia_id, &h.familia_slug, &texto, &vozes.de(&quem)).await {
             tracing::warn!("narração: bloco falhou: {e:#}");
             falhas += 1;
@@ -277,7 +279,7 @@ pub async fn executar_narracao_publica(st: &AppState, payload: &Value) -> anyhow
         .fetch_all(&st.db)
         .await?;
     let mut falhas = 0;
-    for (_, _, quem, texto) in blocos(&h) {
+    for (_, _, quem, texto, _) in blocos(&h).into_iter().filter(|b| b.4.is_none()) {
         let tipo = tipos.iter().find(|(s, _)| s == tts::separar(&quem).0).map(|(_, t)| t.as_str()).unwrap_or("");
         if let Err(e) = tts::sintetizar(st, h.familia_id, &h.familia_slug, &texto, &tts::voz_generica(&quem, tipo)).await {
             tracing::warn!("narração pública: trecho falhou: {e:#}");
@@ -318,7 +320,13 @@ pub async fn estado(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>)
     let mut itens = Vec::new();
     let mut prontos = 0;
     let lista = blocos(&h);
-    for (pi, bi, quem, texto) in &lista {
+    for (pi, bi, quem, texto, gravacao) in &lista {
+        if let Some(g) = gravacao {
+            prontos += 1;
+            let audio = json!({ "audio": format!("/midia/{}", g.id), "duracao": g.duracao, "palavras": tts::palavras_estimadas(texto, g.duracao) });
+            itens.push(json!({ "pagina": pi, "bloco": bi, "quem": quem, "texto": texto.trim(), "gravada": true, "audio": audio }));
+            continue;
+        }
         let a = match tts::no_cache(&st, h.familia_id, texto, &vozes.de(quem)).await {
             Ok(a) => a,
             Err(e) => return erro_interno(e),
@@ -326,7 +334,7 @@ pub async fn estado(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>)
         if a.is_some() {
             prontos += 1;
         }
-        itens.push(json!({ "pagina": pi, "bloco": bi, "quem": quem, "audio": a.as_ref().map(audio_json) }));
+        itens.push(json!({ "pagina": pi, "bloco": bi, "quem": quem, "texto": texto.trim(), "audio": a.as_ref().map(audio_json) }));
     }
     let job: Option<(String, Option<String>)> = sqlx::query_as(
         "SELECT estado, erro FROM jobs.fila WHERE tipo = 'gerar_narracao' AND payload->>'historia_id' = $1
@@ -344,4 +352,81 @@ pub async fn estado(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>)
         "blocos": itens,
     }))
     .into_response()
+}
+
+/// Duração máxima de uma fala gravada (segundos).
+const MAX_GRAVACAO_S: f32 = 120.0;
+
+/// POST /historias/{id}/gravacao — a família grava a própria voz para uma fala (multipart "arquivo",
+/// o que o navegador gravou: webm/ogg/mp4). Vira mp3 mono com volume ajustado e sem o silêncio do começo.
+pub async fn gravar(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>, mut multipart: axum::extract::Multipart) -> Response {
+    match crate::web::historia_da_familia(&st, s.familia_id, id).await {
+        Ok(true) => {}
+        Ok(false) => return StatusCode::NOT_FOUND.into_response(),
+        Err(e) => return erro_interno(e.into()),
+    }
+    let mut bytes = None;
+    while let Ok(Some(campo)) = multipart.next_field().await {
+        if campo.name() == Some("arquivo") {
+            match campo.bytes().await {
+                Ok(b) => bytes = Some(b),
+                Err(_) => return crate::web::erro_json("A gravação não chegou inteira. Tente de novo."),
+            }
+        }
+    }
+    let Some(bytes) = bytes.filter(|b| !b.is_empty()) else {
+        return crate::web::erro_json("Gravação vazia.");
+    };
+    if bytes.len() > crate::midia::LIMITE_BYTES {
+        return crate::web::erro_json("Gravação grande demais.");
+    }
+    match converter_gravacao(&st, s.familia_id, &bytes).await {
+        Ok(g) => Json(json!({ "id": g.id, "duracao": g.duracao })).into_response(),
+        Err(e) => {
+            tracing::warn!("gravação: {e:#}");
+            crate::web::erro_json(format!("Não consegui usar a gravação: {e}"))
+        }
+    }
+}
+
+async fn converter_gravacao(st: &AppState, familia_id: Uuid, bytes: &[u8]) -> anyhow::Result<Gravacao> {
+    use anyhow::Context;
+    let tmp = std::env::temp_dir();
+    let nome = Uuid::new_v4();
+    let entrada = tmp.join(format!("grav-{nome}.in"));
+    let saida = tmp.join(format!("grav-{nome}.mp3"));
+    tokio::fs::write(&entrada, bytes).await?;
+    let r = async {
+        let out = tokio::process::Command::new("ffmpeg")
+            .args(["-hide_banner", "-loglevel", "error", "-y", "-i"])
+            .arg(&entrada)
+            .args([
+                "-vn", "-ac", "1", "-ar", "44100",
+                // Tira o silêncio do começo (o tempo de apertar o botão) e deixa o volume parecido com o das outras vozes.
+                "-af", "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.15,loudnorm=I=-16:TP=-1.5",
+                "-c:a", "libmp3lame", "-b:a", "96k",
+            ])
+            .arg(&saida)
+            .kill_on_drop(true)
+            .output();
+        let out = tokio::time::timeout(std::time::Duration::from_secs(60), out).await.context("demorou demais")??;
+        if !out.status.success() {
+            anyhow::bail!("o arquivo de áudio não abriu");
+        }
+        let dur = tts::duracao_arquivo(&saida).await.unwrap_or(0.0);
+        if dur < 0.3 {
+            anyhow::bail!("não deu para ouvir nada na gravação");
+        }
+        if dur > MAX_GRAVACAO_S {
+            anyhow::bail!("passou de 2 minutos");
+        }
+        let mp3 = tokio::fs::read(&saida).await?;
+        let slug: String = sqlx::query_scalar("SELECT slug FROM acesso.familias WHERE id = $1").bind(familia_id).fetch_one(&st.db).await?;
+        let id = crate::midia::salvar(st, familia_id, &format!("familias/{slug}/gravacoes"), &mp3, "audio/mpeg", "mp3").await?;
+        anyhow::Ok(Gravacao { id, duracao: (dur * 100.0).round() / 100.0 })
+    }
+    .await;
+    let _ = tokio::fs::remove_file(&entrada).await;
+    let _ = tokio::fs::remove_file(&saida).await;
+    r
 }

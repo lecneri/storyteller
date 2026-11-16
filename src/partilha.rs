@@ -695,6 +695,27 @@ pub async fn copiar_historia(State(st): State<AppState>, s: Sessao, Path(id): Pa
                         None => p["midia"] = Value::Null,
                     }
                 }
+                // Vozes gravadas das falas: também passam a ser da família que copiou.
+                for b in p["blocos"].as_array_mut().into_iter().flatten() {
+                    let Some(gid) = b["gravacao"]["id"].as_str().and_then(|m| m.parse::<Uuid>().ok()) else { continue };
+                    let novo: Option<Uuid> = sqlx::query_scalar(
+                        "INSERT INTO midia.arquivos (familia_id, caminho, tipo_mime, bytes, sha256)
+                         SELECT $1, caminho, tipo_mime, bytes, sha256 FROM midia.arquivos WHERE id = $2 AND familia_id = $3
+                         RETURNING id",
+                    )
+                    .bind(s.familia_id)
+                    .bind(gid)
+                    .bind(dona)
+                    .fetch_optional(&mut *tx)
+                    .await?;
+                    match (novo, b.as_object_mut()) {
+                        (Some(n), _) => b["gravacao"]["id"] = json!(n),
+                        (None, Some(o)) => {
+                            o.remove("gravacao");
+                        }
+                        _ => {}
+                    }
+                }
             }
         }
         let novo = Uuid::new_v4();

@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use super::geracao::{preparar, prompt_para_copiar, Preparo};
 use super::prompt::{normalizar, schema_historia};
-use super::{Conteudo, Pagina};
+use super::{Bloco, Conteudo, Pagina};
 use crate::{
     auth::Sessao,
     ia, jobs,
@@ -86,12 +86,23 @@ pub fn processar(p: &Preparo, atual: &Value, resposta: &Value) -> anyhow::Result
             pg.som = a.som;
         }
     }
-    let c = normalizar(c, &p.narracao, &p.citados, &p.todos);
+    let mut c = normalizar(c, &p.narracao, &p.citados, &p.todos);
+    manter_gravacoes(&mut c, &antigas);
     if c.paginas.is_empty() {
         anyhow::bail!("a IA devolveu uma história vazia");
     }
     let titulo = resposta["titulo"].as_str().map(str::trim).filter(|t| !t.is_empty());
     Ok(json!({ "titulo": titulo, "conteudo": c }))
+}
+
+/// A fala que continua igual (mesmo personagem e mesmo texto) mantém a voz gravada.
+pub fn manter_gravacoes(c: &mut Conteudo, antigas: &[Pagina]) {
+    let gravadas: Vec<&Bloco> = antigas.iter().flat_map(|p| &p.blocos).filter(|b| b.gravacao.is_some()).collect();
+    for b in c.paginas.iter_mut().flat_map(|p| &mut p.blocos) {
+        if let Some(a) = gravadas.iter().find(|a| a.quem == b.quem && a.texto.trim() == b.texto.trim()) {
+            b.gravacao = a.gravacao.clone();
+        }
+    }
 }
 
 async fn atual(st: &AppState, id: Uuid) -> anyhow::Result<(String, Value)> {

@@ -260,7 +260,7 @@ async fn gerar_eleven(st: &AppState, familia_id: Uuid, familia_slug: &str, texto
     let (bytes, palavras) = crate::elevenlabs::sintetizar(&chave, &modelo, &voz.id, texto, voz.velocidade).await?;
     let tmp = std::env::temp_dir().join(format!("st-tts-{h}-{}.mp3", Uuid::new_v4()));
     tokio::fs::write(&tmp, &bytes).await?;
-    let duracao = duracao_mp3(&tmp).await.unwrap_or(0.0);
+    let duracao = duracao_arquivo(&tmp).await.unwrap_or(0.0);
     let _ = tokio::fs::remove_file(&tmp).await;
     guardar(st, familia_id, familia_slug, h, &bytes, duracao, palavras).await
 }
@@ -299,7 +299,7 @@ async fn gerar(st: &AppState, familia_id: Uuid, familia_slug: &str, texto: &str,
         .and_then(|v| v.get("palavras").cloned())
         .unwrap_or(json!([]));
     let bytes = tokio::fs::read(&tmp).await.context("o TTS não gerou o arquivo")?;
-    let duracao = duracao_mp3(&tmp).await.unwrap_or(0.0);
+    let duracao = duracao_arquivo(&tmp).await.unwrap_or(0.0);
     let _ = tokio::fs::remove_file(&tmp).await;
     guardar(st, familia_id, familia_slug, h, &bytes, duracao, palavras).await
 }
@@ -321,13 +321,36 @@ async fn guardar(st: &AppState, familia_id: Uuid, familia_slug: &str, h: &str, b
     Ok(Audio { arquivo, duracao, palavras })
 }
 
-async fn duracao_mp3(caminho: &std::path::Path) -> anyhow::Result<f32> {
+pub async fn duracao_arquivo(caminho: &std::path::Path) -> anyhow::Result<f32> {
     let out = Command::new("ffprobe")
         .args(["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0"])
         .arg(caminho)
         .output()
         .await?;
     Ok(String::from_utf8_lossy(&out.stdout).trim().parse()?)
+}
+
+/// Marcas de palavra [início, duração, palavra] estimadas para um áudio sem marcas (voz gravada):
+/// divide a duração pelo tamanho de cada palavra, para o destaque acompanhar mais ou menos a fala.
+pub fn palavras_estimadas(texto: &str, duracao: f32) -> Value {
+    let palavras: Vec<&str> = texto.split_whitespace().filter(|p| p.chars().any(char::is_alphanumeric)).collect();
+    let peso = |p: &str| p.chars().filter(|c| c.is_alphanumeric()).count().max(1) as f64 + 1.0;
+    let total: f64 = palavras.iter().map(|p| peso(p)).sum();
+    if palavras.is_empty() || duracao <= 0.0 {
+        return json!([]);
+    }
+    let duracao = f64::from(duracao);
+    let mut t = 0.0;
+    let marcas: Vec<Value> = palavras
+        .iter()
+        .map(|p| {
+            let d = duracao * peso(p) / total;
+            let m = json!([(t * 1000.0f64).round() / 1000.0, (d * 1000.0f64).round() / 1000.0, p]);
+            t += d;
+            m
+        })
+        .collect();
+    json!(marcas)
 }
 
 /// Só consulta o cache (não gera).
@@ -389,6 +412,18 @@ pub async fn vozes_da_familia(st: &AppState, familia_id: Uuid) -> anyhow::Result
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    #[test]
+    fn palavras_estimadas_cobrem_a_duracao() {
+        let m = palavras_estimadas("Oi, vovó! — tudo bem?", 4.0);
+        let m = m.as_array().unwrap();
+        assert_eq!(m.len(), 4);
+        assert_eq!(m[0][0], 0.0);
+        assert_eq!(m[1][2], "vovó!");
+        let fim = m[3][0].as_f64().unwrap() + m[3][1].as_f64().unwrap();
+        assert!((fim - 4.0).abs() < 0.01);
+        assert_eq!(palavras_estimadas("", 3.0), json!([]));
+    }
 
     #[test]
     fn valida_voz() {

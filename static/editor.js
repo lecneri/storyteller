@@ -111,13 +111,22 @@
 
   let tocando = null;
   async function ouvirBloco(b, botao) {
+    if (b.gravacao) {
+      if (tocando) tocando.pause();
+      tocando = new Audio('/midia/' + b.gravacao.id);
+      tocando.play().catch((e) => aviso('Não deu para ouvir: ' + e.message));
+      return;
+    }
     if (!(b.texto || '').trim()) { aviso('Bloco vazio.'); return; }
     botao.textContent = '⏳';
     try {
       const r = await fetch(location.pathname + '/bloco-audio', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ quem: chaveVoz(b), texto: b.texto }) });
+        body: JSON.stringify({ quem: vozDaFala(b), texto: b.texto }) });
       const j = await r.json();
       if (!r.ok) throw new Error(j.erro || 'erro');
+      // Ouvir gera a voz da IA (fica guardada): a fala passa a contar como narrada.
+      (narradas = narradas || new Set()).add(chaveFala(b));
+      atualizarEstados();
       if (tocando) tocando.pause();
       tocando = new Audio(j.audio);
       await tocando.play();
@@ -128,11 +137,98 @@
     }
   }
 
+  // ───────────── Voz gravada (dublagem) ─────────────
+  // A família grava a própria voz numa fala; ela toca no lugar da voz automática (leitor, vídeo, link).
+  let gravando = null; // { b, rec, inicio, timer }
+  const segundos = (d) => (Math.round(d * 10) / 10).toString().replace('.', ',') + ' s';
+  async function gravarFala(b) {
+    if (gravando) { if (gravando.b === b) gravando.rec.stop(); else aviso('Termine a outra gravação primeiro.'); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+      aviso('Este navegador não grava áudio.'); return;
+    }
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    } catch (e) { aviso('Sem acesso ao microfone: libere o microfone para este site e tente de novo.', 5000); return; }
+    const tipo = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4'].find((t) => MediaRecorder.isTypeSupported(t));
+    const rec = new MediaRecorder(stream, tipo ? { mimeType: tipo } : undefined);
+    const partes = [];
+    const g = gravando = { b, rec, inicio: Date.now(), timer: null };
+    rec.ondataavailable = (e) => { if (e.data.size) partes.push(e.data); };
+    rec.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop());
+      clearInterval(g.timer); gravando = null; desenhar();
+      if (Date.now() - g.inicio < 500) { aviso('Gravação curta demais.'); return; }
+      const fd = new FormData();
+      fd.append('arquivo', new Blob(partes, { type: rec.mimeType || 'audio/webm' }), 'fala');
+      aviso('Enviando a gravação…', 10000);
+      try {
+        const r = await fetch(location.pathname + '/gravacao', { method: 'POST', body: fd });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.erro || 'erro ' + r.status);
+        b.gravacao = { id: j.id, duracao: j.duracao };
+        mudou(); desenhar(); await salvar(); verNarracao();
+        aviso('Voz gravada ✓ (' + segundos(j.duracao) + ')');
+      } catch (e) { aviso('Não salvou a gravação: ' + e.message, 5000); }
+    };
+    rec.start();
+    g.timer = setInterval(() => {
+      const t = Math.floor((Date.now() - g.inicio) / 1000);
+      document.querySelectorAll('[data-gravando]').forEach((x) => { x.textContent = '⏹ ' + t + 's'; });
+      if (t >= 120) rec.stop();
+    }, 250);
+    desenhar();
+  }
+  // ───────────── Estado da narração de cada fala ─────────────
+  // Voz com que a fala é lida: no modo "Só narrador", tudo é o narrador (como no servidor).
+  const vozDaFala = (b) => (estado.narracao === 'narrador' ? 'narrador' : chaveVoz(b));
+  const chaveFala = (b) => vozDaFala(b) + '\u0000' + (b.texto || '').trim();
+  let narradas = null; // Set das falas com voz da IA pronta (null = ainda não carregou)
+  let linhasEstado = []; // [{ b, caixa }] da tela atual
+  function preencherEstado(b, caixa) {
+    const vazio = !(b.texto || '').trim();
+    caixa.replaceChildren(...[
+      b.gravacao ? [el('span', { class: 'estado-fala gravada' }, '🎤 Voz gravada (' + segundos(b.gravacao.duracao) + ')'),
+        el('button', { type: 'button', class: 'link', onclick: async () => {
+          if (!confirm('Tirar a voz gravada desta fala? Ela volta a usar a voz da IA.')) return;
+          delete b.gravacao; mudou(); desenhar(); await salvar(); verNarracao();
+        } }, '✕ usar a voz da IA')]
+      : vazio || !narradas ? null
+      : narradas.has(chaveFala(b)) ? el('span', { class: 'estado-fala ia' }, '🤖 Narrado por IA')
+      : el('button', { type: 'button', class: 'pequeno secundario', title: 'Gera a voz da IA só desta fala',
+          onclick: (e) => narrarFala(b, e.currentTarget) }, '🤖 Narrar com IA'),
+    ].flat().filter(Boolean));
+  }
+  function atualizarEstados() { linhasEstado = linhasEstado.filter((x) => x.caixa.isConnected); linhasEstado.forEach((x) => preencherEstado(x.b, x.caixa)); }
+  function estadoUI(b) {
+    const caixa = el('div', { class: 'linha-estado' });
+    linhasEstado.push({ b, caixa });
+    preencherEstado(b, caixa);
+    return caixa;
+  }
+  async function narrarFala(b, botao) {
+    botao.disabled = true; botao.textContent = '⏳ Narrando…';
+    try {
+      const r = await fetch(location.pathname + '/bloco-audio', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quem: vozDaFala(b), texto: b.texto }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.erro || 'erro ' + r.status);
+      (narradas = narradas || new Set()).add(chaveFala(b));
+      atualizarEstados();
+      if (!sujo) verNarracao();
+    } catch (e) {
+      botao.disabled = false; botao.textContent = '🤖 Narrar com IA';
+      aviso('Não narrou: ' + e.message);
+    }
+  }
+
   // Narração da história inteira (job no servidor) + progresso.
   const statusNarracao = el('span', { class: 'suave' }, '');
   async function verNarracao() {
     try {
       const j = await (await fetch(location.pathname + '/narracao')).json();
+      narradas = new Set((j.blocos || []).filter((x) => x.audio && !x.gravada).map((x) => x.quem + '\u0000' + x.texto));
+      atualizarEstados();
       const rodando = j.job === 'pendente' || j.job === 'rodando';
       statusNarracao.textContent = '🎙️ ' + j.prontos + '/' + j.total + ' trechos narrados' +
         (rodando ? ' · gerando…' : j.job === 'erro' ? ' · erro: ' + (j.erro || '') : '');
@@ -178,18 +274,22 @@
       extras.map((x) => el('option', { value: x.slug, selected: b.voz === x.slug }, '🌎 ' + x.nome))) : null;
     const txt = el('textarea', { rows: Math.max(2, Math.ceil((b.texto || '').length / 70)),
       placeholder: b.quem === 'narrador' ? 'Texto do narrador…' : 'Fala de ' + nomeDe(b.quem, b) + '…',
-      oninput: (e) => { b.texto = e.target.value; mudou(); } });
+      oninput: (e) => { b.texto = e.target.value; mudou(); atualizarEstados(); } });
     txt.value = b.texto || '';
     return el('div', { class: 'bloco' },
       avatar(b.quem, pag),
       el('div', {},
         el('div', { class: 'cab' }, sel, selVoz, nomeFala,
           el('span', { class: 'acoes' },
-            el('button', { type: 'button', title: 'Ouvir este trecho', onclick: (e) => ouvirBloco(b, e.currentTarget) }, '▶'),
+            el('button', { type: 'button', title: b.gravacao ? 'Ouvir a voz gravada' : 'Ouvir este trecho', onclick: (e) => ouvirBloco(b, e.currentTarget) }, '▶'),
+            gravando && gravando.b === b
+              ? el('button', { type: 'button', class: 'gravando', title: 'Parar e usar esta gravação', 'data-gravando': true, onclick: () => gravarFala(b) },
+                '⏹ ' + Math.floor((Date.now() - gravando.inicio) / 1000) + 's')
+              : el('button', { type: 'button', title: b.gravacao ? 'Gravar de novo com a sua voz' : 'Gravar a sua voz nesta fala (dublar)', onclick: () => gravarFala(b) }, '🎤'),
             el('button', { type: 'button', title: 'Subir', onclick: () => mover(pag.blocos, i, -1) }, '↑'),
             el('button', { type: 'button', title: 'Descer', onclick: () => mover(pag.blocos, i, 1) }, '↓'),
             el('button', { type: 'button', title: 'Apagar bloco', onclick: () => { pag.blocos.splice(i, 1); mudou(); desenhar(); } }, '✕'))),
-        txt));
+        txt, estadoUI(b)));
   }
 
   // ───────────── Kit da imagem ─────────────

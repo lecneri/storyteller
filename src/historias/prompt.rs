@@ -248,6 +248,8 @@ pub fn normalizar(mut c: Conteudo, narracao: &str, citados: &[NaCena], todos: &[
         }
         for b in &mut p.blocos {
             normalizar_bloco(b, narracao, citados, todos);
+            // Gravação só vem do editor (a IA não inventa arquivo); a edição com IA devolve as que continuam valendo.
+            b.gravacao = None;
         }
         p.blocos.retain(|b| !b.texto.is_empty());
         if narracao == "narrador" && p.blocos.len() > 1 {
@@ -311,7 +313,7 @@ fn normalizar_bloco(b: &mut Bloco, narracao: &str, citados: &[NaCena], todos: &[
 /// Modo "só narrador": a página vira um bloco único com todo o texto.
 fn juntar_em_narrador(blocos: &[Bloco]) -> Bloco {
     let texto = blocos.iter().map(|b| b.texto.as_str()).collect::<Vec<_>>().join(" ");
-    Bloco { quem: "narrador".into(), texto, voz: None, nome: None, tom: None, velocidade: None }
+    Bloco { quem: "narrador".into(), texto, voz: None, nome: None, tom: None, velocidade: None, gravacao: None }
 }
 
 
@@ -345,7 +347,7 @@ mod testes {
     }
 
     fn bloco(quem: &str, texto: &str) -> Bloco {
-        Bloco { quem: quem.into(), texto: texto.into(), voz: None, nome: None, tom: None, velocidade: None }
+        Bloco { quem: quem.into(), texto: texto.into(), voz: None, nome: None, tom: None, velocidade: None, gravacao: None }
     }
 
     fn cena(slug: &str) -> NaCena {

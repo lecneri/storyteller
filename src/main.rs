@@ -132,6 +132,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/historias/{id}/imagem-ia", post(historias::gerar_imagem))
         .route("/historias/{id}/bloco-audio", post(narracao::audio_bloco))
         .route("/historias/{id}/narrar", post(narracao::narrar))
+        .route("/historias/{id}/gravacao", post(narracao::gravar))
         .route("/historias/{id}/narracao", get(narracao::estado))
         .route("/ler/{id}", get(player::ler))
         .route("/crianca", get(crianca::inicio))
