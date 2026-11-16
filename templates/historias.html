@@ -46,7 +46,8 @@
     {% for h in itens %}
       <li><a href="/historias/{{ h.id }}"><strong>{{ h.titulo }}</strong></a>
         <span class="suave">· {{ h.faixa }} anos · {{ h.paginas }} páginas · {{ h.estado }}</span>
-        {% if h.paginas > 0 %} · <a href="/ler/{{ h.id }}">📖 ler</a> · <a href="/imprimir/{{ h.id }}">🖨️ imprimir</a>{% endif %}</li>
+        {% if h.paginas > 0 %} · <a href="/ler/{{ h.id }}">📖 ler</a> · <a href="/imprimir/{{ h.id }}">🖨️ imprimir</a> · <a href="/historias/{{ h.id }}/exportar">⬇ exportar</a>{% endif %}
+        {% if h.pode_apagar %}· <form method="post" action="/historias/{{ h.id }}/apagar" class="inline" data-confirmar="Apagar “{{ h.titulo }}”? As imagens e áudios dela também serão apagados (cópias em outras famílias continuam)." onsubmit="return confirm(this.dataset.confirmar)"><button class="link perigo">🗑 apagar</button></form>{% endif %}</li>
     {% endfor %}
     </ul>
   </section>

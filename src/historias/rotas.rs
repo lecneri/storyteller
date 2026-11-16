@@ -30,6 +30,8 @@ struct ItemHistoria {
     faixa: String,
     estado: String,
     paginas: i32,
+    /// Admin da família ou quem criou.
+    pode_apagar: bool,
 }
 
 #[derive(Template)]
@@ -43,10 +45,13 @@ struct PaginaHistorias {
 
 pub async fn lista(State(st): State<AppState>, s: Sessao) -> Response {
     let itens = sqlx::query_as::<_, ItemHistoria>(
-        "SELECT id, titulo, faixa, estado, jsonb_array_length(conteudo->'paginas') AS paginas
+        "SELECT id, titulo, faixa, estado, jsonb_array_length(conteudo->'paginas') AS paginas,
+                ($2 OR criado_por = $3) AS pode_apagar
            FROM conteudo.historias WHERE familia_id = $1 ORDER BY atualizado_em DESC",
     )
     .bind(s.familia_id)
+    .bind(s.admin_familia())
+    .bind(s.usuario_id)
     .fetch_all(&st.db)
     .await;
     let personagens = personagens_da_familia(&st, s.familia_id).await;
@@ -516,6 +521,7 @@ pub async fn apagar(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>)
             tracing::warn!("limpeza após apagar falhou: {e:#}");
         }
     });
+    crate::video::apagar_video(&st, id).await;
     Redirect::to("/historias").into_response()
 }
 

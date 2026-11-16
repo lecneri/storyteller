@@ -88,7 +88,8 @@ pub async fn limpar(st: &AppState) -> anyhow::Result<(u64, i64)> {
     .await?;
 
     let mut apagados = 0u64;
-    let mut liberado = 0i64;
+    // Vídeos exportados com mais de 24 h (e temporários esquecidos).
+    let mut liberado = crate::video::limpar_antigos(st).await as i64;
     for (id, caminho, bytes) in orfaos {
         sqlx::query("DELETE FROM midia.arquivos WHERE id = $1").bind(id).execute(&st.db).await?;
         // O mesmo arquivo pode estar em outra família (cópia de história): só apaga do disco se ninguém mais usa.

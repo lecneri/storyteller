@@ -24,6 +24,7 @@ mod segredos;
 mod sistema;
 mod tts;
 mod util;
+mod video;
 mod web;
 
 use std::{net::SocketAddr, path::PathBuf};
@@ -108,6 +109,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/midia/{id}", get(midia::servir))
         .route("/midia/{id}/quadro", get(imprimir::quadro))
         .route("/imprimir/{id}", get(imprimir::pagina))
+        .route("/historias/{id}/exportar", get(video::pagina))
+        .route("/historias/{id}/video", post(video::fazer))
+        .route("/historias/{id}/video/estado", get(video::estado))
+        .route("/historias/{id}/video.mp4", get(video::baixar))
         .route("/historias", get(historias::lista).post(historias::criar))
         .route("/historias/{id}", get(historias::abrir))
         .route("/historias/{id}/regerar", post(historias::regerar))

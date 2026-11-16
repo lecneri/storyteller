@@ -9,6 +9,7 @@ body { margin:0; font-family: system-ui, sans-serif; background:var(--fundo); co
 label { display:grid; gap:4px; font-weight:600; }
 input, select, button { font:inherit; padding:10px 12px; border-radius:10px; border:1px solid var(--borda); background:var(--fundo); color:var(--texto); }
 button { background:var(--cor); color:#fff; border:none; font-weight:700; cursor:pointer; }
+a.botao { display:inline-block; padding:10px 12px; border-radius:10px; background:var(--cor); color:#fff; font-weight:700; text-decoration:none; }
 button.link { background:none; color:var(--cor); padding:0 0 0 8px; }
 .topo { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; padding:12px 16px; border-bottom:1px solid var(--borda); background:var(--cartao); }
 .inline { display:inline; }
@@ -81,10 +82,12 @@ fieldset.padroes { border:1px solid var(--borda); border-radius:12px; padding:12
 .inserir-pagina::before, .inserir-pagina::after { content:''; flex:1; border-top:2px dashed var(--borda); }
 .kit { display:grid; gap:8px; border-top:1px dashed var(--borda); padding-top:10px; }
 .linha-kit { display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap; font-size:.9em; }
-textarea.prompt { font-size:.82em; font-family: ui-monospace, monospace; background:var(--cartao);
-  height:4.2em; min-height:0; overflow:hidden; resize:none; cursor:pointer; transition:height .15s;
+/* Recolhidos (prompts e cena): 3 linhas; um clique abre com altura fixa e rolagem */
+textarea.prompt, textarea.recolhe { height:4.2em; min-height:0; overflow:hidden; resize:none; cursor:pointer; transition:height .15s;
   -webkit-mask-image:linear-gradient(#000 55%, transparent); mask-image:linear-gradient(#000 55%, transparent); }
-textarea.prompt.aberto { height:16em; overflow-y:auto; cursor:text; -webkit-mask-image:none; mask-image:none; }
+textarea.prompt.aberto, textarea.recolhe.aberto { height:16em; overflow-y:auto; cursor:text; -webkit-mask-image:none; mask-image:none; }
+textarea.recolhe.aberto { height:10em; }
+textarea.prompt { font-size:.82em; font-family: ui-monospace, monospace; background:var(--cartao); }
 textarea.fixa { height:12em; min-height:0; overflow-y:auto; resize:none; }
 .chip { display:inline-flex; align-items:center; gap:4px; }
 .chip-img { width:18px; height:18px; border-radius:50%; object-fit:cover; }

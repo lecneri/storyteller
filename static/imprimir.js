@@ -50,6 +50,8 @@
   modo.addEventListener('change', () => { sortear.hidden = modo.value !== 'aleatorio'; desenhar(); });
   sortear.addEventListener('click', desenhar);
   folha.addEventListener('change', aplicarFolha);
+  // Veio de "Exportar → PDF": mostra a dica do "Salvar como PDF".
+  if (new URLSearchParams(location.search).has('pdf')) document.getElementById('dica-pdf').hidden = false;
   document.getElementById('imprimir').addEventListener('click', async () => {
     await imagensProntas();
     window.print();

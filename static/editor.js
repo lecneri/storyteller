@@ -21,7 +21,7 @@
   const cor = (n) => 'cor-' + (n % NCORES);
 
   const ajustar = (t) => { t.style.height = 'auto'; t.style.height = t.scrollHeight + 2 + 'px'; };
-  document.addEventListener('input', (e) => { if (e.target.matches('#editor textarea:not(.prompt):not(.fixa)')) ajustar(e.target); });
+  document.addEventListener('input', (e) => { if (e.target.matches('#editor textarea:not(.prompt):not(.fixa):not(.recolhe)')) ajustar(e.target); });
   const mudou = () => { sujo = true; status.textContent = 'Alterações não salvas'; };
 
   const personagem = (slug) => personagens.find((p) => p.slug === slug);
@@ -311,7 +311,7 @@
   }
 
   function lateralUI(pag, n) {
-    const cena = el('textarea', { rows: 3, placeholder: 'O que aparece na ilustração desta página…',
+    const cena = el('textarea', { class: 'recolhe', title: 'Clique para ver e editar a cena inteira', placeholder: 'O que aparece na ilustração desta página…',
       oninput: (e) => { pag.cena = e.target.value; mudou(); } });
     cena.value = pag.cena || '';
     const anim = el('select', { onchange: (e) => { pag.animacao = e.target.value; mudou(); } },
@@ -742,7 +742,7 @@
         el('button', { type: 'button', class: 'secundario', onclick: gerarNarracao }, '🎙️ Gerar narração'),
         status, el('button', { type: 'button', onclick: salvar }, '💾 Salvar')),
     ].flat(Infinity).filter(Boolean));
-    raiz.querySelectorAll('textarea:not(.prompt):not(.fixa)').forEach(ajustar);
+    raiz.querySelectorAll('textarea:not(.prompt):not(.fixa):not(.recolhe)').forEach(ajustar);
     manterAncora(ancora, rolagem);
     observarPaginas();
   }
