@@ -1,21 +1,46 @@
 {% extends "base.html" %}
-{% block titulo %}Gerando… · Storyteller{% endblock %}
+{% block titulo %}{% if externo %}Usar outra IA{% else %}Gerando…{% endif %} · Storyteller{% endblock %}
 {% block corpo %}
 {% include "topo.html" %}
-{% if erro.is_none() %}<meta http-equiv="refresh" content="3">{% endif %}
+{% if erro.is_none() && !externo %}<meta http-equiv="refresh" content="3">{% endif %}
 <main class="conteudo">
   <section class="cartao largo centro-texto">
     {% if let Some(e) = erro %}
       <h2>😕 Não deu para gerar</h2>
       <p class="erro">{{ e }}</p>
       <form method="post" action="/historias/{{ id }}/regerar"><button>Tentar de novo</button></form>
+    {% else if externo %}
+      <h2>📋 Gerar com outra IA</h2>
+      <p class="suave">Copie o prompt, cole no ChatGPT, Gemini ou Claude e traga a resposta de volta.</p>
     {% else %}
       <h2>✨ Escrevendo a história…</h2>
       <p class="suave">Isso leva de 30 segundos a 2 minutos. A página atualiza sozinha.</p>
       <div class="girando">📖</div>
     {% endif %}
     {% if !briefing.is_empty() %}<p class="suave"><em>Briefing:</em> {{ briefing }}</p>{% endif %}
-    <p><a href="/historias">← Histórias</a></p>
   </section>
+
+  {% if let Some(p) = prompt %}
+  <section class="cartao largo" id="outra-ia" data-historia="{{ id }}">
+    {% if !externo %}<h2>📋 Ou use outra IA</h2>{% endif %}
+    <div class="linha-kit"><span><strong>1.</strong> Copie o prompt</span>
+      <button type="button" class="pequeno" data-copiar-texto="prompt-historia">📋 Copiar prompt</button></div>
+    <textarea id="prompt-historia" class="prompt" rows="6" readonly>{{ p }}</textarea>
+    <div class="linha-kit">
+      <span><strong>2.</strong> Cole numa IA:</span>
+      <a href="https://chatgpt.com/" target="_blank" rel="noopener">ChatGPT ↗</a>
+      <a href="https://gemini.google.com/app" target="_blank" rel="noopener">Gemini ↗</a>
+      <a href="https://claude.ai/new" target="_blank" rel="noopener">Claude ↗</a>
+    </div>
+    <p><strong>3.</strong> Traga a resposta: cole abaixo ou envie o arquivo (.json ou .txt).</p>
+    <textarea id="resposta-ia" rows="6" placeholder='Cole aqui a resposta inteira da IA (começa com { "titulo": ...)'></textarea>
+    <div class="linha">
+      <label class="check">Arquivo <input type="file" id="arquivo-ia" accept=".json,.txt,application/json,text/plain" data-sem-colar></label>
+      <button type="button" id="importar-ia">📥 Importar resposta</button>
+    </div>
+  </section>
+  <script src="/importar.js?v={{ crate::web::versao() }}" defer></script>
+  {% endif %}
+  <p class="largo"><a href="/historias">← Histórias</a></p>
 </main>
 {% endblock %}

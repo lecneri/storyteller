@@ -17,8 +17,19 @@ struct HistoriaGerar {
     padroes: Option<Value>,
 }
 
-pub async fn executar_geracao(st: &AppState, payload: &Value) -> anyhow::Result<()> {
-    let id: Uuid = payload["historia_id"].as_str().unwrap_or_default().parse()?;
+/// Tudo o que a geração precisa antes de chamar a IA (e para gravar a resposta depois).
+pub struct Preparo {
+    pub familia_id: Uuid,
+    faixa: String,
+    narracao: String,
+    citados: Vec<NaCena>,
+    todos: Vec<super::deteccao::PersonagemIA>,
+    continua_de: Vec<Uuid>,
+    pub pedido: ia::PedidoTexto,
+}
+
+/// Monta o pedido à IA a partir do briefing, da estante, dos personagens e das histórias citadas.
+pub async fn preparar(st: &AppState, id: Uuid) -> anyhow::Result<Preparo> {
     let h = sqlx::query_as::<_, HistoriaGerar>(
         "SELECT h.familia_id, h.briefing, h.faixa, h.narracao, e.padroes
            FROM conteudo.historias h
@@ -89,11 +100,34 @@ pub async fn executar_geracao(st: &AppState, payload: &Value) -> anyhow::Result<
         prompt: montar_prompt(&briefing, &leitores, &h.narracao, &citados, &todos, estilo, instrucoes, &memorias, &vozes_usadas),
         schema: schema_historia(),
     };
-    let resposta = ia::gerar_texto(st, h.familia_id, &pedido).await?;
+    Ok(Preparo { familia_id: h.familia_id, faixa: h.faixa, narracao: h.narracao, citados, todos, continua_de, pedido })
+}
+
+pub async fn executar_geracao(st: &AppState, payload: &Value) -> anyhow::Result<()> {
+    let id: Uuid = payload["historia_id"].as_str().unwrap_or_default().parse()?;
+    let p = preparar(st, id).await?;
+    let resposta = ia::gerar_texto(st, p.familia_id, &p.pedido).await?;
+    gravar(st, id, &p, &resposta).await
+}
+
+/// Texto único para colar em outra IA (ChatGPT, Gemini...): instruções, pedido e formato da resposta.
+pub fn prompt_para_copiar(p: &ia::PedidoTexto) -> String {
+    format!(
+        "{}\n\n{}\n\nFORMATO DA RESPOSTA: responda SOMENTE com um objeto JSON válido (sem texto antes ou depois), \
+         seguindo este JSON Schema:\n{}\n",
+        p.sistema.trim(),
+        p.prompt.trim(),
+        serde_json::to_string_pretty(&p.schema).unwrap_or_default()
+    )
+}
+
+/// Grava a resposta da IA (da fila ou colada pela família) como o texto da história.
+pub async fn gravar(st: &AppState, id: Uuid, p: &Preparo, resposta: &Value) -> anyhow::Result<()> {
+    let (h, citados, todos, continua_de) = (p, &p.citados, &p.todos, &p.continua_de);
     let titulo = resposta["titulo"].as_str().unwrap_or("Nova história").trim().to_string();
     let faixa = resposta["faixa"].as_str().filter(|f| FAIXAS.contains(f)).unwrap_or(&h.faixa).to_string();
     let conteudo: Conteudo = serde_json::from_value(json!({ "paginas": resposta["paginas"], "secundarios": resposta["secundarios"] }))?;
-    let conteudo = normalizar(conteudo, &h.narracao, &citados, &todos);
+    let conteudo = normalizar(conteudo, &h.narracao, citados, todos);
     if conteudo.paginas.is_empty() {
         anyhow::bail!("a IA devolveu uma história vazia");
     }
@@ -110,7 +144,7 @@ pub async fn executar_geracao(st: &AppState, payload: &Value) -> anyhow::Result<
     .bind(&titulo)
     .bind(&slug)
     .bind(&valor)
-    .bind(&continua_de)
+    .bind(continua_de)
     .bind(&faixa)
     .execute(&mut *tx)
     .await?;

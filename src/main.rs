@@ -111,6 +111,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/historias", get(historias::lista).post(historias::criar))
         .route("/historias/{id}", get(historias::abrir))
         .route("/historias/{id}/regerar", post(historias::regerar))
+        .route("/historias/{id}/importar", post(historias::importar))
         .route("/historias/{id}/apagar", post(historias::apagar))
         .route("/mencoes", get(historias::mencoes))
         .route("/historias/{id}/memoria", post(historias::gerar_memoria_rota))

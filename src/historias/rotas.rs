@@ -75,7 +75,7 @@ pub struct FormNova {
     #[serde(default)]
     faixa: String,
     narracao: String,
-    /// "ia" ou "manual"
+    /// "ia", "manual" ou "externo" (copiar o prompt para outra IA e colar a resposta)
     modo: String,
     /// slug da estante onde a história nasce (opcional)
     #[serde(default)]
@@ -116,7 +116,7 @@ pub async fn criar(State(st): State<AppState>, s: Sessao, Form(f): Form<FormNova
     .bind(id)
     .bind(s.familia_id)
     .bind(format!("rascunho-{}", &id.to_string()[..8]))
-    .bind(if manual { "História sem título" } else { "Gerando…" })
+    .bind(if manual { "História sem título" } else if f.modo == "externo" { "Aguardando a resposta da IA" } else { "Gerando…" })
     .bind(&faixa)
     .bind(narracao)
     .bind(Some(f.briefing.trim()).filter(|b| !b.is_empty()))
@@ -134,7 +134,7 @@ pub async fn criar(State(st): State<AppState>, s: Sessao, Form(f): Form<FormNova
             return erro_interno(e.into());
         }
     }
-    if !manual {
+    if f.modo == "ia" {
         if let Err(e) = jobs::enfileirar(&st, "gerar_historia", s.familia_id, json!({ "historia_id": id })).await {
             return erro_interno(e);
         }
@@ -162,6 +162,10 @@ struct PaginaGerando {
     id: Uuid,
     briefing: String,
     erro: Option<String>,
+    /// Sem geração na fila: a família vai usar outra IA (copiar prompt, colar resposta).
+    externo: bool,
+    /// Prompt para copiar (quando é externo ou a geração falhou).
+    prompt: Option<String>,
 }
 
 #[derive(Template)]
@@ -203,11 +207,20 @@ pub async fn abrir(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) 
             Ok(j) => j,
             Err(e) => return erro_interno(e.into()),
         };
+        let externo = job.is_none();
         let erro = match job {
             Some((estado, erro)) if estado == "erro" => Some(erro.unwrap_or_else(|| "erro desconhecido".into())),
             _ => None,
         };
-        return render(PaginaGerando { s, id, briefing: h.briefing.unwrap_or_default(), erro });
+        let prompt = if externo || erro.is_some() {
+            match super::geracao::preparar(&st, id).await {
+                Ok(p) => Some(super::geracao::prompt_para_copiar(&p.pedido)),
+                Err(e) => return erro_interno(e),
+            }
+        } else {
+            None
+        };
+        return render(PaginaGerando { s, id, briefing: h.briefing.unwrap_or_default(), erro, externo, prompt });
     }
 
     let personagens = match personagens_da_familia(&st, s.familia_id).await {
@@ -240,6 +253,33 @@ pub async fn regerar(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>
         return erro_interno(e);
     }
     Redirect::to(&format!("/historias/{id}")).into_response()
+}
+
+#[derive(Deserialize)]
+pub struct Importar {
+    texto: String,
+}
+
+/// POST /historias/{id}/importar — resposta de outra IA (colada ou de arquivo) vira o texto da história.
+pub async fn importar(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>, Json(f): Json<Importar>) -> Response {
+    match historia_da_familia(&st, s.familia_id, id).await {
+        Ok(true) => {}
+        Ok(false) => return StatusCode::NOT_FOUND.into_response(),
+        Err(e) => return erro_interno(e.into()),
+    }
+    let resposta = match crate::ia::extrair_json(&f.texto) {
+        Ok(v) if v["paginas"].is_array() => v,
+        Ok(_) => return erro_json("O JSON não tem \"paginas\". Copie a resposta inteira da IA."),
+        Err(_) => return erro_json("Não achei um JSON na resposta. Copie a resposta inteira da IA (de { até })."),
+    };
+    let p = match super::geracao::preparar(&st, id).await {
+        Ok(p) => p,
+        Err(e) => return erro_interno(e),
+    };
+    match super::geracao::gravar(&st, id, &p, &resposta).await {
+        Ok(()) => Json(json!({ "ok": true })).into_response(),
+        Err(e) => erro_json(format!("Não deu para usar a resposta: {e}")),
+    }
 }
 
 #[derive(Deserialize)]
