@@ -258,6 +258,7 @@ body.crianca { background:linear-gradient(180deg,#ffe9c7,#fff8ef 40%); min-heigh
 .previa-envio img { width:96px; height:96px; object-fit:cover; border-radius:10px; border:1px solid var(--borda); display:block; }
 .previa-envio .tirar { position:absolute; top:-6px; right:-6px; width:24px; height:24px; padding:0; border-radius:50%; font-size:.8em; line-height:1; }
 article.variante { scroll-margin-top:16px; }
-.imagem-base { display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap; margin-bottom:12px; }
-.imagem-base > div:last-child { flex:1; min-width:220px; display:grid; gap:6px; }
-.imagem-base .sem-img { width:110px; height:110px; display:grid; place-items:center; font-size:2.4em; border:1px dashed var(--borda); border-radius:10px; }
+.estilos-ficha, .fotos-ficha { display:grid; gap:8px; margin-bottom:14px; }
+.estilos-ficha h3, .fotos-ficha h3 { margin:0; font-size:1em; }
+.estilo-card { display:grid; gap:2px; justify-items:center; text-align:center; }
+.estilo-card .linha { gap:6px; }

@@ -100,3 +100,19 @@ test('tipo do secundário: o da IA, ou deduzido pela descrição', () => {
   assert.equal(L.adivinharTipo({ nome: 'Robozinho', descricao: 'robô de lata' }), 'robo');
   assert.equal(L.adivinharTipo({ nome: 'Dona Zelinda', descricao: 'senhora de óculos' }), 'adulto');
 });
+
+test('variante sem imagem usa o estilo dela na ficha (ou o principal)', () => {
+  const ps = [{ slug: 'pedro', nome: 'Pedro', ficha: { estilos: [
+    { slug: 'pixar', nome: 'Pixar', imagem: 'img-pixar' }, { slug: 'anime', nome: 'Anime', imagem: 'img-anime' }] },
+  variante_atual: 'pokemon', variantes: [
+    { slug: 'pokemon', nome: 'Pokémon', referencias: [], estilo: 'Anime' },
+    { slug: 'pirata', nome: 'Pirata', referencias: [], estilo: 'Aquarela' },
+    { slug: 'ranger', nome: 'Ranger', referencias: ['img-ranger'], estilo: 'Anime' }] }];
+  const ref = (v) => L.referencias(ps, { personagens: [{ slug: 'pedro', variante: v }] })[0];
+  assert.equal(ref('pokemon').ref, 'img-anime');
+  assert.equal(ref('pokemon').emprestada, 'Pedro · Anime');
+  assert.equal(ref('pirata').ref, 'img-pixar');
+  assert.equal(ref('ranger').ref, 'img-ranger');
+  assert.equal(ref('ranger').emprestada, null);
+  assert.equal(L.miniatura(ps, 'pedro', 'pokemon'), '/midia/img-anime');
+});

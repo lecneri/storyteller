@@ -45,10 +45,10 @@ struct PaginaLista {
 }
 
 pub(super) async fn lista_com(st: &AppState, s: Sessao, erro: Option<String>) -> Response {
-    // Miniatura: primeira referência da variante atual (senão a imagem base da ficha, ou de qualquer variante).
+    // Miniatura: primeira referência da variante atual (senão o estilo principal da ficha, ou de qualquer variante).
     let itens = sqlx::query_as::<_, ItemLista>(
         "SELECT p.slug, p.nome, p.tipo, va.nome AS variante,
-                COALESCE(va.referencias[1], (p.ficha->>'imagem')::uuid,
+                COALESCE(va.referencias[1], (p.ficha->'estilos'->0->>'imagem')::uuid,
                          (SELECT v.referencias[1] FROM conteudo.variantes v
                            WHERE v.personagem_id = p.id AND cardinality(v.referencias) > 0
                            ORDER BY v.criado_em LIMIT 1)) AS miniatura
@@ -143,7 +143,7 @@ pub async fn criar(State(st): State<AppState>, s: Sessao, mp: axum::extract::Mul
     match r {
         Ok(_) => {
             if !arquivos.is_empty() {
-                if let Err(msg) = super::base::criar(&st, &s, &slug, &arquivos).await {
+                if let Err(msg) = super::estilos::criar(&st, &s, &slug, "Principal", &arquivos).await {
                     return detalhe_com(&st, s, &slug, Some(msg)).await;
                 }
             }
@@ -254,13 +254,21 @@ impl PaginaPersonagem {
         prompt_model_sheet(&self.p.nome, &self.p.campo("aparencia"), None, !self.fotos().is_empty())
     }
     fn sem_imagem(&self) -> bool {
-        self.imagem_base().is_none() && self.variantes.iter().all(|v| v.referencias.is_empty())
+        self.estilos().is_empty() && self.variantes.iter().all(|v| v.referencias.is_empty())
     }
-    fn imagem_base(&self) -> Option<String> {
-        super::base::da_ficha(&self.p.ficha).map(|u| u.to_string())
+    fn estilos(&self) -> Vec<super::estilos::Estilo> {
+        super::estilos::estilos(&self.p.ficha)
     }
-    fn eh_base(&self, r: &Uuid) -> bool {
-        super::base::da_ficha(&self.p.ficha) == Some(*r)
+    fn sugestoes_estilo(&self) -> Vec<&'static str> {
+        let tem = self.estilos();
+        super::estilos::SUGESTOES.iter().copied().filter(|s| !tem.iter().any(|e| e.slug == util::slug(s))).collect()
+    }
+    fn eh_estilo(&self, r: &Uuid) -> bool {
+        self.estilos().iter().any(|e| e.imagem == *r)
+    }
+    /// Estilo da ficha que a variante usa (pelo nome), se a ficha tiver estilos.
+    fn estilo_da_variante(&self, v: &Variante) -> Option<String> {
+        super::estilos::imagem_do_estilo(&self.p.ficha, v.estilo.as_deref()).map(|(_, n)| n)
     }
     fn foto_na_variante(&self, v: &Variante, foto: &str) -> bool {
         v.referencias.iter().any(|r| r.to_string() == foto)

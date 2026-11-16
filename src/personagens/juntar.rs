@@ -162,17 +162,19 @@ fn juntar_vozes_extras(destino: &Value, origem: &Value) -> Value {
 }
 
 /// Ficha do destino com as fotos da origem somadas (as fotos só ficam no servidor).
-/// A imagem base da origem vira a do destino se ele não tiver; senão entra nas fotos (não se perde).
+/// Os estilos da origem entram no destino (os de nome repetido ficam com a imagem do destino).
 fn juntar_fotos(ficha_destino: &Value, ficha_origem: &Value) -> Value {
     let mut ficha = ficha_destino.clone();
     let mut fotos: Vec<Value> = ficha["fotos"].as_array().cloned().unwrap_or_default();
     fotos.extend(ficha_origem["fotos"].as_array().cloned().unwrap_or_default());
-    if let Some(img) = ficha_origem.get("imagem").filter(|v| v.is_string()) {
-        if ficha.get("imagem").is_some_and(|v| v.is_string()) {
-            fotos.push(img.clone());
-        } else {
-            ficha["imagem"] = img.clone();
+    let mut estilos: Vec<Value> = ficha["estilos"].as_array().cloned().unwrap_or_default();
+    for e in ficha_origem["estilos"].as_array().into_iter().flatten() {
+        if !estilos.iter().any(|x| x["slug"] == e["slug"]) {
+            estilos.push(e.clone());
         }
+    }
+    if !estilos.is_empty() {
+        ficha["estilos"] = Value::Array(estilos);
     }
     if !fotos.is_empty() {
         ficha["fotos"] = Value::Array(fotos);
@@ -350,8 +352,9 @@ mod testes {
         assert_eq!(f, json!({ "aparencia": "x", "fotos": ["a", "b"] }));
         // Sem fotos dos dois lados: a ficha fica igual (sem "fotos": []).
         assert_eq!(juntar_fotos(&json!({ "aparencia": "x" }), &json!({})), json!({ "aparencia": "x" }));
-        // Imagem base: vai para o destino sem imagem; com imagem, a da origem entra nas fotos.
-        assert_eq!(juntar_fotos(&json!({}), &json!({ "imagem": "i" })), json!({ "imagem": "i" }));
-        assert_eq!(juntar_fotos(&json!({ "imagem": "d" }), &json!({ "imagem": "i" })), json!({ "imagem": "d", "fotos": ["i"] }));
+        // Estilos: somam; nome repetido fica com o do destino.
+        let f = juntar_fotos(&json!({ "estilos": [{ "slug": "pixar", "imagem": "d" }] }),
+                             &json!({ "estilos": [{ "slug": "pixar", "imagem": "o" }, { "slug": "anime", "imagem": "a" }] }));
+        assert_eq!(f["estilos"], json!([{ "slug": "pixar", "imagem": "d" }, { "slug": "anime", "imagem": "a" }]));
     }
 }

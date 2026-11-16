@@ -17,14 +17,23 @@
 
   const personagem = (personagens, slug) => personagens.find((p) => p.slug === slug);
 
-  // Primeira imagem da variante indicada (ou da atual); senão a imagem base da ficha, ou de qualquer variante com imagem.
+  // Imagem do estilo da ficha que a variante pede (pelo nome do estilo dela); senão a do estilo principal.
+  const slugEstilo = (t) => (t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  function estiloDaFicha(p, v) {
+    const lista = ((p.ficha || {}).estilos || []).filter((e) => e && e.imagem);
+    const pedido = slugEstilo(v && v.estilo);
+    return lista.find((e) => pedido && e.slug === pedido) || lista[0] || null;
+  }
+
+  // Primeira imagem da variante indicada (ou da atual); senão a do estilo da ficha, ou de qualquer variante com imagem.
   function miniatura(personagens, slug, variante) {
     const p = personagem(personagens, slug);
     if (!p) return null;
     const vs = p.variantes || [];
     const v = vs.find((x) => x.slug === (variante || p.variante_atual));
     const outra = vs.find((x) => (x.referencias || []).length);
-    const ref = (v && (v.referencias || [])[0]) || (p.ficha || {}).imagem || (outra && outra.referencias[0]);
+    const est = estiloDaFicha(p, v);
+    const ref = (v && (v.referencias || [])[0]) || (est && est.imagem) || (outra && outra.referencias[0]);
     return ref ? '/midia/' + ref : null;
   }
 
@@ -43,9 +52,10 @@
       const v = varianteDe(personagens, n);
       let ref = v && (v.referencias || [])[0];
       let emprestada = null;
-      if (!ref && (p.ficha || {}).imagem) {
-        // Variante sem imagem: a imagem base da ficha (o personagem "puro") dá o rosto e os traços.
-        ref = p.ficha.imagem; emprestada = p.nome;
+      const est = !ref && estiloDaFicha(p, v);
+      if (est) {
+        // Variante sem imagem: o estilo dela na ficha (o personagem "puro" naquele traço) dá o rosto e os traços.
+        ref = est.imagem; emprestada = p.nome + ' · ' + est.nome;
       }
       if (!ref) {
         const comImagem = (x) => x !== v && (x.referencias || []).length;

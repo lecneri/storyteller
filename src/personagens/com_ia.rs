@@ -168,8 +168,8 @@ pub async fn criar_com_ia(State(st): State<AppState>, s: Sessao, mp: Multipart) 
                     .bind(img)
                     .execute(&st.db)
                     .await;
-                // O primeiro desenho também vira a imagem base da ficha.
-                let _ = super::base::definir(&st, s.familia_id, &slug, Some(img)).await;
+                // O primeiro desenho também vira um estilo da ficha (o principal).
+                let _ = super::estilos::definir(&st, s.familia_id, &slug, &estilo, img).await;
             }
             Err(e) => {
                 tracing::warn!("model sheet pela API falhou: {e:#}");
@@ -197,9 +197,9 @@ pub async fn gerar_ref(State(st): State<AppState>, s: Sessao, Path((slug, vslug)
         return Redirect::to("/personagens").into_response();
     };
     let fotos: Vec<Uuid> = ficha["fotos"].as_array().into_iter().flatten().filter_map(|v| v.as_str()?.parse().ok()).collect();
-    // A imagem principal do personagem (a imagem base da ficha; sem ela, a da variante atual) vai sempre na frente,
+    // A imagem do estilo da ficha que a variante usa (sem estilo na ficha, a da variante atual) vai sempre na frente,
     // como referência de rosto, idade e proporções: assim toda variante nova continua sendo o mesmo personagem.
-    let principal: Option<Uuid> = match super::base::da_ficha(&ficha).filter(|b| !refs_atuais.contains(b)) {
+    let principal: Option<Uuid> = match super::estilos::imagem_do_estilo(&ficha, estilo.as_deref()).map(|(i, _)| i).filter(|b| !refs_atuais.contains(b)) {
         Some(b) => Some(b),
         None => sqlx::query_scalar(
         "SELECT v.referencias[1] FROM conteudo.variantes v JOIN conteudo.personagens p ON p.id = v.personagem_id
@@ -223,8 +223,8 @@ pub async fn gerar_ref(State(st): State<AppState>, s: Sessao, Path((slug, vslug)
     let mut prompt = prompt_model_sheet(&nome, &aparencia, estilo.as_deref(), !refs.is_empty());
     if emprestou {
         prompt.push_str(
-            "\nA primeira imagem anexada é o mesmo personagem na versão principal: copie dela o rosto, o cabelo, a idade e as proporções do corpo. \
-             A roupa, a forma e o estilo são os descritos acima, não os dessa imagem.",
+            "\nA primeira imagem anexada é o mesmo personagem, já no traço certo: copie dela o rosto, o cabelo, a idade, as proporções do corpo e o traço. \
+             A roupa e a forma são as descritas acima, não as dessa imagem.",
         );
         if !refs_atuais.is_empty() {
             prompt.push_str("\nAs outras imagens anexadas são desta versão: use para a roupa e os acessórios, mas a idade e o rosto vêm da primeira.");
