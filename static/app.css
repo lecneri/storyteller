@@ -248,3 +248,4 @@ body.crianca { background:linear-gradient(180deg,#ffe9c7,#fff8ef 40%); min-heigh
 .estado-fala.gravada { color:var(--cor); font-weight:700; }
 .bloco button.gravando { color:#fff; background:var(--erro); animation:pulsa 1s ease-in-out infinite; }
 @keyframes pulsa { 50% { opacity:.6; } }
+.carrossel-nav .nome-variante { white-space:nowrap; max-width:40%; overflow:hidden; text-overflow:ellipsis; }
