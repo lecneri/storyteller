@@ -214,7 +214,7 @@
       aviso('Imagem gerada e salva ✓');
     } catch (e) {
       aviso('Não gerou: ' + e.message);
-      botao.disabled = false; botao.textContent = '✨ Gerar imagem pela API';
+      botao.disabled = false; botao.textContent = '✨ Gerar imagem com IA';
     }
   }
   // Gera pela API, uma de cada vez, as imagens das páginas (só as sem imagem, ou todas se o usuário quiser).
@@ -369,7 +369,7 @@
         el('a', { href: 'https://gemini.google.com/app', target: '_blank', rel: 'noopener' }, 'Abrir Gemini ↗'),
         el('a', { href: 'https://labs.google/fx/tools/flow', target: '_blank', rel: 'noopener' }, 'Abrir Flow ↗')),
       previaMidia(pag),
-      dados.imagem_api ? el('button', { type: 'button', onclick: (e) => gerarPelaApi(pag, e.currentTarget) }, '✨ Gerar imagem pela API') : null,
+      dados.imagem_api ? el('button', { type: 'button', onclick: (e) => gerarPelaApi(pag, e.currentTarget) }, '✨ Gerar imagem com IA') : null,
       areaEnvio(pag),
       pag.midia && pag.midia.tipo.startsWith('image/') ? el('div', { class: 'linha-kit' },
         el('span', {}, '🎬 Animar esta imagem'),
@@ -482,6 +482,32 @@
     return el('div', { class: 'linha' }, sel, botao);
   }
 
+  // "É o personagem…": o secundário passa a ser um personagem que a família já tem (ex.: "Papai" → Papai Dudu).
+  // Falas usam a voz do personagem, as cenas passam a levar a imagem dele.
+  function associarAPersonagem(x) {
+    if (!personagens.length) return null;
+    const norm = (s) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+    const parecido = personagens.find((p) => norm(p.nome) === norm(x.nome) || ((p.ficha || {}).apelidos || []).some((a) => norm(a) === norm(x.nome)));
+    const sel = el('select', { title: 'Personagem da família' },
+      el('option', { value: '' }, '🔗 É o personagem…'),
+      personagens.map((p) => el('option', { value: p.slug }, p.nome + (parecido === p ? ' (parece ser)' : ''))));
+    sel.addEventListener('change', async () => {
+      const p = personagens.find((q) => q.slug === sel.value);
+      if (!p) return;
+      if (!confirm('“' + x.nome + '” desta história passa a ser ' + p.nome + '? As falas usam a voz de ' + p.nome + ' e as cenas levam a imagem dele.')) { sel.value = ''; return; }
+      L.secundarioVirouPersonagem(estado.paginas, x.nome, p.slug);
+      // Sem repetir o personagem na mesma cena.
+      for (const pg of estado.paginas) {
+        const vistos = new Set();
+        pg.personagens = (pg.personagens || []).filter((n) => !vistos.has(n.slug) && vistos.add(n.slug));
+      }
+      estado.secundarios.splice(estado.secundarios.indexOf(x), 1);
+      mudou(); desenhar(); await salvar();
+      aviso(x.nome + ' agora é ' + p.nome + ' ✓');
+    });
+    return sel;
+  }
+
   // Personagens só desta história (sem ficha): nome + aparência fixa, usada nos prompts de imagem.
   function secundariosUI() {
     const lista = estado.secundarios;
@@ -497,6 +523,7 @@
         (() => { const t = el('textarea', { rows: 2, placeholder: 'Aparência: corpo, rosto, roupa, cores, acessórios…',
           oninput: (e) => { x.descricao = e.target.value; mudou(); } }); t.value = x.descricao || ''; return t; })(),
         salvarComoPersonagem(x),
+        associarAPersonagem(x),
         el('button', { type: 'button', class: 'link perigo', onclick: () => {
           if (!confirm('Tirar ' + x.nome + ' desta história? (as falas continuam)')) return;
           lista.splice(i, 1);
@@ -738,7 +765,7 @@
         statusNarracao,
         dados.imagem_api && estado.paginas.length ? el('button', { type: 'button', class: 'secundario', 'data-gerar-todas': true,
           title: 'Gera pela API a imagem de cada página sem imagem, uma por vez',
-          onclick: (e) => gerarTodas(e.currentTarget) }, gerandoTodas ? '⏹ Parar' : '🖼️ Gerar todas as imagens') : null,
+          onclick: (e) => gerarTodas(e.currentTarget) }, gerandoTodas ? '⏹ Parar' : '🖼️ Gerar todas as imagens com IA') : null,
         el('button', { type: 'button', class: 'secundario', onclick: gerarNarracao }, '🎙️ Gerar narração'),
         status, el('button', { type: 'button', onclick: salvar }, '💾 Salvar')),
     ].flat(Infinity).filter(Boolean));

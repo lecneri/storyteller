@@ -63,10 +63,6 @@
           <div class="linha-kit">
             <a href="https://chatgpt.com/" target="_blank" rel="noopener">Abrir ChatGPT ↗</a>
             <a href="https://gemini.google.com/app" target="_blank" rel="noopener">Abrir Gemini ↗</a>
-            {% if imagem_api %}
-            <form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/gerar-ref" class="inline" onsubmit="this.querySelector('button').textContent='⏳ Gerando…'">
-              <button type="submit" class="pequeno">✨ Gerar pela API</button></form>
-            {% endif %}
           </div>
         </details>
         {% endif %}
@@ -74,6 +70,13 @@
           <input type="file" name="refs" accept="image/png,image/jpeg,image/webp,image/gif" multiple required>
           <button type="submit">Adicionar imagens</button>
         </form>
+        {% if imagem_api && !v.arquivada %}
+        <form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/gerar-ref" class="linha"
+              onsubmit="const b = this.querySelector('button'); b.disabled = true; b.textContent = '⏳ Gerando (até 1 min)…'">
+          <button type="submit" class="secundario">✨ Gerar imagem com IA</button>
+          <small class="suave">{% if v.referencias.is_empty() %}Desenha pela descrição{% if !self.fotos().is_empty() %} e pelas fotos{% endif %}; se outra variante tiver imagem, usa o rosto dela.{% else %}Mais um desenho, usando as imagens desta variante como referência.{% endif %}</small>
+        </form>
+        {% endif %}
       </article>
     {% endfor %}
   </section>

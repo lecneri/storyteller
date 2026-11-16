@@ -183,10 +183,33 @@ pub async fn gerar_ref(State(st): State<AppState>, s: Sessao, Path((slug, vslug)
     };
     let fotos: Vec<Uuid> = ficha["fotos"].as_array().into_iter().flatten().filter_map(|v| v.as_str()?.parse().ok()).collect();
     let mut ids = refs_atuais.clone();
+    let mut emprestou = false;
+    if ids.is_empty() {
+        // Variante nova sem imagem: a imagem de outra variante (a atual, se tiver) vai como referência de rosto e traços.
+        let emprestada: Option<Uuid> = sqlx::query_scalar(
+            "SELECT v.referencias[1] FROM conteudo.variantes v JOIN conteudo.personagens p ON p.id = v.personagem_id
+              WHERE p.familia_id = $1 AND p.slug = $2 AND cardinality(v.referencias) > 0
+              ORDER BY (v.id = p.variante_atual) DESC, v.criado_em LIMIT 1",
+        )
+        .bind(s.familia_id)
+        .bind(&slug)
+        .fetch_optional(&st.db)
+        .await
+        .unwrap_or(None)
+        .flatten();
+        emprestou = emprestada.is_some();
+        ids.extend(emprestada);
+    }
     ids.extend(fotos);
     let refs = crate::imagem::carregar_refs(&st, s.familia_id, &ids).await;
     let aparencia = descricao.unwrap_or_else(|| ficha["aparencia"].as_str().unwrap_or_default().to_string());
-    let prompt = prompt_model_sheet(&nome, &aparencia, estilo.as_deref(), !refs.is_empty());
+    let mut prompt = prompt_model_sheet(&nome, &aparencia, estilo.as_deref(), !refs.is_empty());
+    if emprestou {
+        prompt.push_str(
+            "\nA primeira imagem anexada é o mesmo personagem em outra versão: copie dela só o rosto, o cabelo e os traços. \
+             A roupa, a forma e o estilo são os descritos acima, não os da imagem.",
+        );
+    }
     match crate::imagem::gerar(&st, s.familia_id, &s.familia_slug, &format!("personagens/{slug}/refs"), &prompt, &refs).await {
         Ok((img, _)) => {
             let _ = sqlx::query("UPDATE conteudo.variantes SET referencias = array_append(referencias, $2) WHERE id = $1")
