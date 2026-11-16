@@ -6,8 +6,30 @@
   <p class="largo linha" style="justify-content:space-between"><a href="/personagens">← Personagens</a> <a href="/compartilhar/personagem/{{ p.id }}">🔗 Compartilhar</a></p>
   {% if let Some(e) = erro %}<p class="erro largo">{{ e }}</p>{% endif %}
 
-  <section class="cartao largo">
+  <section class="cartao largo" id="ficha">
     <h2>Ficha</h2>
+    <div class="imagem-base">
+      {% if let Some(ref_id) = self.imagem_base() %}
+        <div class="foto-kit">{% include "miniatura.html" %}
+          <form method="post" action="/personagens/{{ p.slug }}/imagem/tirar"
+                onsubmit="return confirm('Tirar a imagem base de {{ p.nome }}?')"><button type="submit" class="pequeno secundario">🗑 Tirar</button></form></div>
+      {% else %}<div class="sem-img">🎭</div>{% endif %}
+      <div>
+        <strong>Imagem base de {{ p.nome }}</strong>
+        <p class="suave">O desenho principal, de onde as variantes derivam: vai como referência de rosto e idade ao gerar uma variante, e é usado quando a variante ainda não tem imagem.</p>
+        <form method="post" action="/personagens/{{ p.slug }}/imagem" enctype="multipart/form-data" class="linha">
+          <input type="file" name="imagem" accept="image/png,image/jpeg,image/webp" required>
+          <button type="submit">{% if self.imagem_base().is_some() %}Trocar imagem{% else %}Enviar imagem{% endif %}</button>
+        </form>
+        {% if imagem_api %}
+        <form method="post" action="/personagens/{{ p.slug }}/imagem/gerar" class="linha"
+              onsubmit="const b = this.querySelector('button'); b.disabled = true; b.textContent = '⏳ Gerando (até 1 min)…'">
+          <button type="submit" class="secundario">✨ Gerar imagem base com IA</button>
+          <small class="suave">Pela aparência da ficha{% if !self.fotos().is_empty() %} e pelas fotos{% endif %}{% if self.imagem_base().is_some() %}, mantendo o rosto da atual{% endif %}.</small>
+        </form>
+        {% endif %}
+      </div>
+    </div>
     <form method="post" action="/personagens/{{ p.slug }}" class="grade-form">
       <label>Nome <input name="nome" value="{{ p.nome }}" required></label>
       <label>@ para citar <small class="suave">(no briefing: @{{ p.slug }})</small>
@@ -27,7 +49,7 @@
     </form>
     <details class="kit-personagem"{% if self.sem_imagem() %} open{% endif %}>
       <summary>🎨 Kit do desenho de referência de {{ p.nome }}</summary>
-      <p class="suave">O desenho principal, pela aparência da ficha{% if !self.fotos().is_empty() %} e pelas fotos{% endif %}. Gere no ChatGPT/Gemini e envie a imagem na variante principal (ex.: "Normal"). Cada variante tem o kit dela, com a roupa que muda.</p>
+      <p class="suave">O desenho principal, pela aparência da ficha{% if !self.fotos().is_empty() %} e pelas fotos{% endif %}. Gere no ChatGPT/Gemini e envie acima, em "Imagem base". Cada variante tem o kit dela, com a roupa que muda.</p>
       {% if !self.fotos().is_empty() %}
       <div class="minis">{% for ref_id in self.fotos() %}{% include "miniatura.html" %}{% endfor %}</div>
       {% endif %}
@@ -79,7 +101,10 @@
           {% for ref_id in v.referencias %}<div class="foto-kit">{% include "miniatura.html" %}
             <form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/tirar-ref/{{ ref_id }}"
                   onsubmit="return confirm('Tirar esta imagem da variante {{ v.nome }}? A IA deixa de usar ela como referência.')">
-              <button type="submit" class="pequeno secundario">🗑 Tirar</button></form></div>{% endfor %}
+              <button type="submit" class="pequeno secundario">🗑 Tirar</button></form>
+            {% if self.eh_base(ref_id) %}<small class="suave">⭐ imagem base</small>{% else %}
+            <form method="post" action="/personagens/{{ p.slug }}/imagem/usar/{{ ref_id }}">
+              <button type="submit" class="pequeno secundario" title="Usar como imagem base de {{ p.nome }} (na ficha)">⭐ Usar como base</button></form>{% endif %}</div>{% endfor %}
           {% if v.referencias.is_empty() %}<p class="suave">Sem imagem: a descrição será usada no prompt.</p>{% endif %}
         </div>
         {% if !v.arquivada %}

@@ -168,6 +168,8 @@ pub async fn criar_com_ia(State(st): State<AppState>, s: Sessao, mp: Multipart) 
                     .bind(img)
                     .execute(&st.db)
                     .await;
+                // O primeiro desenho também vira a imagem base da ficha.
+                let _ = super::base::definir(&st, s.familia_id, &slug, Some(img)).await;
             }
             Err(e) => {
                 tracing::warn!("model sheet pela API falhou: {e:#}");
@@ -195,9 +197,11 @@ pub async fn gerar_ref(State(st): State<AppState>, s: Sessao, Path((slug, vslug)
         return Redirect::to("/personagens").into_response();
     };
     let fotos: Vec<Uuid> = ficha["fotos"].as_array().into_iter().flatten().filter_map(|v| v.as_str()?.parse().ok()).collect();
-    // A imagem principal do personagem (da variante atual, ou a mais antiga com imagem) vai sempre na frente,
+    // A imagem principal do personagem (a imagem base da ficha; sem ela, a da variante atual) vai sempre na frente,
     // como referência de rosto, idade e proporções: assim toda variante nova continua sendo o mesmo personagem.
-    let principal: Option<Uuid> = sqlx::query_scalar(
+    let principal: Option<Uuid> = match super::base::da_ficha(&ficha).filter(|b| !refs_atuais.contains(b)) {
+        Some(b) => Some(b),
+        None => sqlx::query_scalar(
         "SELECT v.referencias[1] FROM conteudo.variantes v JOIN conteudo.personagens p ON p.id = v.personagem_id
           WHERE p.familia_id = $1 AND p.slug = $2 AND v.id <> $3 AND cardinality(v.referencias) > 0 AND NOT v.arquivada
           ORDER BY (v.id = p.variante_atual) DESC, v.criado_em LIMIT 1",
@@ -208,7 +212,8 @@ pub async fn gerar_ref(State(st): State<AppState>, s: Sessao, Path((slug, vslug)
     .fetch_optional(&st.db)
     .await
     .unwrap_or(None)
-    .flatten();
+    .flatten(),
+    };
     let emprestou = principal.is_some();
     let mut ids: Vec<Uuid> = principal.into_iter().collect();
     ids.extend(refs_atuais.iter().copied());

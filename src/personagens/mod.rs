@@ -1,5 +1,6 @@
 //! Personagens e variantes (forma × estilo).
 
+pub mod base;
 mod com_ia;
 mod juntar;
 mod paginas;

@@ -17,13 +17,14 @@
 
   const personagem = (personagens, slug) => personagens.find((p) => p.slug === slug);
 
-  // Primeira imagem da variante indicada (ou da atual, ou de qualquer variante com imagem).
+  // Primeira imagem da variante indicada (ou da atual); senão a imagem base da ficha, ou de qualquer variante com imagem.
   function miniatura(personagens, slug, variante) {
     const p = personagem(personagens, slug);
     if (!p) return null;
     const vs = p.variantes || [];
-    const v = vs.find((x) => x.slug === (variante || p.variante_atual)) || vs.find((x) => (x.referencias || []).length);
-    const ref = v && (v.referencias || [])[0];
+    const v = vs.find((x) => x.slug === (variante || p.variante_atual));
+    const outra = vs.find((x) => (x.referencias || []).length);
+    const ref = (v && (v.referencias || [])[0]) || (p.ficha || {}).imagem || (outra && outra.referencias[0]);
     return ref ? '/midia/' + ref : null;
   }
 
@@ -42,6 +43,10 @@
       const v = varianteDe(personagens, n);
       let ref = v && (v.referencias || [])[0];
       let emprestada = null;
+      if (!ref && (p.ficha || {}).imagem) {
+        // Variante sem imagem: a imagem base da ficha (o personagem "puro") dá o rosto e os traços.
+        ref = p.ficha.imagem; emprestada = p.nome;
+      }
       if (!ref) {
         const comImagem = (x) => x !== v && (x.referencias || []).length;
         const outra = (p.variantes || []).find((x) => comImagem(x) && x.slug === p.variante_atual) || (p.variantes || []).find(comImagem);

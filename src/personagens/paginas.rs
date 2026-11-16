@@ -45,10 +45,10 @@ struct PaginaLista {
 }
 
 pub(super) async fn lista_com(st: &AppState, s: Sessao, erro: Option<String>) -> Response {
-    // Miniatura: primeira referência da variante atual (ou de qualquer variante).
+    // Miniatura: primeira referência da variante atual (senão a imagem base da ficha, ou de qualquer variante).
     let itens = sqlx::query_as::<_, ItemLista>(
         "SELECT p.slug, p.nome, p.tipo, va.nome AS variante,
-                COALESCE(va.referencias[1],
+                COALESCE(va.referencias[1], (p.ficha->>'imagem')::uuid,
                          (SELECT v.referencias[1] FROM conteudo.variantes v
                            WHERE v.personagem_id = p.id AND cardinality(v.referencias) > 0
                            ORDER BY v.criado_em LIMIT 1)) AS miniatura
@@ -143,7 +143,7 @@ pub async fn criar(State(st): State<AppState>, s: Sessao, mp: axum::extract::Mul
     match r {
         Ok(_) => {
             if !arquivos.is_empty() {
-                if let Err(msg) = super::variantes::criar_normal(&st, &s, &slug, &arquivos).await {
+                if let Err(msg) = super::base::criar(&st, &s, &slug, &arquivos).await {
                     return detalhe_com(&st, s, &slug, Some(msg)).await;
                 }
             }
@@ -197,14 +197,14 @@ pub async fn salvar_ficha(
 pub(super) struct Personagem {
     pub(super) id: Uuid,
     slug: String,
-    nome: String,
+    pub(super) nome: String,
     tipo: String,
-    ficha: serde_json::Value,
+    pub(super) ficha: serde_json::Value,
     pub(super) variante_atual: Option<Uuid>,
 }
 
 impl Personagem {
-    fn campo(&self, k: &str) -> String {
+    pub(super) fn campo(&self, k: &str) -> String {
         self.ficha.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string()
     }
     fn apelidos(&self) -> String {
@@ -254,7 +254,13 @@ impl PaginaPersonagem {
         prompt_model_sheet(&self.p.nome, &self.p.campo("aparencia"), None, !self.fotos().is_empty())
     }
     fn sem_imagem(&self) -> bool {
-        self.variantes.iter().all(|v| v.referencias.is_empty())
+        self.imagem_base().is_none() && self.variantes.iter().all(|v| v.referencias.is_empty())
+    }
+    fn imagem_base(&self) -> Option<String> {
+        super::base::da_ficha(&self.p.ficha).map(|u| u.to_string())
+    }
+    fn eh_base(&self, r: &Uuid) -> bool {
+        super::base::da_ficha(&self.p.ficha) == Some(*r)
     }
     fn foto_na_variante(&self, v: &Variante, foto: &str) -> bool {
         v.referencias.iter().any(|r| r.to_string() == foto)
