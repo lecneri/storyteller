@@ -145,13 +145,14 @@ pub async fn arquivos_familia(st: &AppState, familia_id: Uuid, familia_slug: &st
         add(
             format!("{base}/personagens/{slug}/main.md"),
             format!(
-                "---\nid: {slug}\nnome: {}\ntipo: {tipo}\napelidos: {}\nvoz: {}\naparencia: {}\n---\n\n## Personalidade\n{}\n\n## Jeito de falar\n{}\n",
+                "---\nid: {slug}\nnome: {}\ntipo: {tipo}\napelidos: {}\nvoz: {}\naparencia: {}\n---\n\n## Personalidade\n{}\n\n## Jeito de falar\n{}\n\n## Relações\n{}\n",
                 yaml_str(nome),
                 ficha["apelidos"],
                 voz,
                 yaml_str(&campo("aparencia")),
                 campo("personalidade"),
-                campo("jeito_falar")
+                campo("jeito_falar"),
+                campo("relacoes")
             )
             .into_bytes(),
         );

@@ -84,6 +84,9 @@ pub struct FormFicha {
     personalidade: String,
     #[serde(default)]
     jeito_falar: String,
+    /// Relações com outros personagens, em texto livre (vai para a IA): "irmão mais velho do @pedro".
+    #[serde(default)]
+    relacoes: String,
     /// Novo @ para citar (só na ficha de um personagem que já existe).
     #[serde(default)]
     arroba: String,
@@ -97,6 +100,7 @@ impl FormFicha {
             "aparencia": self.aparencia.trim(),
             "personalidade": self.personalidade.trim(),
             "jeito_falar": self.jeito_falar.trim(),
+            "relacoes": self.relacoes.trim(),
         })
     }
     fn tipo_valido(&self) -> bool {
@@ -118,6 +122,7 @@ pub async fn criar(State(st): State<AppState>, s: Sessao, mp: axum::extract::Mul
         aparencia: c("aparencia"),
         personalidade: c("personalidade"),
         jeito_falar: c("jeito_falar"),
+        relacoes: c("relacoes"),
         arroba: String::new(),
     };
     let nome = f.nome.trim().to_string();

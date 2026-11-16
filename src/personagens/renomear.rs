@@ -111,6 +111,23 @@ async fn aplicar(tx: &mut sqlx::PgConnection, familia: Uuid, troca: Troca<'_>) -
                 .await?;
         }
     }
+    // Relações escritas nas fichas ("irmão do @super-pedro").
+    let fichas: Vec<(Uuid, String)> = sqlx::query_as(
+        "SELECT id, ficha->>'relacoes' FROM conteudo.personagens WHERE familia_id = $1 AND COALESCE(ficha->>'relacoes', '') LIKE '%@%'",
+    )
+    .bind(familia)
+    .fetch_all(&mut *tx)
+    .await?;
+    for (id, rel) in fichas {
+        let nova = trocar_mencoes(&rel, troca);
+        if nova != rel {
+            sqlx::query("UPDATE conteudo.personagens SET ficha = jsonb_set(ficha, '{relacoes}', to_jsonb($2::text)) WHERE id = $1")
+                .bind(id)
+                .bind(&nova)
+                .execute(&mut *tx)
+                .await?;
+        }
+    }
     let estantes: Vec<(Uuid, Value)> =
         sqlx::query_as("SELECT id, padroes FROM conteudo.estantes WHERE familia_id = $1").bind(familia).fetch_all(&mut *tx).await?;
     for (id, mut padroes) in estantes {
