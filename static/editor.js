@@ -33,10 +33,12 @@
   const miniatura = (slug, variante) => L.miniatura(personagens, slug, variante);
   const referencias = (pag) => L.referencias(personagens, pag);
   const promptImagem = (pag) => L.promptImagem(pag, { personagens, secundarios: estado.secundarios, estilo: dados.estilo, faixa: dados.faixa });
-  function avatar(quem) {
+  function avatar(quem, pag) {
     if (quem === 'narrador') return el('div', { class: 'avatar', title: 'Narrador' }, '🎙️');
     if (quem.startsWith('voz:')) return el('div', { class: 'avatar', title: 'Voz do sistema' }, '🎭');
-    const src = miniatura(quem);
+    // Foto da variante que está na cena desta página (ex.: Ranger Vermelho), senão a atual.
+    const naCena = ((pag && pag.personagens) || []).find((n) => n.slug === quem);
+    const src = miniatura(quem, naCena && naCena.variante);
     const emoji = { animal: '🐶', robo: '🤖', vilao: '😈', adulto: '🧑', criatura: '🐉' }[(personagem(quem) || {}).tipo] || '🧒';
     return src ? el('img', { class: 'avatar', src, alt: '' }) : el('div', { class: 'avatar' }, emoji);
   }
@@ -64,22 +66,38 @@
 
   // Seletor de quem fala: personagens e, à parte, as vozes do sistema (para um vilão de uma história só,
   // sem criar personagem). Cada opção tem ▶ para ouvir antes de escolher.
-  function seletorQuem(b) {
+  function seletorQuem(b, pag) {
+    // Variante na cena desta página (se o personagem estiver nela).
+    const cenaDe = (slug) => (pag.personagens || []).find((n) => n.slug === slug);
     const ops = [
       { grupo: 'Personagens' },
       { valor: 'narrador', nome: 'Narrador', rot: '🎙️ Narrador' },
-      ...personagens.map((p) => ({ valor: p.slug, nome: p.nome, rot: p.nome })),
+      ...personagens.flatMap((p) => {
+        const vs = (p.variantes || []).filter((v) => !v.arquivada);
+        // Com mais de uma variante, cada uma aparece abaixo do personagem: escolher põe essa variante na cena.
+        return [{ valor: p.slug, nome: p.nome, rot: p.nome },
+          ...(vs.length > 1 ? vs.map((v) => ({ valor: p.slug, variante: v.slug, nome: p.nome, rot: '↳ ' + v.nome })) : [])];
+      }),
       { grupo: 'Outras vozes (sem personagem)' },
       ...vozesSistema.map((v) => ({ valor: 'voz:' + v.id, sistema: v.id, nome: v.nome.split(' · ')[0], rot: '🎭 ' + v.nome })),
     ];
-    const botao = el('button', { type: 'button', class: 'quem-botao secundario' }, nomeDe(b.quem, b) + ' ▾');
+    const vNaCena = (cenaDe(b.quem) || {}).variante;
+    const vNome = vNaCena && ((((personagem(b.quem) || {}).variantes || []).filter((v) => !v.arquivada).length > 1
+      && ((personagem(b.quem).variantes.find((v) => v.slug === vNaCena)) || {}).nome) || '');
+    const botao = el('button', { type: 'button', class: 'quem-botao secundario' }, nomeDe(b.quem, b) + (vNome ? ' · ' + vNome : '') + ' ▾');
     if (estado.narracao === 'narrador') { botao.disabled = true; return botao; }
     const lista = el('div', { class: 'quem-lista', hidden: true },
       ops.map((op) => op.grupo ? el('div', { class: 'quem-grupo' }, op.grupo)
-        : el('div', { class: 'quem-op' + (op.valor === b.quem ? ' ativa' : '') },
+        : el('div', { class: 'quem-op' + (op.variante ? ' quem-sub' : '') + (op.valor === b.quem
+            && (op.variante ? (cenaDe(op.valor) || {}).variante === op.variante : !(cenaDe(op.valor) || {}).variante) ? ' ativa' : '') },
             el('button', { type: 'button', class: 'pequeno secundario', title: 'Ouvir', onclick: (e) => { e.stopPropagation(); previaVoz(op, e.currentTarget); } }, '▶'),
             el('button', { type: 'button', class: 'link quem-escolher', onclick: () => {
-              b.quem = op.valor; delete b.voz; if (!op.sistema) { delete b.nome; delete b.tom; delete b.velocidade; }
+              if (b.quem !== op.valor) delete b.voz;
+              b.quem = op.valor; if (!op.sistema) { delete b.nome; delete b.tom; delete b.velocidade; }
+              if (op.variante) {
+                const n = cenaDe(op.valor);
+                if (n) n.variante = op.variante; else (pag.personagens = pag.personagens || []).push({ slug: op.valor, variante: op.variante });
+              }
               lista.hidden = true; mudou(); desenhar();
             } }, op.rot))));
     const fechar = (e) => { if (!caixa.contains(e.target)) { lista.hidden = true; document.removeEventListener('click', fechar); } };
@@ -138,7 +156,7 @@
 
   function blocoUI(pag, i) {
     const b = pag.blocos[i];
-    const sel = seletorQuem(b);
+    const sel = seletorQuem(b, pag);
     // Voz do sistema: nome de quem fala (aparece no player).
     const sistema = b.quem.startsWith('voz:') && estado.narracao !== 'narrador';
     const rotulo = (v, sufixo) => (v > 0 ? '+' : '') + v + sufixo;
@@ -163,7 +181,7 @@
       oninput: (e) => { b.texto = e.target.value; mudou(); } });
     txt.value = b.texto || '';
     return el('div', { class: 'bloco' },
-      avatar(b.quem),
+      avatar(b.quem, pag),
       el('div', {},
         el('div', { class: 'cab' }, sel, selVoz, nomeFala,
           el('span', { class: 'acoes' },

@@ -200,6 +200,7 @@ body.crianca { background:linear-gradient(180deg,#ffe9c7,#fff8ef 40%); min-heigh
 .quem-op { display:flex; align-items:center; gap:6px; padding:2px 4px; border-radius:8px; }
 .quem-op.ativa, .quem-op:hover { background:var(--fundo); }
 .quem-op .pequeno { padding:2px 8px; }
+.quem-op.quem-sub { padding-left:20px; font-size:.92em; }
 .quem-escolher { color:var(--texto); text-align:left; flex:1; padding:6px 4px; }
 .voz-sistema { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
 .nome-fala { padding:4px 8px; width:170px; }
