@@ -158,6 +158,7 @@ struct Historia {
     estilo: Option<String>,
     memoria: Option<String>,
     continua: Option<Value>,
+    capa: Option<Uuid>,
 }
 
 #[derive(Template)]
@@ -186,7 +187,7 @@ struct PaginaEditor {
 
 pub async fn abrir(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) -> Response {
     let h = match sqlx::query_as::<_, Historia>(
-        "SELECT h.id, h.titulo, h.faixa, h.narracao, h.briefing, h.conteudo, e.padroes->>'estilo' AS estilo, h.memoria,
+        "SELECT h.id, h.titulo, h.faixa, h.narracao, h.briefing, h.conteudo, e.padroes->>'estilo' AS estilo, h.memoria, h.capa,
                 (SELECT json_agg(json_build_object('id', o.id, 'titulo', o.titulo))::jsonb
                    FROM conteudo.historias o WHERE o.id = ANY(h.continua_de)) AS continua
            FROM conteudo.historias h LEFT JOIN conteudo.estantes e ON e.id = h.estante_principal
@@ -247,7 +248,7 @@ pub async fn abrir(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) 
         "tipos": crate::personagens::TIPOS.iter().map(|(k, n)| json!({ "id": k, "nome": n })).collect::<Vec<_>>(),
         "vozes_sistema": crate::tts::VOZES.iter().map(|(id, n)| json!({ "id": id, "nome": n })).collect::<Vec<_>>(),
         "animacoes": ANIMACOES, "estilo": h.estilo,
-        "memoria": h.memoria, "continua": h.continua,
+        "memoria": h.memoria, "continua": h.continua, "capa": h.capa,
         "imagem_api": crate::imagem::disponivel(&st, s.familia_id).await,
     });
     // JSON dentro de <script>: impede que um texto "</script>" feche a tag.
@@ -533,3 +534,40 @@ pub async fn apagar(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>)
     Redirect::to("/historias").into_response()
 }
 
+
+#[derive(Deserialize)]
+pub struct DefinirCapa {
+    /// Imagem já enviada (POST /historias/{id}/midia ou imagem-ia); null volta para a 1ª imagem do livro.
+    midia: Option<Uuid>,
+}
+
+/// POST /historias/{id}/capa — escolhe a imagem de capa (ou volta a usar a da página 1).
+pub async fn definir_capa(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>, Json(d): Json<DefinirCapa>) -> Response {
+    if let Some(m) = d.midia {
+        let ok: Option<String> = match sqlx::query_scalar("SELECT tipo_mime FROM midia.arquivos WHERE id = $1 AND familia_id = $2")
+            .bind(m)
+            .bind(s.familia_id)
+            .fetch_optional(&st.db)
+            .await
+        {
+            Ok(t) => t,
+            Err(e) => return erro_interno(e.into()),
+        };
+        match ok {
+            Some(t) if t.starts_with("image/") => {}
+            Some(_) => return erro_json("A capa precisa ser uma imagem."),
+            None => return erro_json("Imagem não encontrada."),
+        }
+    }
+    match sqlx::query("UPDATE conteudo.historias SET capa = $3 WHERE id = $1 AND familia_id = $2")
+        .bind(id)
+        .bind(s.familia_id)
+        .bind(d.midia)
+        .execute(&st.db)
+        .await
+    {
+        Ok(r) if r.rows_affected() == 1 => Json(json!({ "ok": true })).into_response(),
+        Ok(_) => StatusCode::NOT_FOUND.into_response(),
+        Err(e) => erro_interno(e.into()),
+    }
+}

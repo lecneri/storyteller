@@ -232,3 +232,11 @@ body.crianca { background:linear-gradient(180deg,#ffe9c7,#fff8ef 40%); min-heigh
 @keyframes balanca { 0%,100% { transform:rotate(-8deg); } 50% { transform:rotate(8deg); } }
 @keyframes pinga { 0% { transform:translateY(0); opacity:1; } 80% { transform:translateY(22px); opacity:0; } 100% { opacity:0; } }
 @media (prefers-reduced-motion: reduce) { .livro-erro * { animation:none !important; } }
+
+/* Editor: capa */
+.capa-ed { width:100%; }
+.capa-corpo { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-start; margin-top:8px; }
+.capa-previa { width:120px; aspect-ratio:3/4; object-fit:cover; border-radius:10px; border:1px solid var(--borda); display:grid; place-items:center; font-size:2rem; }
+.capa-acoes { flex:1; min-width:200px; display:grid; gap:8px; }
+.capa-acoes p { margin:0; }
+.capa-acoes > button, .capa-acoes > select { justify-self:start; }

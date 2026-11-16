@@ -748,6 +748,85 @@
     };
   }
 
+  // ───────────── Capa ─────────────
+  // Sem capa escolhida, vale a primeira imagem do livro (como sempre foi).
+  let capa = dados.capa || null;
+  const capaUi = { aberto: false, ocupado: false };
+  async function definirCapa(midia, msg) {
+    const r = await fetch(location.pathname + '/capa', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ midia }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.erro || 'erro ' + r.status);
+    capa = midia; desenhar(); aviso(msg);
+  }
+  // Página "de mentira" para montar o prompt da capa: todos os personagens do livro, cada um com a 1ª variante usada.
+  function paginaDaCapa() {
+    const vistos = new Map();
+    for (const pg of estado.paginas) for (const n of pg.personagens || []) if (!vistos.has(n.slug)) vistos.set(n.slug, n);
+    return {
+      cena: 'Capa do livro "' + estado.titulo + '". Os personagens principais juntos, em destaque, numa cena alegre que resume a história' +
+        (estado.paginas[0] && estado.paginas[0].cena ? ' (começo: ' + estado.paginas[0].cena + ')' : '') +
+        '. Deixe espaço livre no alto para o título, que entra depois.',
+      personagens: [...vistos.values()].slice(0, 5),
+    };
+  }
+  function capaUI() {
+    const comImagem = estado.paginas.map((p, i) => ({ p, i })).filter(({ p }) => p.midia && (p.midia.tipo || '').startsWith('image/'));
+    const padrao = comImagem[0];
+    const src = capa ? '/midia/' + capa : padrao ? '/midia/' + padrao.p.midia.id : null;
+    const pagCapa = paginaDaCapa();
+    const prompt = promptImagem(pagCapa);
+    const enviar = el('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp', hidden: true, onchange: async (e) => {
+      const f = e.target.files[0]; if (!f) return;
+      const fd = new FormData(); fd.append('arquivo', f);
+      aviso('Enviando…');
+      try {
+        const r = await fetch(location.pathname + '/midia', { method: 'POST', body: fd });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.erro || 'erro ' + r.status);
+        await definirCapa(j.id, 'Capa nova salva ✓');
+      } catch (err) { aviso('Não enviou: ' + err.message); }
+    } });
+    const gerar = async (botao) => {
+      const refs = referencias(pagCapa).filter((r) => r.ref).map((r) => r.ref);
+      capaUi.ocupado = true; botao.disabled = true; botao.textContent = '⏳ Gerando (até 1 min)…';
+      try {
+        const r = await fetch(location.pathname + '/imagem-ia', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt, refs }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.erro || 'erro ' + r.status);
+        capaUi.ocupado = false;
+        await definirCapa(j.id, 'Capa gerada e salva ✓');
+      } catch (err) {
+        capaUi.ocupado = false; botao.disabled = false; botao.textContent = '✨ Gerar capa com IA';
+        aviso('Não gerou: ' + err.message);
+      }
+    };
+    const det = el('details', { class: 'memoria capa-ed', open: capaUi.aberto },
+      el('summary', {}, '🖼️ Capa', el('small', { class: 'suave' }, capa ? ' · imagem própria' : padrao ? ' · usando a página ' + (padrao.i + 1) : ' · sem imagem ainda')),
+      el('div', { class: 'capa-corpo' },
+        src ? el('img', { src, alt: 'Capa', class: 'capa-previa' }) : el('div', { class: 'capa-previa capa-vazia' }, '📖'),
+        el('div', { class: 'capa-acoes' },
+          el('p', { class: 'suave' }, capa ? 'Esta é a capa do livro (lista, leitor, PDF e vídeo).'
+            : 'Sem capa própria, a capa é a primeira imagem do livro. Escolha outra se quiser:'),
+          el('div', { class: 'linha' },
+            el('button', { type: 'button', class: 'pequeno secundario', onclick: () => enviar.click() }, '📤 Enviar imagem'), enviar,
+            dados.imagem_api ? el('button', { type: 'button', class: 'pequeno', disabled: capaUi.ocupado, onclick: (e) => gerar(e.currentTarget) },
+              capaUi.ocupado ? '⏳ Gerando (até 1 min)…' : '✨ Gerar capa com IA') : null),
+          comImagem.length > 1 ? el('select', { onchange: (e) => {
+            const i = +e.target.value; if (Number.isNaN(i) || e.target.value === '') return;
+            definirCapa(estado.paginas[i].midia.id, 'Capa: imagem da página ' + (i + 1) + ' ✓').catch((err) => aviso('Não salvou: ' + err.message));
+          } }, el('option', { value: '' }, 'Usar a imagem de uma página…'),
+            comImagem.map(({ p, i }) => el('option', { value: i, selected: capa === p.midia.id }, 'Página ' + (i + 1)))) : null,
+          capa ? el('button', { type: 'button', class: 'link', onclick: () =>
+            definirCapa(null, 'Capa volta a ser a primeira imagem ✓').catch((err) => aviso('Não salvou: ' + err.message)) },
+            '↩ Voltar a usar a primeira imagem') : null,
+          el('details', {}, el('summary', { class: 'suave' }, '📋 Prompt da capa (para usar em outra IA)'),
+            el('textarea', { class: 'prompt', readonly: true, 'data-sem-colar': true }, prompt)))));
+    det.addEventListener('toggle', () => { capaUi.aberto = det.open; });
+    return det;
+  }
+
   function desenhar() {
     const rolagem = window.scrollY;
     const ancora = pegarAncora();
@@ -767,6 +846,7 @@
       dados.briefing ? el('p', { class: 'suave' }, el('em', {}, 'Briefing: '), dados.briefing) : null,
       (dados.continua || []).length ? el('p', { class: 'suave' }, '📚 Continua de: ',
         dados.continua.map((c, i) => [i ? ', ' : '', el('a', { href: '/historias/' + c.id }, c.titulo)])) : null,
+      capaUI(),
       memoriaUI(),
       ajudaUI(),
       secundariosUI(),
