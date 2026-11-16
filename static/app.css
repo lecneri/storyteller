@@ -262,3 +262,9 @@ article.variante { scroll-margin-top:16px; }
 .estilos-ficha h3, .fotos-ficha h3 { margin:0; font-size:1em; }
 .estilo-card { display:grid; gap:2px; justify-items:center; text-align:center; }
 .estilo-card .linha { gap:6px; }
+/* Celular: grids e flex não podem crescer além da tela por causa de um filho largo (campo de arquivo, área de colar). */
+.conteudo { grid-template-columns:minmax(0, 1fr); }
+.cartao * { min-width:0; }
+.linha > .envio { flex:1 1 100%; }
+input[type=file] { max-width:100%; }
+@media (max-width:560px) { .cartao { padding:16px; } .conteudo { padding:12px; } }
