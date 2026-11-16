@@ -3,6 +3,7 @@ mod chaves;
 mod cli_login;
 mod config;
 mod conta;
+mod creditos;
 mod crianca;
 mod elevenlabs;
 mod email;
@@ -80,6 +81,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(limpeza::agendar(state.clone()));
     let app = Router::new()
         .route("/saude", get(saude))
+        .route("/creditos", get(creditos::ver))
         .route("/", get(estantes::inicio))
         .route("/leitores", get(web::painel))
         .route("/estantes", post(estantes::criar))

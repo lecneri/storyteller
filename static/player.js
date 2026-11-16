@@ -104,7 +104,8 @@
             raiz.dataset.voltar !== 'about:blank'
               ? el('button', { type: 'button', class: 'secundario', onclick: () => (location.href = raiz.dataset.voltar) }, '📚 Outra história')
               : null),
-          dados.musica && dados.musica.credito ? el('p', { class: 'credito-musica' }, '🎵 Música: ' + dados.musica.credito) : null)));
+          dados.musica && dados.musica.credito ? el('p', { class: 'credito-musica' }, '🎵 Música: ' + dados.musica.credito) : null,
+          el('p', { class: 'credito-musica' }, el('a', { href: '/creditos', target: '_blank', rel: 'noopener' }, '🌟 Créditos')))));
     }
     const p = dados.paginas[pos - 1];
     const imagem = el('div', { class: 'lado lado-imagem', onclick: () => efeito(p, true) }, midiaUI(p.midia));

@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block titulo %}Créditos · Storyteller{% endblock %}
+{% block corpo %}
+<main class="conteudo creditos">
+  <section class="cartao largo">
+    <h1>🌟 Créditos</h1>
+    <p>O Storyteller cria histórias ilustradas e narradas para crianças. Ele só existe graças ao trabalho de muita gente que compartilha o que faz. Obrigado!</p>
+    <p><a href="javascript:history.back()">← Voltar</a></p>
+  </section>
+
+  <section class="cartao largo">
+    <h2>🎵 Músicas de fundo</h2>
+    {% if musicas.is_empty() %}
+    <p class="suave">Nenhuma música da plataforma ainda.</p>
+    {% else %}
+    <p>As músicas da plataforma são de <strong>Kevin MacLeod</strong> (<a href="https://incompetech.com" target="_blank" rel="noopener">incompetech.com</a>),
+      sob a licença <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">Creative Commons: By Attribution 4.0</a>.
+      Os arquivos foram convertidos para mp3 (sem o silêncio das pontas e com volume ajustado) para tocar em loop.</p>
+    <ul class="lista-creditos">
+      {% for (titulo, clima, credito) in musicas %}
+      <li><strong>{{ titulo }}</strong> <small class="suave">{{ self.clima(clima) }}</small>{% if !credito.is_empty() %}<br><small>{{ credito }}</small>{% endif %}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    <p class="suave">Músicas enviadas pelas famílias são de responsabilidade de quem enviou. O crédito de cada música aparece também no fim do livro e do vídeo.</p>
+  </section>
+
+  <section class="cartao largo">
+    <h2>🗣️ Vozes</h2>
+    <ul class="lista-creditos">
+      <li><strong>Vozes neurais da Microsoft</strong> (Azure / Microsoft Edge), por meio do <a href="https://github.com/rany2/edge-tts" target="_blank" rel="noopener">edge-tts</a> (código aberto).</li>
+      <li><strong><a href="https://elevenlabs.io" target="_blank" rel="noopener">ElevenLabs</a></strong>: vozes usadas pelas famílias que cadastram a própria chave.</li>
+      <li>Vozes gravadas pelas próprias famílias (🎤) são delas.</li>
+    </ul>
+  </section>
+
+  <section class="cartao largo">
+    <h2>🤖 Inteligência artificial</h2>
+    <p>As histórias, fichas e ilustrações são criadas com a ajuda de:</p>
+    <ul class="lista-creditos">
+      <li><strong>Claude</strong>, da <a href="https://www.anthropic.com" target="_blank" rel="noopener">Anthropic</a></li>
+      <li><strong>ChatGPT / Codex</strong> e geração de imagens, da <a href="https://openai.com" target="_blank" rel="noopener">OpenAI</a></li>
+      <li><strong>Gemini</strong> e geração de imagens, do <a href="https://ai.google.dev" target="_blank" rel="noopener">Google</a></li>
+      <li><strong>Kimi</strong>, da <a href="https://www.moonshot.ai" target="_blank" rel="noopener">Moonshot AI</a></li>
+    </ul>
+    <p class="suave">Os personagens, as ideias e as fotos são das famílias. O próprio Storyteller foi programado com a ajuda do Claude Code.</p>
+  </section>
+
+  <section class="cartao largo">
+    <h2>🧩 Software livre</h2>
+    <ul class="lista-creditos">
+      <li><a href="https://www.rust-lang.org" target="_blank" rel="noopener">Rust</a>, com
+        <a href="https://github.com/tokio-rs/axum" target="_blank" rel="noopener">axum</a>,
+        <a href="https://tokio.rs" target="_blank" rel="noopener">Tokio</a>,
+        <a href="https://github.com/launchbadge/sqlx" target="_blank" rel="noopener">SQLx</a>,
+        <a href="https://github.com/djc/askama" target="_blank" rel="noopener">Askama</a>,
+        <a href="https://serde.rs" target="_blank" rel="noopener">Serde</a>,
+        <a href="https://github.com/seanmonstar/reqwest" target="_blank" rel="noopener">reqwest</a>,
+        <a href="https://github.com/image-rs/image" target="_blank" rel="noopener">image</a>,
+        <a href="https://github.com/lettre/lettre" target="_blank" rel="noopener">lettre</a>,
+        <a href="https://github.com/RustCrypto" target="_blank" rel="noopener">RustCrypto</a> e outras bibliotecas (MIT / Apache-2.0)</li>
+      <li><a href="https://www.postgresql.org" target="_blank" rel="noopener">PostgreSQL</a>: banco de dados</li>
+      <li><a href="https://ffmpeg.org" target="_blank" rel="noopener">FFmpeg</a>: áudio, vozes gravadas, músicas e vídeos</li>
+      <li><a href="https://dejavu-fonts.github.io" target="_blank" rel="noopener">DejaVu Sans</a>: letra das legendas dos vídeos</li>
+      <li><a href="https://nodejs.org" target="_blank" rel="noopener">Node.js</a>, <a href="https://www.python.org" target="_blank" rel="noopener">Python</a>, <a href="https://www.docker.com" target="_blank" rel="noopener">Docker</a> e <a href="https://www.debian.org" target="_blank" rel="noopener">Debian</a></li>
+    </ul>
+    <p class="suave">Os efeitos sonoros e as animações das páginas são feitos no próprio navegador, sem arquivos de terceiros.</p>
+    <p class="suave">O Storyteller é <a href="https://github.com/lecneri/storyteller" target="_blank" rel="noopener">código aberto</a>.</p>
+  </section>
+</main>
+{% endblock %}

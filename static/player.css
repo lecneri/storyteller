@@ -68,3 +68,4 @@ body.player { margin:0; background:#2b1d14; color:#2b2b2b; height:100dvh; overfl
   .lado-texto { padding:4% 5%; gap:.5em; }
 }
 .fim .credito-musica { font-size:13px; opacity:.75; margin-top:18px; font-weight:normal; }
+.fim .credito-musica a { color:inherit; }
