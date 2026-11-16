@@ -104,7 +104,22 @@ impl FormFicha {
     }
 }
 
-pub async fn criar(State(st): State<AppState>, s: Sessao, Form(f): Form<FormFicha>) -> Response {
+/// POST /personagens (multipart): ficha + imagem opcional do personagem (vira a variante "Normal").
+pub async fn criar(State(st): State<AppState>, s: Sessao, mp: axum::extract::Multipart) -> Response {
+    let (campos, arquivos) = match super::variantes::ler_multipart(mp).await {
+        Ok(x) => x,
+        Err(msg) => return lista_com(&st, s, Some(msg)).await,
+    };
+    let c = |k: &str| campos.get(k).cloned().unwrap_or_default();
+    let f = FormFicha {
+        nome: c("nome"),
+        tipo: c("tipo"),
+        apelidos: c("apelidos"),
+        aparencia: c("aparencia"),
+        personalidade: c("personalidade"),
+        jeito_falar: c("jeito_falar"),
+        arroba: String::new(),
+    };
     let nome = f.nome.trim().to_string();
     let slug = util::slug(&nome);
     if slug.is_empty() || !f.tipo_valido() {
@@ -121,7 +136,14 @@ pub async fn criar(State(st): State<AppState>, s: Sessao, Form(f): Form<FormFich
     .execute(&st.db)
     .await;
     match r {
-        Ok(_) => Redirect::to(&format!("/personagens/{slug}")).into_response(),
+        Ok(_) => {
+            if !arquivos.is_empty() {
+                if let Err(msg) = super::variantes::criar_normal(&st, &s, &slug, &arquivos).await {
+                    return detalhe_com(&st, s, &slug, Some(msg)).await;
+                }
+            }
+            Redirect::to(&format!("/personagens/{slug}")).into_response()
+        }
         Err(sqlx::Error::Database(e)) if e.is_unique_violation() => {
             lista_com(&st, s, Some(format!("Já existe um personagem chamado {nome}."))).await
         }

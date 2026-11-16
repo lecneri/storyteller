@@ -9,11 +9,19 @@ document.querySelectorAll("[data-descrever]").forEach((caixa) => {
   aviso.textContent = " A foto vai só para a IA e não fica guardada.";
   caixa.append(botao, entrada, aviso);
   if (window.St) window.St.zonaColar(entrada, '📋 Ou clique aqui e cole a foto (Ctrl+V) para a IA descrever');
-  botao.addEventListener("click", () => entrada.click());
-  entrada.addEventListener("change", async () => {
-    if (!entrada.files.length) return;
+  // data-fonte: um campo de imagem do próprio formulário; se já tiver imagem escolhida, descreve ela.
+  const fonte = caixa.dataset.fonte ? document.getElementById(caixa.dataset.fonte) : null;
+  if (fonte) {
+    const legenda = () => { botao.textContent = fonte.files.length ? "📷 Descrever pela imagem escolhida" : "📷 Descrever pela foto"; };
+    fonte.addEventListener("change", legenda);
+    caixa.addEventListener("legenda", legenda);
+  }
+  botao.addEventListener("click", () => (fonte && fonte.files.length ? descrever(fonte.files) : entrada.click()));
+  entrada.addEventListener("change", () => descrever(entrada.files));
+  async function descrever(arquivos) {
+    if (!arquivos.length) return;
     const dados = new FormData();
-    for (const f of entrada.files) dados.append("fotos", f, f.name);
+    for (const f of arquivos) dados.append("fotos", f, f.name);
     const form = alvo.form;
     const nome = caixa.dataset.nome || form?.querySelector("[name=nome]")?.value || "";
     const estilo = form?.querySelector("[name=estilo]")?.value || "";
@@ -35,6 +43,7 @@ document.querySelectorAll("[data-descrever]").forEach((caixa) => {
       botao.disabled = false;
       botao.textContent = "📷 Descrever pela foto";
       entrada.value = "";
+      caixa.dispatchEvent(new Event("legenda"));
     }
-  });
+  }
 });

@@ -106,6 +106,31 @@ pub async fn criar_variante(
     Redirect::to(&format!("/personagens/{slug}")).into_response()
 }
 
+/// Personagem novo criado com imagem: a imagem vira a variante "Normal" (a atual), pronta para ser referência.
+pub(super) async fn criar_normal(st: &AppState, s: &Sessao, slug: &str, arquivos: &[Vec<u8>]) -> Result<(), String> {
+    let refs = salvar_refs(st, s, slug, arquivos).await?;
+    let r = async {
+        let pid: Uuid = sqlx::query_scalar("SELECT id FROM conteudo.personagens WHERE familia_id = $1 AND slug = $2")
+            .bind(s.familia_id)
+            .bind(slug)
+            .fetch_one(&st.db)
+            .await?;
+        let vid: Uuid = sqlx::query_scalar(
+            "INSERT INTO conteudo.variantes (personagem_id, slug, nome, referencias) VALUES ($1, 'normal', 'Normal', $2) RETURNING id",
+        )
+        .bind(pid)
+        .bind(&refs)
+        .fetch_one(&st.db)
+        .await?;
+        definir_atual(st, pid, vid).await
+    }
+    .await;
+    r.map_err(|e| {
+        tracing::error!("variante normal do personagem novo: {e:#}");
+        "O personagem foi criado, mas não consegui guardar a imagem. Envie de novo na variante.".to_string()
+    })
+}
+
 async fn definir_atual(st: &AppState, personagem_id: Uuid, variante_id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE conteudo.personagens SET variante_atual = $2, atualizado_em = now() WHERE id = $1")
         .bind(personagem_id)

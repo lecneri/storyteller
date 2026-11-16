@@ -42,14 +42,16 @@
   <section class="cartao largo">
     <h2>Novo personagem (à mão)</h2>
     {% if let Some(e) = erro %}<p class="erro">{{ e }}</p>{% endif %}
-    <form method="post" action="/personagens" class="grade-form">
+    <form method="post" action="/personagens" enctype="multipart/form-data" class="grade-form">
       <label>Nome <input name="nome" required placeholder="Léo"></label>
       <label>Tipo
         <select name="tipo">{% for (k, v) in tipos %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
       </label>
       <label class="inteiro">Apelidos <small class="suave">(separados por vírgula)</small> <input name="apelidos" placeholder="Leozinho, Super Léo"></label>
+      <label class="inteiro">Imagem do personagem <small class="suave">(opcional: o desenho dele, vira a referência da variante "Normal")</small>
+        <input type="file" id="imagem-nova" name="refs" accept="image/png,image/jpeg,image/webp,image/gif" multiple></label>
       <label class="inteiro">Aparência <textarea id="aparencia-nova" name="aparencia" rows="2" placeholder="Menino de 4 anos, cabelo castanho..."></textarea></label>
-      <span class="inteiro" data-descrever data-alvo="aparencia-nova"></span>
+      <span class="inteiro" data-descrever data-alvo="aparencia-nova" data-fonte="imagem-nova"></span>
       <label class="inteiro">Personalidade <textarea name="personalidade" rows="2"></textarea></label>
       <label class="inteiro">Jeito de falar <textarea name="jeito_falar" rows="2"></textarea></label>
       <button type="submit">Criar personagem</button>
