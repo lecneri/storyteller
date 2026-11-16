@@ -1,8 +1,9 @@
 // Briefing: autocompletar de @personagem(:variante)(!voz) e #historia, e chips do que foi detectado.
 // Voz extra: "@pedro!ingles" (só nessa voz/língua) ou "@pedro!misto-ingles" (mistura com português).
+// Caixas com data-mencoes="simples" (ex.: Relações da ficha) só sugerem @personagem, sem variante, voz ou #história.
 (function () {
   const { el } = window.St;
-  const caixas = document.querySelectorAll('textarea[name="briefing"]');
+  const caixas = document.querySelectorAll('textarea[name="briefing"], textarea[data-mencoes]');
   if (!caixas.length) return;
   const norm = (t) => (t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
@@ -14,11 +15,12 @@
     ta.parentNode.insertBefore(lista, ta.nextSibling);
     ta.parentNode.insertBefore(chips, lista.nextSibling);
     let opcoes = [], ativa = 0, inicio = -1;
+    const simples = ta.dataset.mencoes === 'simples';
 
     function sugestoes() {
       const pos = ta.selectionStart;
       const antes = ta.value.slice(0, pos);
-      const m = antes.match(/([@#])([\p{L}\p{N}_:!-]*)$/u);
+      const m = antes.match(simples ? /(@)([\p{L}\p{N}_-]*)$/u : /([@#])([\p{L}\p{N}_:!-]*)$/u);
       if (!m) { fechar(); return; }
       inicio = pos - m[0].length;
       const termo = norm(m[2]);
@@ -26,6 +28,10 @@
         opcoes = [];
         for (const p of dados.personagens) {
           if (!norm(p.slug + ' ' + p.nome).includes(termo.split(/[:!]/)[0])) continue;
+          if (simples) {
+            if (p.slug !== ta.dataset.proprio) opcoes.push({ txt: '@' + p.slug, rot: '🧒 ' + p.nome });
+            continue;
+          }
           const vozes = p.vozes || [];
           opcoes.push({ txt: '@' + p.slug, rot: '🧒 ' + p.nome + (vozes.length ? ' · 🗣️ voz normal' : '') });
           // Personagem com vozes extras: pergunta qual voz ele vai usar.
@@ -75,6 +81,7 @@
 
     // Chips: quem a IA vai receber (o servidor detecta do mesmo jeito).
     function detectar() {
+      if (simples) return;
       const texto = ta.value;
       const t = '-' + norm(texto) + '-';
       const achados = [];

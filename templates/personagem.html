@@ -20,8 +20,8 @@
       <span class="inteiro" data-descrever data-alvo="aparencia-ficha"></span>
       <label class="inteiro">Personalidade <textarea name="personalidade" rows="2">{{ p.campo("personalidade") }}</textarea></label>
       <label class="inteiro">Jeito de falar <textarea name="jeito_falar" rows="2">{{ p.campo("jeito_falar") }}</textarea></label>
-      <label class="inteiro">Relações <small class="suave">(texto livre, vai para a IA: "irmão mais velho do Pedro, filho do Papai Dudu, primo da Ana")</small>
-        <textarea name="relacoes" rows="2" placeholder="Irmão mais velho do Pedro, filho do Papai Dudu...">{{ p.campo("relacoes") }}</textarea></label>
+      <label class="inteiro">Relações <small class="suave">(texto livre, vai para a IA; digite @ para citar outro personagem)</small>
+        <textarea name="relacoes" rows="2" data-mencoes="simples" data-proprio="{{ p.slug }}" placeholder="Irmão mais velho do @pedro, filho do @papai-dudu...">{{ p.campo("relacoes") }}</textarea></label>
       <p class="inteiro suave">Trocar o @ atualiza as histórias, briefings e estantes que citam {{ p.nome }}. A voz e a narração já gerada continuam.</p>
       <button type="submit">Salvar ficha</button>
     </form>
@@ -145,5 +145,6 @@
 <script src="/variantes.js?v={{ crate::web::versao() }}" defer></script>
 <script src="/vozes.js?v={{ crate::web::versao() }}" defer></script>
 <script src="/descrever.js?v={{ crate::web::versao() }}" defer></script>
+<script src="/briefing.js?v={{ crate::web::versao() }}" defer></script>
 <script src="/vozes-extras.js?v={{ crate::web::versao() }}" defer></script>
 {% endblock %}

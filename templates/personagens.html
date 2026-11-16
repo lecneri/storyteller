@@ -54,12 +54,13 @@
       <span class="inteiro" data-descrever data-alvo="aparencia-nova" data-fonte="imagem-nova"></span>
       <label class="inteiro">Personalidade <textarea name="personalidade" rows="2"></textarea></label>
       <label class="inteiro">Jeito de falar <textarea name="jeito_falar" rows="2"></textarea></label>
-      <label class="inteiro">Relações <small class="suave">(texto livre, vai para a IA: "irmão mais velho do Pedro, filho do Papai Dudu, primo da Ana")</small>
-        <textarea name="relacoes" rows="2" placeholder="Irmão mais velho do Pedro, filho do Papai Dudu..."></textarea></label>
+      <label class="inteiro">Relações <small class="suave">(texto livre, vai para a IA; digite @ para citar outro personagem)</small>
+        <textarea name="relacoes" rows="2" data-mencoes="simples" placeholder="Irmão mais velho do @pedro, filho do @papai-dudu..."></textarea></label>
       <button type="submit">Criar personagem</button>
     </form>
   </section>
 </main>
 <script src="/vozes.js?v={{ crate::web::versao() }}" defer></script>
 <script src="/descrever.js?v={{ crate::web::versao() }}" defer></script>
+<script src="/briefing.js?v={{ crate::web::versao() }}" defer></script>
 {% endblock %}
