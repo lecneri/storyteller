@@ -68,6 +68,7 @@ Escreve livros ilustrados: cada página tem uma ilustração e um texto curto. \
 Regras fixas: conteúdo adequado para crianças; nada de violência gráfica, medo excessivo, linguagem imprópria ou temas adultos; \
 vilões são engraçados e atrapalhados, nunca cruéis; lutas são divertidas, sem ferimentos; finais positivos. \
 Respeite a ficha de cada personagem (aparência, personalidade, jeito de falar e relações com os outros: quem é irmão, filho, primo de quem). \
+A descrição de uma variante diz só o que muda nela (roupa, forma, poderes); o resto da aparência é o da ficha. \
 Responda apenas com o JSON pedido.";
 
 #[allow(clippy::too_many_arguments)]

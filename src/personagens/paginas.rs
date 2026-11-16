@@ -246,7 +246,7 @@ impl PaginaPersonagem {
         self.p.ficha["fotos"].as_array().into_iter().flatten().filter_map(|v| v.as_str().map(String::from)).collect()
     }
     fn prompt_kit(&self, v: &Variante) -> String {
-        let aparencia = v.descricao.clone().unwrap_or_else(|| self.p.campo("aparencia"));
+        let aparencia = super::com_ia::aparencia_variante(&self.p.campo("aparencia"), &v.nome, v.descricao.as_deref());
         prompt_model_sheet(&self.p.nome, &aparencia, v.estilo.as_deref(), !self.fotos().is_empty() || !v.referencias.is_empty())
     }
     fn foto_na_variante(&self, v: &Variante, foto: &str) -> bool {

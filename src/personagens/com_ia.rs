@@ -20,6 +20,19 @@ use super::TIPOS;
 
 // ───────────── criar personagem com IA (descrição e/ou fotos) ─────────────
 
+/// Aparência de uma variante para o desenho: a da ficha (o personagem) mais só o que a variante muda.
+/// A variante não precisa repetir a ficha; se repetir (variantes antigas), não duplica.
+pub fn aparencia_variante(base: &str, variante: &str, descricao: Option<&str>) -> String {
+    let (base, desc) = (base.trim(), descricao.unwrap_or_default().trim());
+    if desc.is_empty() || desc == base {
+        base.to_string()
+    } else if base.is_empty() {
+        desc.to_string()
+    } else {
+        format!("{base}\nNesta versão ({variante}), o que muda (vale sobre a descrição acima): {desc}")
+    }
+}
+
 /// Prompt do "model sheet" (folha de referência) de uma variante.
 pub fn prompt_model_sheet(nome: &str, aparencia: &str, estilo: Option<&str>, com_fotos: bool) -> String {
     let estilo = estilo.filter(|e| !e.trim().is_empty()).map(|e| format!("{e}, ")).unwrap_or_default();
@@ -167,8 +180,8 @@ pub async fn criar_com_ia(State(st): State<AppState>, s: Sessao, mp: Multipart) 
 
 /// POST /personagens/{slug}/variantes/{vslug}/gerar-ref: gera mais um desenho de referência pela API.
 pub async fn gerar_ref(State(st): State<AppState>, s: Sessao, Path((slug, vslug)): Path<(String, String)>) -> Response {
-    let linha: Option<(Uuid, String, serde_json::Value, Option<String>, Option<String>, Vec<Uuid>)> = sqlx::query_as(
-        "SELECT v.id, p.nome, p.ficha, v.descricao, v.estilo, v.referencias
+    let linha: Option<(Uuid, String, serde_json::Value, Option<String>, Option<String>, Vec<Uuid>, String)> = sqlx::query_as(
+        "SELECT v.id, p.nome, p.ficha, v.descricao, v.estilo, v.referencias, v.nome
            FROM conteudo.variantes v JOIN conteudo.personagens p ON p.id = v.personagem_id
           WHERE p.familia_id = $1 AND p.slug = $2 AND v.slug = $3",
     )
@@ -178,7 +191,7 @@ pub async fn gerar_ref(State(st): State<AppState>, s: Sessao, Path((slug, vslug)
     .fetch_optional(&st.db)
     .await
     .unwrap_or(None);
-    let Some((vid, nome, ficha, descricao, estilo, refs_atuais)) = linha else {
+    let Some((vid, nome, ficha, descricao, estilo, refs_atuais, vnome)) = linha else {
         return Redirect::to("/personagens").into_response();
     };
     let fotos: Vec<Uuid> = ficha["fotos"].as_array().into_iter().flatten().filter_map(|v| v.as_str()?.parse().ok()).collect();
@@ -202,7 +215,7 @@ pub async fn gerar_ref(State(st): State<AppState>, s: Sessao, Path((slug, vslug)
     }
     ids.extend(fotos);
     let refs = crate::imagem::carregar_refs(&st, s.familia_id, &ids).await;
-    let aparencia = descricao.unwrap_or_else(|| ficha["aparencia"].as_str().unwrap_or_default().to_string());
+    let aparencia = aparencia_variante(ficha["aparencia"].as_str().unwrap_or_default(), &vnome, descricao.as_deref());
     let mut prompt = prompt_model_sheet(&nome, &aparencia, estilo.as_deref(), !refs.is_empty());
     if emprestou {
         prompt.push_str(
@@ -262,3 +275,17 @@ pub async fn descrever_foto(State(st): State<AppState>, s: Sessao, mp: Multipart
     }
 }
 
+
+#[cfg(test)]
+mod testes {
+    use super::aparencia_variante;
+
+    #[test]
+    fn variante_soma_so_o_que_muda() {
+        assert_eq!(aparencia_variante("Menino de 4 anos", "Pirata", None), "Menino de 4 anos");
+        assert_eq!(aparencia_variante("Menino de 4 anos", "Pirata", Some(" Menino de 4 anos ")), "Menino de 4 anos");
+        assert_eq!(aparencia_variante("", "Pirata", Some("tapa-olho")), "tapa-olho");
+        let a = aparencia_variante("Menino de 4 anos", "Pirata", Some("tapa-olho e chapéu"));
+        assert!(a.starts_with("Menino de 4 anos\n") && a.contains("(Pirata)") && a.ends_with("tapa-olho e chapéu"));
+    }
+}
