@@ -109,7 +109,7 @@
       <label>Forma <input name="forma" placeholder="normal, super, gigante..."></label>
       <label class="inteiro">Estilo de referência <input name="estilo" placeholder="Power Rangers, Cavaleiros do Zodíaco, Pokémon..."></label>
       <label class="inteiro">O que muda <small class="suave">(só a diferença: o resto vem da ficha de {{ p.nome }} — rosto, cabelo, idade...)</small> <textarea id="desc-variante" name="descricao" rows="2" placeholder="Armadura vermelha com detalhes dourados, capacete com visor..."></textarea></label>
-      <span class="inteiro" data-descrever data-alvo="desc-variante" data-nome="{{ p.nome }}"></span>
+      <span class="inteiro" data-descrever data-alvo="desc-variante" data-nome="{{ p.nome }}" data-personagem="{{ p.slug }}"></span>
       <label class="inteiro">Imagens de referência <small class="suave">(opcional: sem imagem, o ✨ Gerar usa o rosto de outra variante)</small> <input type="file" name="refs" accept="image/png,image/jpeg,image/webp,image/gif" multiple></label>
       <label class="check"><input type="checkbox" name="atual" value="1"> Tornar a variante atual</label>
       <button type="submit">Criar variante</button>

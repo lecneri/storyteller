@@ -236,8 +236,9 @@ pub async fn gerar_ref(State(st): State<AppState>, s: Sessao, Path((slug, vslug)
     }
 }
 
-/// POST /personagens/descrever-foto (multipart: fotos, nome, estilo): a IA olha as fotos e devolve
+/// POST /personagens/descrever-foto (multipart: fotos, nome, estilo, personagem): a IA olha as fotos e devolve
 /// a descrição da aparência para preencher o campo. As fotos não são guardadas.
+/// Com "personagem" (slug), é uma variante: descreve só o que muda em relação à ficha dele.
 pub async fn descrever_foto(State(st): State<AppState>, s: Sessao, mp: Multipart) -> Response {
     let erro = |m: String| crate::web::erro_json(m);
     let (campos, arquivos) = match ler_multipart(mp).await {
@@ -256,16 +257,41 @@ pub async fn descrever_foto(State(st): State<AppState>, s: Sessao, mp: Multipart
     }
     let texto = |k: &str| campos.get(k).map(|v| v.trim().to_string()).unwrap_or_default();
     let (nome, estilo) = (texto("nome"), texto("estilo"));
-    let pedido = crate::ia::PedidoTexto {
-        sistema: "Você descreve personagens para ilustradores de livros infantis, em português do Brasil. Responda só com o JSON pedido.".into(),
-        imagens,
-        prompt: format!(
+    let base: Option<String> = if texto("personagem").is_empty() {
+        None
+    } else {
+        sqlx::query_scalar("SELECT ficha->>'aparencia' FROM conteudo.personagens WHERE familia_id = $1 AND slug = $2")
+            .bind(s.familia_id)
+            .bind(texto("personagem"))
+            .fetch_optional(&st.db)
+            .await
+            .ok()
+            .flatten()
+            .flatten()
+            .filter(|a: &String| !a.trim().is_empty())
+    };
+    let pedido_texto = match &base {
+        Some(b) => format!(
+            "Olhe as imagens anexadas{}. Elas mostram uma versão (variante) de um personagem cuja aparência normal já está descrita assim:\n\"{}\"\n\
+             Descreva SÓ o que muda nesta versão em relação à aparência normal: roupa, armadura, acessórios, cores, forma, poderes. \
+             Não repita o que é igual (rosto, cabelo, idade, pele) a não ser que tenha mudado.{} \
+             Um parágrafo curto e objetivo (até 50 palavras), sem citar que é uma foto e sem nomes de pessoas reais.",
+            if nome.is_empty() { String::new() } else { format!(" (\"{nome}\")") },
+            b.trim(),
+            if estilo.is_empty() { String::new() } else { format!(" Estilo desejado: {estilo}.") },
+        ),
+        None => format!(
             "Olhe as imagens anexadas{} e descreva a aparência para um ilustrador manter o personagem igual em todas as páginas: \
              idade aparente, cabelo, olhos, pele, corpo, roupa e cores, acessórios e traços marcantes.{} \
              Um parágrafo curto e objetivo (até 70 palavras), sem citar que é uma foto e sem nomes de pessoas reais.",
             if nome.is_empty() { String::new() } else { format!(" (personagem \"{nome}\")") },
             if estilo.is_empty() { String::new() } else { format!(" Estilo desejado: {estilo}.") },
         ),
+    };
+    let pedido = crate::ia::PedidoTexto {
+        sistema: "Você descreve personagens para ilustradores de livros infantis, em português do Brasil. Responda só com o JSON pedido.".into(),
+        imagens,
+        prompt: pedido_texto,
         schema: serde_json::json!({ "type": "object", "additionalProperties": false, "required": ["aparencia"],
                                     "properties": { "aparencia": { "type": "string" } } }),
     };

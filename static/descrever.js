@@ -1,5 +1,5 @@
 // "📷 Descrever pela foto": envia as fotos para a IA e preenche o campo de aparência/descrição.
-// Marcação: <span data-descrever data-alvo="ID do textarea" data-nome="..."></span>
+// Marcação: <span data-descrever data-alvo="ID do textarea" data-nome="..." data-personagem="slug (só em variante)"></span>
 document.querySelectorAll("[data-descrever]").forEach((caixa) => {
   const alvo = document.getElementById(caixa.dataset.alvo);
   if (!alvo) return;
@@ -27,6 +27,8 @@ document.querySelectorAll("[data-descrever]").forEach((caixa) => {
     const estilo = form?.querySelector("[name=estilo]")?.value || "";
     dados.append("nome", nome);
     dados.append("estilo", estilo);
+    // Variante: a IA descreve só o que muda em relação à ficha do personagem.
+    if (caixa.dataset.personagem) dados.append("personagem", caixa.dataset.personagem);
     botao.disabled = true;
     botao.textContent = "⏳ Olhando a foto…";
     aviso.textContent = "";
