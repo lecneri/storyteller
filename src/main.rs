@@ -16,6 +16,7 @@ mod ia;
 mod jobs;
 mod limpeza;
 mod midia;
+mod musica;
 mod narracao;
 mod partilha;
 mod personagens;
@@ -133,6 +134,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/historias/{id}/bloco-audio", post(narracao::audio_bloco))
         .route("/historias/{id}/narrar", post(narracao::narrar))
         .route("/historias/{id}/gravacao", post(narracao::gravar))
+        .route("/historias/{id}/musica", post(musica::enviar))
+        .route("/historias/{id}/musica/ajustar", post(musica::ajustar))
         .route("/historias/{id}/narracao", get(narracao::estado))
         .route("/ler/{id}", get(player::ler))
         .route("/crianca", get(crianca::inicio))

@@ -159,6 +159,8 @@ struct Historia {
     memoria: Option<String>,
     continua: Option<Value>,
     capa: Option<Uuid>,
+    musica: Option<Uuid>,
+    musica_volume: f32,
 }
 
 #[derive(Template)]
@@ -187,7 +189,7 @@ struct PaginaEditor {
 
 pub async fn abrir(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) -> Response {
     let h = match sqlx::query_as::<_, Historia>(
-        "SELECT h.id, h.titulo, h.faixa, h.narracao, h.briefing, h.conteudo, e.padroes->>'estilo' AS estilo, h.memoria, h.capa,
+        "SELECT h.id, h.titulo, h.faixa, h.narracao, h.briefing, h.conteudo, e.padroes->>'estilo' AS estilo, h.memoria, h.capa, h.musica, h.musica_volume,
                 (SELECT json_agg(json_build_object('id', o.id, 'titulo', o.titulo))::jsonb
                    FROM conteudo.historias o WHERE o.id = ANY(h.continua_de)) AS continua
            FROM conteudo.historias h LEFT JOIN conteudo.estantes e ON e.id = h.estante_principal
@@ -249,6 +251,7 @@ pub async fn abrir(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) 
         "vozes_sistema": crate::tts::VOZES.iter().map(|(id, n)| json!({ "id": id, "nome": n })).collect::<Vec<_>>(),
         "animacoes": ANIMACOES, "estilo": h.estilo,
         "memoria": h.memoria, "continua": h.continua, "capa": h.capa,
+        "musica": h.musica.map(|m| json!({ "id": m, "volume": h.musica_volume })),
         "imagem_api": crate::imagem::disponivel(&st, s.familia_id).await,
     });
     // JSON dentro de <script>: impede que um texto "</script>" feche a tag.

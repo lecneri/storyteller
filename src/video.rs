@@ -262,6 +262,21 @@ async fn tipo_midia(st: &AppState, url: &str) -> String {
     sqlx::query_scalar("SELECT tipo_mime FROM midia.arquivos WHERE id = $1").bind(id).fetch_optional(&st.db).await.ok().flatten().unwrap_or_default()
 }
 
+/// Mistura a música em loop no vídeo pronto: volume "cheio" sem narração e abaixa sozinha quando há voz
+/// (a própria narração comanda o compressor), com fade no fim.
+pub fn args_musica(video: &str, musica: &CaminhoFs, volume: f64, dur: f64, saida: &str) -> Vec<String> {
+    let fade = if dur > 4.0 { format!(",afade=t=out:st={:.2}:d=3", dur - 3.0) } else { String::new() };
+    let filtro = format!(
+        "[0:a]asplit=2[voz][chave];[1:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,volume={volume:.3}[m];\
+         [m][chave]sidechaincompress=threshold=0.01:ratio=12:attack=60:release=900[md];\
+         [voz][md]amix=inputs=2:duration=first:normalize=0{fade}[a]"
+    );
+    let mut a: Vec<String> = ["-y", "-v", "error", "-i", video, "-stream_loop", "-1", "-i"].map(String::from).to_vec();
+    a.push(musica.to_string_lossy().to_string());
+    a.extend(["-filter_complex", &filtro, "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart", saida].map(String::from));
+    a
+}
+
 /// Monta o vídeo em `tmp` e devolve o aviso (trechos sem narração), se houver.
 async fn montar(st: &AppState, id: Uuid, familia: Uuid, tmp: &CaminhoFs) -> anyhow::Result<Option<String>> {
     let (titulo, dados) = crate::player::manifest(st, id, familia).await?.ok_or_else(|| anyhow::anyhow!("história não encontrada"))?;
@@ -323,10 +338,22 @@ async fn montar(st: &AppState, id: Uuid, familia: Uuid, tmp: &CaminhoFs) -> anyh
     }
     marcar(id, Estado { estado: "fazendo", progresso: "juntando as páginas".into(), erro: None, aviso: None });
     tokio::fs::write(tmp.join("lista.txt"), lista).await?;
-    let args: Vec<String> = ["-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", "lista.txt", "-c", "copy", "-movflags", "+faststart", "final.mp4"]
+    // Música de fundo (opcional): entra por último, por cima do vídeo já pronto.
+    let musica = match dados["musica"]["url"].as_str() {
+        Some(u) => caminho_midia(st, u).await.filter(|p| p.exists()),
+        None => None,
+    };
+    let juntado = if musica.is_some() { "sem-musica.mp4" } else { "final.mp4" };
+    let args: Vec<String> = ["-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", "lista.txt", "-c", "copy", "-movflags", "+faststart", juntado]
         .map(String::from)
         .to_vec();
     ffmpeg(tmp, &args).await?;
+    if let Some(m) = musica {
+        marcar(id, Estado { estado: "fazendo", progresso: "pondo a música de fundo".into(), erro: None, aviso: None });
+        let dur = crate::tts::duracao_arquivo(&tmp.join(juntado)).await.unwrap_or(0.0) as f64;
+        let volume = dados["musica"]["volume"].as_f64().unwrap_or(0.35);
+        ffmpeg(tmp, &args_musica(juntado, &m, volume, dur, "final.mp4")).await?;
+    }
     Ok((mudos > 0).then(|| format!("{mudos} trecho(s) sem narração ficaram em silêncio. Gere a narração no editor e faça o vídeo de novo.")))
 }
 

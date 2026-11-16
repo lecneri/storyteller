@@ -669,8 +669,8 @@ pub async fn copiar_historia(State(st): State<AppState>, s: Sessao, Path(id): Pa
     }
     let r = async {
         let mut tx = st.db.begin().await?;
-        let (titulo, faixa, narracao, conteudo, dona): (String, String, String, Value, Uuid) = sqlx::query_as(
-            "SELECT titulo, faixa, narracao, conteudo, familia_id FROM conteudo.historias WHERE id = $1",
+        let (titulo, faixa, narracao, conteudo, dona, musica, musica_volume): (String, String, String, Value, Uuid, Option<Uuid>, f32) = sqlx::query_as(
+            "SELECT titulo, faixa, narracao, conteudo, familia_id, musica, musica_volume FROM conteudo.historias WHERE id = $1",
         )
         .bind(id)
         .fetch_one(&mut *tx)
@@ -718,10 +718,24 @@ pub async fn copiar_historia(State(st): State<AppState>, s: Sessao, Path(id): Pa
                 }
             }
         }
+        // Música de fundo: mesma ideia (nova linha, mesmo arquivo).
+        let musica: Option<Uuid> = match musica {
+            Some(m) => sqlx::query_scalar(
+                "INSERT INTO midia.arquivos (familia_id, caminho, tipo_mime, bytes, sha256)
+                 SELECT $1, caminho, tipo_mime, bytes, sha256 FROM midia.arquivos WHERE id = $2 AND familia_id = $3
+                 RETURNING id",
+            )
+            .bind(s.familia_id)
+            .bind(m)
+            .bind(dona)
+            .fetch_optional(&mut *tx)
+            .await?,
+            None => None,
+        };
         let novo = Uuid::new_v4();
         sqlx::query(
-            "INSERT INTO conteudo.historias (id, familia_id, slug, titulo, faixa, narracao, estado, conteudo, criado_por, visibilidade)
-             VALUES ($1, $2, $3, $4, $5, $6, 'texto', $7, $8, 'privado')",
+            "INSERT INTO conteudo.historias (id, familia_id, slug, titulo, faixa, narracao, estado, conteudo, criado_por, visibilidade, musica, musica_volume)
+             VALUES ($1, $2, $3, $4, $5, $6, 'texto', $7, $8, 'privado', $9, $10)",
         )
         .bind(novo)
         .bind(s.familia_id)
@@ -731,6 +745,8 @@ pub async fn copiar_historia(State(st): State<AppState>, s: Sessao, Path(id): Pa
         .bind(narracao)
         .bind(conteudo)
         .bind(s.usuario_id)
+        .bind(musica)
+        .bind(musica_volume)
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;

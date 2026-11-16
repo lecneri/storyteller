@@ -14,6 +14,62 @@
 
   const espera = (ms) => new Promise((r) => setTimeout(r, ms));
 
+  // ───────────── música de fundo (opcional) ─────────────
+  // Toca em loop: volume "cheio" sem narração e abaixa quando alguém fala (sobe de novo devagar nas pausas).
+  function criarMusica(m) {
+    let ligada = true;
+    try { ligada = localStorage.getItem('musica-ligada') !== 'nao'; } catch (_) { /* */ }
+    const som = new Audio(m.url);
+    som.loop = true;
+    som.preload = 'auto';
+    const CHEIO = m.volume || 0.35;
+    const FUNDO = CHEIO * 0.3;
+    let ctx = null, ganho = null, subir = null, vez = 0;
+    // Web Audio para as rampas de volume (no iPhone o volume do <audio> não muda por código).
+    function preparar() {
+      if (ctx || ganho === false) return;
+      try {
+        ctx = new (window.AudioContext || window.webkitAudioContext)();
+        ganho = ctx.createGain();
+        ganho.gain.value = 0;
+        ctx.createMediaElementSource(som).connect(ganho).connect(ctx.destination);
+      } catch (_) { ctx = null; ganho = false; }
+    }
+    function alvo(v, seg) {
+      if (ganho) {
+        const t = ctx.currentTime, g = ganho.gain;
+        g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(v, t + seg);
+      } else som.volume = Math.min(1, v);
+    }
+    const api = {
+      get ligada() { return ligada; },
+      get tocando() { return ligada && !som.paused; },
+      tocar() {
+        if (!ligada) return;
+        preparar();
+        if (ctx && ctx.state === 'suspended') ctx.resume();
+        vez++;
+        if (som.paused) { if (!ganho) som.volume = 0; som.play().catch(() => {}); }
+        alvo(CHEIO, 1.5);
+      },
+      parar(seg = 1) {
+        const minha = ++vez;
+        clearTimeout(subir);
+        alvo(0, seg);
+        setTimeout(() => { if (minha === vez) som.pause(); }, seg * 1000 + 50);
+      },
+      fala() { clearTimeout(subir); if (api.tocando) alvo(FUNDO, 0.3); },
+      calou() { clearTimeout(subir); subir = setTimeout(() => { if (api.tocando) alvo(CHEIO, 1.2); }, 700); },
+      alternar() {
+        ligada = !ligada;
+        try { localStorage.setItem('musica-ligada', ligada ? 'sim' : 'nao'); } catch (_) { /* */ }
+        if (ligada) { api.tocar(); if (audio && !audio.paused) api.fala(); } else api.parar(0.5);
+      },
+    };
+    return api;
+  }
+  const musica = dados.musica ? criarMusica(dados.musica) : null;
+
   // ───────────── montagem das páginas ─────────────
   function midiaUI(m) {
     if (!m) return el('div', { class: 'sem-imagem' }, '🖼️');
@@ -59,6 +115,14 @@
   const botaoAnt = el('button', { type: 'button', title: 'Voltar página', onclick: () => { pausar(); irPara(pos - 1, -1); } }, '◀');
   const botaoProx = el('button', { type: 'button', title: 'Próxima página', onclick: () => { pausar(); irPara(pos + 1, 1); } }, '▶▶');
   const botaoMudo = el('button', { type: 'button', title: 'Sons dos efeitos', onclick: () => { mudo = !mudo; botaoMudo.textContent = mudo ? '🔇' : '🔔'; } }, '🔔');
+  const botaoMusica = musica ? el('button', { type: 'button', title: 'Música de fundo', onclick: () => { musica.alternar(); desenharMusica(); } }) : null;
+  function desenharMusica() {
+    if (!botaoMusica) return;
+    botaoMusica.textContent = '🎵';
+    botaoMusica.classList.toggle('desligado', !musica.ligada);
+    botaoMusica.title = musica.ligada ? 'Música de fundo: ligada (toque para desligar)' : 'Música de fundo: desligada';
+  }
+  desenharMusica();
   const botaoTela = el('button', { type: 'button', title: 'Tela cheia', onclick: () => {
     if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen?.();
   } }, '⛶');
@@ -66,7 +130,7 @@
   const palco = el('div', { class: 'palco-livro' });
   raiz.replaceChildren(palco, el('div', { class: 'controles' },
     el('a', { class: 'voltar', href: raiz.dataset.voltar, title: 'Sair' }, '✕'),
-    botaoAnt, botaoPlay, botaoProx, pontos, botaoMudo, botaoTela));
+    botaoAnt, botaoPlay, botaoProx, pontos, botaoMusica, botaoMudo, botaoTela));
 
   function desenhar(direcao) {
     const s = spreadUI();
@@ -75,6 +139,7 @@
     palco.classList.toggle('narrando', narrando);
     botaoAnt.disabled = pos === 0;
     botaoProx.disabled = pos > total;
+    if (pos > total && musica) musica.parar(3);
     pontos.replaceChildren(...Array.from({ length: total + 2 }, (_, i) => el('span', { class: 'ponto' + (i === pos ? ' atual' : '') })));
   }
 
@@ -142,6 +207,12 @@
   async function narrarPagina(minhaGeracao) {
     const p = dados.paginas[pos - 1];
     efeito(p, false);
+    // Com música, ela "respira" um pouco na página nova antes da narração.
+    if (musica && musica.tocando) {
+      musica.calou();
+      await espera(1500);
+      if (minhaGeracao !== geracao) return false;
+    }
     const trechos = palco.querySelectorAll('.trecho');
     for (let i = 0; i < p.blocos.length; i++) {
       if (minhaGeracao !== geracao) return false;
@@ -155,10 +226,13 @@
         audio = new Audio(b.audio);
         destacarPalavras(trechos[i], b, audio, minhaGeracao);
         try {
+          if (musica) musica.fala();
           await audio.play();
           await new Promise((ok) => { audio.onended = ok; audio.onerror = ok; audio.onpause = () => { if (minhaGeracao !== geracao) ok(); }; });
           trechos[i]?.querySelectorAll('.palavra.agora').forEach((s) => s.classList.remove('agora'));
+          if (musica) musica.calou();
         } catch (_) {
+          if (musica) musica.calou();
           await espera(Math.max(1500, b.texto.split(/\s+/).length * 380));
         }
       } else {
@@ -176,6 +250,7 @@
     const minha = ++geracao;
     botaoPlay.textContent = '⏸';
     palco.classList.add('narrando');
+    if (musica) musica.tocar();
     if (pos === 0 || pos > total) await irPara(1, 1);
     while (narrando && minha === geracao && pos >= 1 && pos <= total) {
       const terminou = await narrarPagina(minha);
@@ -191,6 +266,7 @@
     narrando = false;
     geracao++;
     if (audio) { audio.pause(); audio = null; }
+    if (musica) musica.calou();
     botaoPlay.textContent = '▶';
     palco.classList.remove('narrando');
     palco.querySelectorAll('.trecho.ativo').forEach((t) => t.classList.remove('ativo'));

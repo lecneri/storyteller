@@ -74,6 +74,7 @@ pub async fn limpar(st: &AppState) -> anyhow::Result<(u64, i64)> {
             SELECT (pg->'midia'->>'id')::uuid AS id FROM conteudo.historias h, jsonb_array_elements(h.conteudo->'paginas') pg
              WHERE pg->'midia'->>'id' IS NOT NULL
             UNION SELECT capa FROM conteudo.historias WHERE capa IS NOT NULL
+            UNION SELECT musica FROM conteudo.historias WHERE musica IS NOT NULL
             UNION SELECT (b->'gravacao'->>'id')::uuid FROM conteudo.historias h, jsonb_array_elements(h.conteudo->'paginas') pg,
                          jsonb_array_elements(pg->'blocos') b WHERE b->'gravacao'->>'id' IS NOT NULL
             UNION SELECT capa FROM conteudo.estantes WHERE capa IS NOT NULL

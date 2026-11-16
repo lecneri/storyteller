@@ -37,6 +37,7 @@ body.player { margin:0; background:#2b1d14; color:#2b2b2b; height:100dvh; overfl
 .controles button { background:#3a2a1f; color:#fff; border:none; border-radius:999px; min-width:56px; height:56px; font-size:24px; display:grid; place-items:center; padding:0 14px; }
 .controles button.grande { min-width:84px; height:72px; font-size:34px; background:#ff7a45; }
 .controles button:disabled { opacity:.35; }
+.controles button.desligado { opacity:.4; text-decoration:line-through; }
 .controles .pontos { display:flex; gap:6px; flex-wrap:wrap; max-width:30vw; }
 .controles .ponto { width:10px; height:10px; border-radius:50%; background:#5b4535; }
 .controles .ponto.atual { background:#ff7a45; }

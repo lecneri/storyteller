@@ -927,6 +927,54 @@
     return det;
   }
 
+  // ───────────── Música de fundo (opcional) ─────────────
+  let musica = dados.musica || null;
+  const musicaUi = { aberto: false, ocupado: false };
+  async function ajustarMusica(corpo) {
+    const r = await fetch(location.pathname + '/musica/ajustar', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(corpo) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.erro || 'erro ' + r.status);
+  }
+  function musicaUI() {
+    const enviar = el('input', { type: 'file', accept: 'audio/*', hidden: true, onchange: async (e) => {
+      const f = e.target.files[0]; if (!f) return;
+      const fd = new FormData(); fd.append('arquivo', f);
+      musicaUi.ocupado = true; desenhar(); aviso('Preparando a música (corta silêncio, ajusta volume)…');
+      try {
+        const r = await fetch(location.pathname + '/musica', { method: 'POST', body: fd });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.erro || 'erro ' + r.status);
+        musica = { id: j.id, volume: musica ? musica.volume : 0.35 };
+        aviso('Música salva ✓');
+      } catch (err) { aviso('Não enviou: ' + err.message); }
+      musicaUi.ocupado = false; desenhar();
+    } });
+    const previa = musica ? el('audio', { src: '/midia/' + musica.id, controls: true, loop: true, preload: 'none' }) : null;
+    if (previa) previa.volume = musica.volume;
+    const rotulo = el('span', {}, musica ? Math.round(musica.volume * 100) + '%' : '');
+    const det = el('details', { class: 'memoria musica-ed', open: musicaUi.aberto },
+      el('summary', {}, '🎵 Música de fundo', el('small', { class: 'suave' }, musica ? ' · ligada' : ' · sem música')),
+      el('p', { class: 'suave' }, 'Opcional. Toca em loop no leitor, no link e no vídeo; abaixa sozinha quando a narração fala e sobe nas pausas e viradas de página. Quem lê pode desligar no 🎵 do leitor.'),
+      musica ? [
+        previa,
+        el('label', { class: 'linha' }, 'Volume sem narração ',
+          el('input', { type: 'range', min: 0.05, max: 1, step: 0.05, value: musica.volume,
+            oninput: (e) => { musica.volume = +e.target.value; previa.volume = musica.volume; rotulo.textContent = Math.round(musica.volume * 100) + '%'; },
+            onchange: () => ajustarMusica({ volume: musica.volume }).then(() => aviso('Volume salvo ✓')).catch((err) => aviso('Não salvou: ' + err.message)) }),
+          rotulo),
+        el('small', { class: 'suave' }, 'Com narração, a música fica em 30% desse volume.'),
+      ] : el('p', { class: 'suave' }, 'Sugestão de músicas grátis e sem direitos autorais: Pixabay Music, YouTube Audio Library. Até 5 minutos (o resto é cortado).'),
+      el('div', { class: 'linha' },
+        el('button', { type: 'button', class: 'pequeno secundario', disabled: musicaUi.ocupado, onclick: () => enviar.click() },
+          musicaUi.ocupado ? '⏳ Preparando…' : musica ? '📤 Trocar música' : '📤 Enviar música'), enviar,
+        musica ? el('button', { type: 'button', class: 'link perigo', onclick: () =>
+          ajustarMusica({ remover: true }).then(() => { musica = null; desenhar(); aviso('Música tirada ✓'); }).catch((err) => aviso('Não salvou: ' + err.message)) },
+          '✕ Tirar música') : null));
+    det.addEventListener('toggle', () => { musicaUi.aberto = det.open; });
+    return det;
+  }
+
   function desenhar() {
     const rolagem = window.scrollY;
     const ancora = pegarAncora();
@@ -947,6 +995,7 @@
       (dados.continua || []).length ? el('p', { class: 'suave' }, '📚 Continua de: ',
         dados.continua.map((c, i) => [i ? ', ' : '', el('a', { href: '/historias/' + c.id }, c.titulo)])) : null,
       capaUI(),
+      musicaUI(),
       memoriaUI(),
       ajudaUI(),
       secundariosUI(),
