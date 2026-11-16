@@ -21,7 +21,7 @@
   const cor = (n) => 'cor-' + (n % NCORES);
 
   const ajustar = (t) => { t.style.height = 'auto'; t.style.height = t.scrollHeight + 2 + 'px'; };
-  document.addEventListener('input', (e) => { if (e.target.matches('#editor textarea')) ajustar(e.target); });
+  document.addEventListener('input', (e) => { if (e.target.matches('#editor textarea:not(.prompt)')) ajustar(e.target); });
   const mudou = () => { sujo = true; status.textContent = 'Alterações não salvas'; };
 
   const personagem = (slug) => personagens.find((p) => p.slug === slug);
@@ -216,6 +216,49 @@
       aviso('Não gerou: ' + e.message);
       botao.disabled = false; botao.textContent = '✨ Gerar imagem pela API';
     }
+  }
+  // Gera pela API, uma de cada vez, as imagens das páginas (só as sem imagem, ou todas se o usuário quiser).
+  let gerandoTodas = null; // { parar: bool }
+  async function gerarTodas(botao) {
+    if (gerandoTodas) { gerandoTodas.parar = true; botao.textContent = '⏳ Parando após a imagem atual…'; return; }
+    let alvo = estado.paginas.filter((p) => !p.midia);
+    if (!alvo.length) {
+      if (!confirm('Todas as páginas já têm imagem. Gerar de novo todas? (as atuais saem das páginas)')) return;
+      alvo = estado.paginas.slice();
+    } else if (!confirm('Gerar pela API as imagens de ' + alvo.length + ' página(s) sem imagem? Cada uma leva até 1 minuto. Deixe esta aba aberta.')) {
+      return;
+    }
+    gerandoTodas = { parar: false };
+    let ok = 0; const falhas = [];
+    for (const [i, pag] of alvo.entries()) {
+      if (gerandoTodas.parar) break;
+      const n = estado.paginas.indexOf(pag) + 1;
+      botao.textContent = '⏹ Parar (' + (i + 1) + '/' + alvo.length + ', página ' + n + ')';
+      try {
+        const refs = referencias(pag).filter((r) => r.ref).map((r) => r.ref);
+        const r = await fetch(location.pathname + '/imagem-ia', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: promptImagem(pag), refs }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.erro || 'erro ' + r.status);
+        pag.midia = { id: j.id, tipo: j.tipo };
+        ok++;
+        mudou(); await salvar();
+        botao = desenharMantendo(botao);
+      } catch (e) {
+        falhas.push('página ' + n + ': ' + e.message);
+      }
+    }
+    gerandoTodas = null;
+    desenhar();
+    aviso(ok + ' imagem(ns) gerada(s)' + (falhas.length ? '. Falharam: ' + falhas.join('; ') : ' ✓'), falhas.length ? 10000 : 3000);
+  }
+  // Redesenha e devolve o botão novo de "gerar todas" (o antigo some no redesenho).
+  function desenharMantendo(botao) {
+    const texto = botao.textContent;
+    desenhar();
+    const novo = raiz.querySelector('[data-gerar-todas]') || botao;
+    novo.textContent = texto;
+    return novo;
   }
   function previaMidia(pag) {
     if (!pag.midia) return null;
@@ -579,10 +622,13 @@
           onsubmit: (e) => { if (!confirm('Apagar esta história? As imagens e áudios dela também serão apagados (cópias em outras famílias continuam).')) e.preventDefault(); else sujo = false; } },
           el('button', { type: 'submit', class: 'link perigo' }, '🗑 Apagar')),
         statusNarracao,
+        dados.imagem_api && estado.paginas.length ? el('button', { type: 'button', class: 'secundario', 'data-gerar-todas': true,
+          title: 'Gera pela API a imagem de cada página sem imagem, uma por vez',
+          onclick: (e) => gerarTodas(e.currentTarget) }, gerandoTodas ? '⏹ Parar' : '🖼️ Gerar todas as imagens') : null,
         el('button', { type: 'button', class: 'secundario', onclick: gerarNarracao }, '🎙️ Gerar narração'),
         status, el('button', { type: 'button', onclick: salvar }, '💾 Salvar')),
     ].flat(Infinity).filter(Boolean));
-    raiz.querySelectorAll('textarea').forEach(ajustar);
+    raiz.querySelectorAll('textarea:not(.prompt)').forEach(ajustar);
     manterAncora(ancora, rolagem);
     observarPaginas();
   }
