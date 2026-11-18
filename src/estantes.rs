@@ -23,7 +23,7 @@ pub struct EstanteResumo {
     pub slug: String,
     pub nome: String,
     pub padroes: Value,
-    /// [{id, titulo, faixa, paginas, capa}]
+    /// [{id, titulo, faixa, paginas, capa, busca, pers}]
     pub historias: Value,
 }
 
@@ -39,6 +39,8 @@ impl EstanteResumo {
                         faixa: h["faixa"].as_str().unwrap_or_default().to_string(),
                         paginas: h["paginas"].as_i64().unwrap_or(0),
                         capa: h["capa"].as_str().map(String::from),
+                        busca: h["busca"].as_str().unwrap_or_default().to_string(),
+                        pers: h["pers"].as_str().unwrap_or_default().to_string(),
                     })
                     .collect()
             })
@@ -72,6 +74,10 @@ pub struct CartaoHistoria {
     pub faixa: String,
     pub paginas: i64,
     pub capa: Option<String>,
+    /// Para a busca: título, briefing e texto das páginas.
+    pub busca: String,
+    /// Slugs dos personagens que aparecem, separados por espaço.
+    pub pers: String,
 }
 
 pub async fn estantes_da_familia(st: &AppState, familia_id: Uuid) -> Result<Vec<EstanteResumo>, sqlx::Error> {
@@ -82,7 +88,12 @@ pub async fn estantes_da_familia(st: &AppState, familia_id: Uuid) -> Result<Vec<
                             'paginas', jsonb_array_length(h.conteudo->'paginas'),
                             'capa', COALESCE(h.capa::text,
                                 (SELECT pg->'midia'->>'id' FROM jsonb_array_elements(h.conteudo->'paginas') pg
-                                  WHERE pg->'midia'->>'tipo' LIKE 'image/%' LIMIT 1)))
+                                  WHERE pg->'midia'->>'tipo' LIKE 'image/%' LIMIT 1)),
+                            'busca', concat_ws(' ', h.titulo, h.briefing,
+                                (SELECT string_agg(b->>'texto', ' ') FROM jsonb_array_elements(h.conteudo->'paginas') pg,
+                                        jsonb_array_elements(COALESCE(pg->'blocos', '[]')) b)),
+                            'pers', COALESCE((SELECT string_agg(DISTINCT n->>'slug', ' ') FROM jsonb_array_elements(h.conteudo->'paginas') pg,
+                                        jsonb_array_elements(COALESCE(pg->'personagens', '[]')) n), ''))
                             ORDER BY eh.ordem, h.criado_em)
                             FROM conteudo.estante_historias eh
                             JOIN conteudo.historias h ON h.id = eh.historia_id

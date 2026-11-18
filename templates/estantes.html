@@ -21,7 +21,7 @@
     </header>
     <div class="prateleira">
       {% for h in e.lista() %}
-      <div class="livro" data-item data-texto="{{ h.titulo }}">
+      <div class="livro" data-item data-texto="{{ h.busca }}" data-pers="{{ h.pers }}">
         <a href="/ler/{{ h.id }}" title="Ler">
           {% if let Some(c) = h.capa %}<img src="/midia/{{ c }}" alt="">{% else %}<div class="capa-vazia">📖</div>{% endif %}
           <strong>{{ h.titulo }}</strong>
