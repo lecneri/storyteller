@@ -47,11 +47,19 @@ struct PaginaLista {
     secoes: Vec<(String, Vec<usize>)>,
     tipos: Vec<(&'static str, &'static str)>,
     erro: Option<String>,
+    /// Grupos de verdade (sem o "Sem grupo"), para a aba 👥 Grupos e o campo de grupos ao criar.
+    grupos: Vec<(String, Vec<usize>)>,
 }
 
 impl PaginaLista {
     fn item(&self, i: &usize) -> &ItemLista {
         &self.itens[*i]
+    }
+    fn membro(&self, idx: &[usize], i: &usize) -> bool {
+        idx.contains(i)
+    }
+    fn arroba_grupo(&self, g: &str) -> String {
+        format!("@grupo:{}", util::slug(g))
     }
 }
 
@@ -78,7 +86,17 @@ pub(super) async fn lista_com(st: &AppState, s: Sessao, erro: Option<String>) ->
     match itens {
         Ok(itens) => {
             let secoes = secoes(&itens);
-            render(PaginaLista { s, itens, secoes, tipos: TIPOS.to_vec(), erro })
+            let mut grupos: Vec<(String, Vec<usize>)> = Vec::new();
+            for (i, it) in itens.iter().enumerate() {
+                for g in &it.grupos {
+                    match grupos.iter_mut().find(|(n, _)| util::slug(n) == util::slug(g)) {
+                        Some((_, l)) => l.push(i),
+                        None => grupos.push((g.clone(), vec![i])),
+                    }
+                }
+            }
+            grupos.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+            render(PaginaLista { s, itens, secoes, tipos: TIPOS.to_vec(), erro, grupos })
         }
         Err(e) => erro_interno(e.into()),
     }
@@ -138,12 +156,7 @@ pub struct FormFicha {
 impl FormFicha {
     fn ficha(&self) -> serde_json::Value {
         let apelidos: Vec<&str> = self.apelidos.split(',').map(str::trim).filter(|a| !a.is_empty()).collect();
-        let mut grupos: Vec<&str> = Vec::new();
-        for g in self.grupos.split(',').map(str::trim).filter(|g| !g.is_empty()) {
-            if !grupos.iter().any(|x| util::slug(x) == util::slug(g)) {
-                grupos.push(g);
-            }
-        }
+        let grupos = super::grupos::do_texto(&self.grupos);
         json!({
             "apelidos": apelidos,
             "grupos": grupos,

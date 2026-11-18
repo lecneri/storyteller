@@ -280,6 +280,10 @@ input[type=file] { max-width:100%; }
 /* Sistema: abas, paginação, lista de membros, ordem das CLIs. */
 .abas { display:flex; flex-wrap:wrap; gap:6px; }
 .grupo-aba { display:grid; gap:16px; justify-items:center; }
+.grupo-ed { border:1px solid var(--borda); border-radius:12px; padding:10px 12px; margin-top:10px; }
+.grupo-ed summary { cursor:pointer; }
+.grupo-ed form { margin-top:10px; }
+.membros { display:flex; flex-wrap:wrap; gap:6px 14px; }
 .abas a { padding:6px 12px; border:1px solid var(--borda); border-radius:999px; text-decoration:none; background:var(--cartao); }
 .abas a.ativa { border-color:var(--cor); color:var(--cor); font-weight:700; }
 a.linha-familia { text-decoration:none; color:inherit; }

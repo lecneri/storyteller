@@ -4,7 +4,7 @@
 {% include "topo.html" %}
 <main class="conteudo">
   <nav class="abas largo" data-abas{% if erro.is_some() %} data-inicial="mao"{% endif %}>
-    <a href="#lista">👥 Personagens</a><a href="#ia">✨ Criar com IA</a><a href="#mao">✍️ Criar à mão</a><a href="#narrador">🎙️ Narrador</a>
+    <a href="#lista">👥 Personagens</a><a href="#ia">✨ Criar com IA</a><a href="#mao">✍️ Criar à mão</a><a href="#grupos">👥 Grupos</a><a href="#narrador">🎙️ Narrador</a>
   </nav>
   <section class="cartao largo" data-aba="lista">
     <h2>Personagens</h2>
@@ -35,6 +35,40 @@
       </div>
     {% endif %}
   </section>
+  <datalist id="grupos-familia">{% for (g, _) in grupos %}<option value="{{ g }}">{% endfor %}</datalist>
+  <section class="cartao largo" data-aba="grupos">
+    <h2>👥 Grupos</h2>
+    <p class="suave">Um personagem pode estar em vários grupos. No briefing, <code>@grupo:nome</code> cita todos do grupo.
+      Apagar um grupo só tira o grupo; os personagens continuam.</p>
+    {% if itens.is_empty() %}<p class="suave">Crie personagens primeiro.</p>{% else %}
+    <details class="grupo-ed" {% if grupos.is_empty() %}open{% endif %}>
+      <summary><strong>+ Novo grupo</strong></summary>
+      <form method="post" action="/personagens/grupos" class="grade-form">
+        <input type="hidden" name="antigo" value="">
+        <label class="inteiro">Nome <input name="nome" required placeholder="Família, Pokémon, Escola..."></label>
+        <div class="inteiro membros">{% for it in itens %}<label class="check"><input type="checkbox" name="membros" value="{{ it.slug }}"> {{ it.nome }}</label>{% endfor %}</div>
+        <button type="submit">Criar grupo</button>
+      </form>
+    </details>
+    {% for (g, idx) in grupos %}
+    <details class="grupo-ed">
+      <summary><strong>👥 {{ g }}</strong> <small class="suave">({{ idx.len() }}) · <code>{{ self.arroba_grupo(g) }}</code> ·
+        {% for i in idx %}{% if !loop.first %}, {% endif %}{{ self.item(i).nome }}{% endfor %}</small></summary>
+      <form method="post" action="/personagens/grupos" class="grade-form">
+        <input type="hidden" name="antigo" value="{{ g }}">
+        <label class="inteiro">Nome <small class="suave">(ao renomear, briefings antigos com {{ self.arroba_grupo(g) }} deixam de achar o grupo)</small>
+          <input name="nome" value="{{ g }}" required></label>
+        <div class="inteiro membros">{% for it in itens %}<label class="check"><input type="checkbox" name="membros" value="{{ it.slug }}"{% if self.membro(idx, loop.index0) %} checked{% endif %}> {{ it.nome }}</label>{% endfor %}</div>
+        <div class="inteiro linha">
+          <button type="submit">💾 Salvar grupo</button>
+          <button type="submit" name="acao" value="apagar" class="secundario" formnovalidate
+                  onclick="return confirm('Apagar o grupo {{ g }}? Os personagens continuam.')">🗑 Apagar grupo</button>
+        </div>
+      </form>
+    </details>
+    {% endfor %}
+    {% endif %}
+  </section>
   <section class="cartao largo" data-aba="narrador">
     <h2>🎙️ Narrador da família</h2>
     <div data-voz data-quem="narrador" data-salvar="/familia/narrador" data-exemplo="Era uma vez, num lugar muito distante, uma aventura incrível."><p class="suave">Carregando vozes…</p></div>
@@ -49,6 +83,8 @@
         <select name="tipo">{% for (k, v) in tipos %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
       </label>
       <label class="inteiro">Descrição <textarea name="descricao" rows="3" placeholder="Menino de 4 anos, herói com armadura vermelha, adora dinossauros..."></textarea></label>
+      <label class="inteiro">Grupos <small class="suave">(opcional, separados por vírgula)</small>
+        <input name="grupos" list="grupos-familia" placeholder="Família, Pokémon..." autocomplete="off"></label>
       <label class="inteiro">Estilo de referência <input name="estilo" placeholder="Power Rangers, Pokémon, aquarela..."></label>
       <label class="inteiro">Fotos (opcional) <input type="file" name="fotos" accept="image/png,image/jpeg,image/webp" multiple></label>
       <label class="check inteiro"><input type="checkbox" name="consentimento" value="1"> Autorizo usar as fotos para criar o desenho (a foto é enviada à IA só nesse momento e fica guardada apenas no servidor).</label>
@@ -64,6 +100,8 @@
         <select name="tipo">{% for (k, v) in tipos %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
       </label>
       <label class="inteiro">Apelidos <small class="suave">(separados por vírgula)</small> <input name="apelidos" placeholder="Leozinho, Super Léo"></label>
+      <label class="inteiro">Grupos <small class="suave">(opcional, separados por vírgula)</small>
+        <input name="grupos" list="grupos-familia" placeholder="Família, Pokémon..." autocomplete="off"></label>
       <label class="inteiro">Foto de referência <small class="suave">(opcional e privada: nunca aparece nas histórias; serve para descrever a aparência e desenhar as variantes)</small>
         <input type="file" id="imagem-nova" name="refs" accept="image/png,image/jpeg,image/webp" multiple></label>
       <label class="inteiro">Aparência <textarea id="aparencia-nova" name="aparencia" rows="2" placeholder="Menino de 4 anos, cabelo castanho..."></textarea></label>

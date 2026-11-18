@@ -124,6 +124,7 @@ pub async fn criar_com_ia(State(st): State<AppState>, s: Sessao, mp: Multipart) 
     let ficha_json = serde_json::json!({
         "apelidos": ficha["apelidos"], "aparencia": aparencia,
         "personalidade": ficha["personalidade"], "jeito_falar": ficha["jeito_falar"], "fotos": fotos,
+        "grupos": super::grupos::do_texto(&texto("grupos")),
     });
     let nome_var = ficha["nome_variante"].as_str().filter(|v| !v.trim().is_empty()).unwrap_or("Principal").to_string();
     let r = async {

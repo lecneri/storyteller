@@ -2,6 +2,7 @@
 
 pub mod fotos;
 mod com_ia;
+pub mod grupos;
 mod juntar;
 mod paginas;
 mod renomear;
