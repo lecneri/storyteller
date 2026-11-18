@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block titulo %}{{ f.nome }} · Sistema{% endblock %}
+{% block corpo %}
+{% include "topo.html" %}
+<main class="conteudo">
+  <p class="largo"><a href="/sistema?aba=familias">← Famílias</a></p>
+  {% if let Some(a) = aviso %}<p class="largo ok">{{ a }}</p>{% endif %}
+  {% if let Some(link) = novo_link %}
+  <section class="cartao largo destaque">
+    <h2>🔗 Convite de admin para {{ f.nome }}</h2>
+    <p>Mande este link para quem vai administrar a família (vale 7 dias, uso único):</p>
+    <div class="linha"><input id="link-convite" value="{{ link }}" readonly style="flex:1">
+      <button type="button" onclick="const i=document.getElementById('link-convite');i.select();navigator.clipboard?.writeText(i.value).catch(()=>document.execCommand('copy'));this.textContent='Copiado ✓'">📋 Copiar</button></div>
+  </section>
+  {% endif %}
+
+  <section class="cartao largo">
+    <h2>👨‍👩‍👧 {{ f.nome }} <small class="suave">@{{ f.slug }}</small></h2>
+    <p class="suave">{{ f.historias }} história(s) · 💾 {{ "{:.1}"|format(f.espaco_mb) }} MB · uso pago nos últimos 7 dias: {{ f.uso_semana }}{% if let Some(l) = f.limite_semana %} de {{ l }}{% endif %}</p>
+    <h3>Membros</h3>
+    {% if membros.is_empty() %}<p class="suave">Ninguém ainda. Mande o convite de admin.</p>{% endif %}
+    <ul class="lista-simples">{% for (nome, email, papel) in membros %}
+      <li><strong>{{ nome }}</strong> · {{ email }} {% if papel == "admin" %}<span class="selo">admin</span>{% endif %}</li>{% endfor %}</ul>
+    <form method="post" action="/sistema/familias/{{ f.id }}/convite"><button type="submit" class="secundario">🔗 Novo convite de admin</button></form>
+    {% if !uso.is_empty() %}
+    <h3>Uso de IA (7 dias)</h3>
+    <ul class="lista-simples">{% for (via, provedor, n) in uso %}<li>{{ via }} · {{ provedor }}: {{ n }}</li>{% endfor %}</ul>
+    {% endif %}
+  </section>
+
+  <section class="cartao largo">
+    <h2>🤖 IA desta família</h2>
+    <form method="post" action="/sistema/familias/{{ f.id }}" class="grade-form">
+      <fieldset class="inteiro">
+        <legend>Assinaturas (CLI) que ela pode usar, em ordem de preferência</legend>
+        <p class="suave">Só aparecem as conectadas em <a href="/sistema?aba=assinaturas">Assinaturas</a>. Use ↑↓ para mudar a ordem.</p>
+        {% if clis.is_empty() %}<p class="suave">Nenhuma assinatura conectada na plataforma.</p>{% endif %}
+        <ol class="ordem-clis">{% for c in clis %}
+          <li><label class="check"><input type="checkbox" name="cli" value="{{ c.chave }}"{% if c.marcado %} checked{% endif %}> {{ c.nome }}</label>
+            <small class="suave">{{ c.situacao }}</small>
+            <span class="linha"><button type="button" class="pequeno secundario" data-mover="-1" title="Subir">↑</button><button type="button" class="pequeno secundario" data-mover="1" title="Descer">↓</button></span></li>{% endfor %}</ol>
+      </fieldset>
+      <fieldset class="inteiro">
+        <legend>Como escolher</legend>
+        <label class="check"><input type="radio" name="modo_cli" value="ordem"{% if f.modo_cli == "ordem" %} checked{% endif %}> <strong>Ordem</strong> — usa a primeira; se falhar, a próxima</label>
+        <label class="check"><input type="radio" name="modo_cli" value="rodizio"{% if f.modo_cli == "rodizio" %} checked{% endif %}> <strong>Rodízio</strong> — alterna entre as marcadas a cada pedido (se uma falhar, tenta as outras)</label>
+        <label class="check"><input type="radio" name="modo_cli" value="fixo"{% if f.modo_cli == "fixo" %} checked{% endif %}> <strong>Fixo</strong> — só a primeira, sem passar para outra</label>
+        <small class="suave">Com foto anexada, o Gemini (agy) é pulado, porque não lê fotos.</small>
+      </fieldset>
+      <label class="check inteiro"><input type="checkbox" name="chave_sistema" value="1"{% if f.usar_chave_sistema %} checked{% endif %}> Usar a chave do sistema (você paga a API)</label>
+      <label>Limite por semana <small class="suave">(histórias pelas CLIs + chave do sistema; vazio = sem limite)</small>
+        <input name="limite" type="number" min="0" value="{% if let Some(l) = f.limite_semana %}{{ l }}{% endif %}" placeholder="∞"></label>
+      <button type="submit" class="inteiro">💾 Salvar</button>
+    </form>
+  </section>
+</main>
+<script>
+document.querySelectorAll('[data-mover]').forEach((b) => b.addEventListener('click', () => {
+  const li = b.closest('li');
+  if (b.dataset.mover === '-1' && li.previousElementSibling) li.previousElementSibling.before(li);
+  if (b.dataset.mover === '1' && li.nextElementSibling) li.nextElementSibling.after(li);
+}));
+</script>
+{% endblock %}

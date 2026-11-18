@@ -7,7 +7,7 @@ pub mod gemini;
 
 use std::time::Duration;
 
-use anyhow::{anyhow, bail, Context};
+use anyhow::{anyhow, bail};
 use serde_json::Value;
 
 pub use api::{base_kimi, por_api};
@@ -75,12 +75,28 @@ async fn registrar_uso(st: &crate::AppState, familia: uuid::Uuid, via: &str, pro
         .await;
 }
 
+/// Em que ordem tentar as CLIs da família: "ordem" = como estão; "rodizio" = começa por uma diferente a cada
+/// pedido (pelo número de usos) e depois as outras; "fixo" = só a primeira.
+fn ordem_clis(clis: &[String], modo: &str, vezes: i64) -> Vec<String> {
+    if clis.is_empty() {
+        return Vec::new();
+    }
+    match modo {
+        "fixo" => clis[..1].to_vec(),
+        "rodizio" => {
+            let i = vezes.rem_euclid(clis.len() as i64) as usize;
+            clis[i..].iter().chain(&clis[..i]).cloned().collect()
+        }
+        _ => clis.to_vec(),
+    }
+}
+
 /// Gera texto pela melhor rota disponível para a família:
-/// CLI (assinaturas) → chave da família → chave do sistema → chave gratuita do Gemini (GEMINI_CHAVE_GRATIS).
+/// CLIs liberados para a família (na ordem dela) → chave da família → chave do sistema → chave gratuita do Gemini (GEMINI_CHAVE_GRATIS).
 /// O limite semanal vale para o que o admin paga (CLI e chave do sistema).
 pub async fn gerar_texto(st: &crate::AppState, familia: uuid::Uuid, p: &PedidoTexto) -> anyhow::Result<Value> {
-    let (cli, sistema, limites): (bool, bool, Value) = sqlx::query_as(
-        "SELECT COALESCE(c.cli_habilitado, false), COALESCE(c.usar_chave_sistema, false), COALESCE(c.limites, '{}')
+    let (clis, modo, sistema, limites): (Vec<String>, String, bool, Value) = sqlx::query_as(
+        "SELECT COALESCE(c.clis, '{}'), COALESCE(c.modo_cli, 'ordem'), COALESCE(c.usar_chave_sistema, false), COALESCE(c.limites, '{}')
            FROM acesso.familias f LEFT JOIN ia.config_familia c ON c.familia_id = f.id WHERE f.id = $1",
     )
     .bind(familia)
@@ -95,23 +111,33 @@ pub async fn gerar_texto(st: &crate::AppState, familia: uuid::Uuid, p: &PedidoTe
     let dentro_do_limite = limites["historias_semana"].as_i64().is_none_or(|l| usado < l);
     let mut erros: Vec<String> = Vec::new();
 
-    if cli && dentro_do_limite {
-        let r = match crate::config::get("CLI_TEXTO").as_deref() {
-            // O agy não aceita imagens anexadas: com fotos, tenta o Claude e depois o Codex.
-            Some("agy") if !p.imagens.is_empty() => match claude_cli(p).await {
-                Ok(v) => Ok(v),
-                Err(_) => codex_cli(p).await.context("o Gemini (agy) não lê fotos, e Claude/Codex não responderam"),
-            },
-            Some("agy") => agy_cli(p).await,
-            Some("codex") => codex_cli(p).await,
-            _ => claude_cli(p).await,
+    // As assinaturas liberadas para a família, na ordem dela; se uma falhar, tenta a próxima.
+    if dentro_do_limite {
+        let vezes = if modo == "rodizio" {
+            sqlx::query_scalar::<_, i64>("SELECT count(*) FROM ia.uso WHERE familia_id = $1 AND via = 'cli'")
+                .bind(familia)
+                .fetch_one(&st.db)
+                .await
+                .unwrap_or(0)
+        } else {
+            0
         };
-        match r {
-            Ok(v) => {
-                registrar_uso(st, familia, "cli", "assinatura").await;
-                return Ok(v);
+        for nome in &ordem_clis(&clis, &modo, vezes) {
+            let r = match nome.as_str() {
+                // O agy não aceita imagens anexadas: pula para a próxima.
+                "agy" if !p.imagens.is_empty() => continue,
+                "agy" => agy_cli(p).await,
+                "codex" => codex_cli(p).await,
+                "claude" => claude_cli(p).await,
+                _ => continue,
+            };
+            match r {
+                Ok(v) => {
+                    registrar_uso(st, familia, "cli", nome).await;
+                    return Ok(v);
+                }
+                Err(e) => erros.push(format!("CLI {nome}: {e:#}")),
             }
-            Err(e) => erros.push(format!("CLI: {e:#}")),
         }
     }
     for (prov, chave, modelo) in chaves(st, Some(familia)).await? {
@@ -165,6 +191,16 @@ mod testes {
         assert_eq!(extrair_json("Claro! Aqui está: {\"a\": {\"b\": 3}} Espero ter ajudado.").unwrap()["a"]["b"], 3);
         assert!(extrair_json("sem json aqui").is_err());
         assert!(extrair_json("{ quebrado").is_err());
+    }
+
+    #[test]
+    fn ordem_das_clis_por_modo() {
+        let c: Vec<String> = ["claude", "codex", "agy"].map(String::from).to_vec();
+        assert_eq!(ordem_clis(&c, "ordem", 5), c);
+        assert_eq!(ordem_clis(&c, "fixo", 5), vec!["claude".to_string()]);
+        assert_eq!(ordem_clis(&c, "rodizio", 0), c);
+        assert_eq!(ordem_clis(&c, "rodizio", 4), ["codex", "agy", "claude"].map(String::from).to_vec());
+        assert!(ordem_clis(&[], "rodizio", 3).is_empty());
     }
 
     #[test]

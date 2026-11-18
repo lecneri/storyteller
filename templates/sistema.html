@@ -3,43 +3,45 @@
 {% block corpo %}
 {% include "topo.html" %}
 <main class="conteudo">
+  <nav class="abas largo">{% for (k, rotulo) in abas %}<a href="/sistema?aba={{ k }}"{% if self.eh_aba(k) %} class="ativa"{% endif %}>{{ rotulo }}</a>{% endfor %}</nav>
   {% if let Some(a) = aviso %}<p class="largo ok">{{ a }}</p>{% endif %}
-  {% if let Some((nome, link)) = novo_link %}
-  <section class="cartao largo destaque">
-    <h2>🔗 Convite de admin para {{ nome }}</h2>
-    <p>Mande este link para quem vai administrar a família (vale 7 dias, uso único):</p>
-    <div class="linha"><input id="link-convite" value="{{ link }}" readonly style="flex:1">
-      <button type="button" onclick="const i=document.getElementById('link-convite');i.select();navigator.clipboard?.writeText(i.value).catch(()=>document.execCommand('copy'));this.textContent='Copiado ✓'">📋 Copiar</button></div>
+
+  {% if aba == "familias" %}
+  <section class="cartao largo">
+    <h2>👨‍👩‍👧 Famílias <small class="suave">({{ total }})</small></h2>
+    <form method="get" action="/sistema" class="linha">
+      <input type="hidden" name="aba" value="familias">
+      <input type="search" name="q" value="{{ busca }}" placeholder="🔎 Nome, @, nome ou e-mail do admin..." style="flex:1">
+      <button type="submit" class="secundario">Buscar</button>
+      {% if !busca.is_empty() %}<a href="/sistema?aba=familias">limpar</a>{% endif %}
+    </form>
+    {% if familias.is_empty() %}<p class="suave">Nenhuma família{% if !busca.is_empty() %} com “{{ busca }}”{% endif %}.</p>{% endif %}
+    <div class="tabela">
+    {% for f in familias %}
+      <a class="linha-familia" href="/sistema/familias/{{ f.id }}">
+        <span><strong>{{ f.nome }}</strong> <small class="suave">@{{ f.slug }}</small><br>
+          <small>{% if let Some(a) = f.admins %}👤 {{ a }}{% else %}<span class="suave">sem admin ainda (mande o convite)</span>{% endif %}</small><br>
+          <small class="suave">{{ f.membros }} membro(s) · {{ f.historias }} história(s) · uso 7d: {{ f.uso_semana }}{% if let Some(l) = f.limite_semana %}/{{ l }}{% endif %} · 💾 {{ "{:.1}"|format(f.espaco_mb) }} MB
+            · IA: {% if f.clis.is_empty() %}sem CLI{% else %}{% if f.modo_cli == "rodizio" %}🔄 {% endif %}{% for c in f.clis %}{% if !loop.first %}{% if f.modo_cli == "rodizio" %} / {% else %} → {% endif %}{% endif %}{{ self.nome_cli(c) }}{% endfor %}{% endif %}{% if f.usar_chave_sistema %} + chave do sistema{% endif %}</small></span>
+        <span class="seta">›</span>
+      </a>
+    {% endfor %}
+    </div>
+    {% if paginas > 1 %}
+    <nav class="paginacao">
+      {% if pagina > 1 %}<a href="{{ self.link_anterior() }}">‹</a>{% endif %}
+      {% for n in self.lista_paginas() %}{% if n == pagina %}<strong>{{ n }}</strong>{% else %}<a href="{{ self.link_pagina(n) }}">{{ n }}</a>{% endif %}{% endfor %}
+      {% if pagina < paginas %}<a href="{{ self.link_proxima() }}">›</a>{% endif %}
+    </nav>
+    {% endif %}
+    <form method="post" action="/sistema/familias" class="linha">
+      <input name="nome" placeholder="Nome da nova família (ex.: Família Souza)" required style="flex:1">
+      <button type="submit">+ Nova família</button>
+    </form>
   </section>
   {% endif %}
 
-  <section class="cartao largo">
-    <h2>⚙️ Famílias</h2>
-    <p class="suave"><strong>CLI</strong> = usa as suas assinaturas. <strong>Chave do sistema</strong> = você paga a API para a família.
-      O limite conta as histórias geradas por esses dois caminhos nos últimos 7 dias.</p>
-    <div class="tabela">
-    {% for f in familias %}
-      <form method="post" action="/sistema/familias/{{ f.id }}" class="linha-familia">
-        <span><strong>{{ f.nome }}</strong><br><small class="suave">@{{ f.slug }} · {{ f.membros }} membro(s) · {{ f.historias }} história(s) · uso 7d: {{ f.uso_semana }} · 💾 {{ "{:.1}"|format(f.espaco_mb) }} MB</small></span>
-        <label class="check"><input type="checkbox" name="cli" value="1"{% if f.cli_habilitado %} checked{% endif %}> CLI</label>
-        <label class="check"><input type="checkbox" name="chave_sistema" value="1"{% if f.usar_chave_sistema %} checked{% endif %}> Chave do sistema</label>
-        <label class="check">Limite/semana <input name="limite" type="number" min="0" style="width:80px" value="{% if let Some(l) = f.limite_semana %}{{ l }}{% endif %}" placeholder="∞"></label>
-        <button type="submit" class="pequeno">Salvar</button>
-        <button type="submit" class="pequeno secundario" formaction="/sistema/familias/{{ f.id }}/convite">Convite de admin</button>
-      </form>
-    {% endfor %}
-    </div>
-    <form method="post" action="/sistema/limpar" class="linha">
-      <span class="suave">Arquivos sem uso (imagens trocadas, histórias apagadas, áudios de trechos editados ou de vozes trocadas) são apagados sozinhos uma vez por dia.
-        Última limpeza: {% if self.tem("LIMPEZA_RESULTADO") %}{{ self.cfg("LIMPEZA_RESULTADO") }}{% else %}ainda não rodou{% endif %}.</span>
-      <button type="submit" class="pequeno secundario">🧹 Limpar agora</button>
-    </form>
-    <form method="post" action="/sistema/familias" class="linha">
-      <input name="nome" placeholder="Nome da nova família (ex.: Família Souza)" required style="flex:1">
-      <button type="submit">Criar família</button>
-    </form>
-  </section>
-
+  {% if aba == "assinaturas" %}
   <section class="cartao largo">
     <h2>🤖 Assinaturas (CLIs)</h2>
     <p class="suave">Conecte as suas assinaturas sem SSH: clique em “Conectar”, abra o link, autorize e (se pedir) cole o código aqui.</p>
@@ -58,18 +60,15 @@
     {% endfor %}
   </section>
 
+  {% endif %}
+
+  {% if aba == "config" %}
   <section class="cartao largo">
     <h2>⚙️ Configurações gerais</h2>
     <p class="suave">Tudo aqui fica salvo no banco (os segredos, criptografados). Campos de segredo em branco mantêm o valor atual.</p>
     <form method="post" action="/sistema/config" class="grade-form">
       <label class="inteiro">Endereço público do site <small class="suave">{{ self.origem("URL_PUBLICA") }}</small>
         <input name="URL_PUBLICA" value="{{ self.cfg("URL_PUBLICA") }}" placeholder="https://historias.seudominio.com.br"></label>
-      <label>CLI para escrever histórias
-        <select name="CLI_TEXTO">
-          <option value="claude"{% if self.cfg("CLI_TEXTO") != "agy" && self.cfg("CLI_TEXTO") != "codex" %} selected{% endif %}>Claude</option>
-          <option value="agy"{% if self.cfg("CLI_TEXTO") == "agy" %} selected{% endif %}>Gemini (agy)</option>
-          <option value="codex"{% if self.cfg("CLI_TEXTO") == "codex" %} selected{% endif %}>ChatGPT (Codex)</option>
-        </select></label>
       <label>Token do Claude <small class="suave">{% if self.tem("CLAUDE_CODE_OAUTH_TOKEN") %}✅ {{ self.origem("CLAUDE_CODE_OAUTH_TOKEN") }}{% else %}ou use “Conectar” acima{% endif %}</small>
         <input name="CLAUDE_CODE_OAUTH_TOKEN" type="password" autocomplete="off" placeholder="sk-ant-oat… (opcional)"></label>
       <label>Chave grátis do Gemini <small class="suave">{% if self.tem("GEMINI_CHAVE_GRATIS") %}✅ {{ self.origem("GEMINI_CHAVE_GRATIS") }}{% else %}para famílias sem outra IA{% endif %}</small>
@@ -103,14 +102,29 @@
     </form>
   </section>
 
+  {% let escopo = "sistema" %}{% let acao_chaves = "/sistema/chaves" %}
+  {% include "chaves.html" %}
+  {% endif %}
+
+  {% if aba == "musicas" %}
   <section class="cartao largo" id="musicas-modelo">
     <h2>🎵 Músicas da plataforma</h2>
     <p class="suave">Modelos que qualquer família pode usar como música de fundo. Use só músicas que permitem redistribuir (CC0, domínio público, CC BY com crédito).</p>
     <div class="carregando suave">Carregando…</div>
   </section>
 
-{% let escopo = "sistema" %}{% let acao_chaves = "/sistema/chaves" %}
-  {% include "chaves.html" %}
+  {% endif %}
+
+  {% if aba == "manutencao" %}
+  <section class="cartao largo">
+    <h2>🧹 Manutenção</h2>
+    <form method="post" action="/sistema/limpar" class="linha">
+      <span class="suave">Arquivos sem uso (imagens trocadas, histórias apagadas, áudios de trechos editados ou de vozes trocadas) são apagados sozinhos uma vez por dia.
+        Última limpeza: {% if self.tem("LIMPEZA_RESULTADO") %}{{ self.cfg("LIMPEZA_RESULTADO") }}{% else %}ainda não rodou{% endif %}.</span>
+      <button type="submit" class="pequeno secundario">🧹 Limpar agora</button>
+    </form>
+  </section>
+  {% endif %}
 </main>
 <script src="/sistema.js?v={{ crate::web::versao() }}" defer></script>
 <script src="/musicas-modelo.js?v={{ crate::web::versao() }}" defer></script>

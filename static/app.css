@@ -275,3 +275,17 @@ input[type=file] { max-width:100%; }
 .referencia textarea { width:100%; }
 .acoes-variante { display:grid; gap:8px; }
 @media (max-width:560px) { .referencia { grid-template-columns:minmax(0,1fr); } }
+/* Sistema: abas, paginação, lista de membros, ordem das CLIs. */
+.abas { display:flex; flex-wrap:wrap; gap:6px; }
+.abas a { padding:6px 12px; border:1px solid var(--borda); border-radius:999px; text-decoration:none; background:var(--cartao); }
+.abas a.ativa { border-color:var(--cor); color:var(--cor); font-weight:700; }
+a.linha-familia { text-decoration:none; color:inherit; }
+a.linha-familia:hover { border-color:var(--cor); }
+.linha-familia .seta { font-size:1.6em; color:var(--cor); }
+.paginacao { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin:8px 0; }
+.paginacao a, .paginacao strong { padding:4px 10px; border-radius:8px; border:1px solid var(--borda); text-decoration:none; }
+.paginacao strong { border-color:var(--cor); color:var(--cor); }
+.lista-simples { margin:0; padding-left:18px; display:grid; gap:4px; }
+.ordem-clis { margin:0; padding-left:20px; display:grid; gap:6px; }
+.ordem-clis li { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.ordem-clis li .linha { margin-left:auto; }

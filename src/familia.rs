@@ -71,7 +71,7 @@ impl PaginaFamilia {
 
 async fn pagina(st: &AppState, s: Sessao, novo_link: Option<String>, aviso: Option<String>) -> Response {
     let cfg = sqlx::query_as::<_, Config>(
-        "SELECT f.nome, f.slug, f.visibilidade_padrao, c.cli_habilitado, c.usar_chave_sistema
+        "SELECT f.nome, f.slug, f.visibilidade_padrao, cardinality(c.clis) > 0 AS cli_habilitado, c.usar_chave_sistema
            FROM acesso.familias f LEFT JOIN ia.config_familia c ON c.familia_id = f.id WHERE f.id = $1",
     )
     .bind(s.familia_id)

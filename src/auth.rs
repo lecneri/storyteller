@@ -215,7 +215,7 @@ pub async fn criar_admin(db: &PgPool, nome: &str, email: &str, senha: &str, fami
         .bind(usuario_id)
         .execute(&mut *tx)
         .await?;
-    sqlx::query("INSERT INTO ia.config_familia (familia_id, cli_habilitado) VALUES ($1, true)")
+    sqlx::query("INSERT INTO ia.config_familia (familia_id, cli_habilitado, clis) VALUES ($1, true, '{claude}')")
         .bind(familia_id)
         .execute(&mut *tx)
         .await?;

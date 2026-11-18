@@ -176,7 +176,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/p/{token}/bloco-audio", post(partilha::publico_audio))
         .route("/sistema", get(sistema::ver))
         .route("/sistema/familias", post(sistema::criar_familia))
-        .route("/sistema/familias/{id}", post(sistema::salvar_familia))
+        .route("/sistema/familias/{id}", get(sistema::ver_familia).post(sistema::salvar_familia))
         .route("/sistema/familias/{id}/convite", post(sistema::convite_admin))
         .route("/sistema/chaves", post(sistema::salvar_chave))
         .route("/sistema/chaves/{provedor}/remover", post(sistema::remover_chave))

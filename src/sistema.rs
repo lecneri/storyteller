@@ -2,7 +2,7 @@
 
 use askama::Template;
 use axum::{
-    extract::{Path, RawForm, State},
+    extract::{Path, Query, RawForm, State},
     response::{IntoResponse, Redirect, Response},
 };
 use uuid::Uuid;
@@ -20,24 +20,52 @@ struct LinhaFamilia {
     id: Uuid,
     nome: String,
     slug: String,
+    /// "Nome · e-mail" do(s) admin(s) da família.
+    admins: Option<String>,
     membros: i64,
     historias: i64,
-    cli_habilitado: bool,
+    clis: Vec<String>,
+    modo_cli: String,
     usar_chave_sistema: bool,
     limite_semana: Option<i64>,
     uso_semana: i64,
     espaco_mb: f64,
 }
 
+/// Abas da página do sistema: (chave, rótulo).
+const ABAS: [(&str, &str); 5] = [
+    ("familias", "👨‍👩‍👧 Famílias"),
+    ("assinaturas", "🤖 Assinaturas"),
+    ("config", "⚙️ Configurações"),
+    ("musicas", "🎵 Músicas"),
+    ("manutencao", "🧹 Manutenção"),
+];
+const POR_PAGINA: i64 = 20;
+
+/// Nome amigável de cada CLI.
+fn nome_cli(c: &str) -> &'static str {
+    match c {
+        "claude" => "Claude",
+        "codex" => "ChatGPT (Codex)",
+        "agy" => "Gemini (agy)",
+        _ => "?",
+    }
+}
+
 #[derive(Template)]
 #[template(path = "sistema.html")]
 struct PaginaSistema {
     s: Sessao,
+    aba: String,
+    abas: Vec<(&'static str, &'static str)>,
     familias: Vec<LinhaFamilia>,
+    busca: String,
+    pagina: i64,
+    paginas: i64,
+    total: i64,
     provedores: Vec<(&'static str, &'static str)>,
     linhas_chaves: Vec<crate::chaves::LinhaChave>,
     cripto_ok: bool,
-    novo_link: Option<(String, String)>,
     aviso: Option<String>,
     clis: Vec<(String, String)>,
 }
@@ -56,50 +84,125 @@ impl PaginaSistema {
             _ => "",
         }
     }
+    fn eh_aba(&self, k: &str) -> bool {
+        self.aba == k
+    }
+    fn nome_cli(&self, c: &str) -> &'static str {
+        nome_cli(c)
+    }
+    /// Link de outra página da lista, mantendo a busca.
+    fn link_pagina(&self, n: &i64) -> String {
+        let mut u = format!("/sistema?aba=familias&p={n}");
+        if !self.busca.is_empty() {
+            u.push_str("&q=");
+            u.push_str(&urlencoding(&self.busca));
+        }
+        u
+    }
+    fn link_anterior(&self) -> String {
+        self.link_pagina(&(self.pagina - 1))
+    }
+    fn link_proxima(&self) -> String {
+        self.link_pagina(&(self.pagina + 1))
+    }
+    fn lista_paginas(&self) -> Vec<i64> {
+        (1..=self.paginas).collect()
+    }
+}
+
+fn urlencoding(t: &str) -> String {
+    serde_urlencoded::to_string([("", t)]).unwrap_or_default().trim_start_matches('=').to_string()
 }
 
 fn so_admin_sistema(s: &Sessao) -> Option<Response> {
     (!s.admin_sistema).then(|| Redirect::to("/").into_response())
 }
 
-async fn pagina(st: &AppState, s: Sessao, novo_link: Option<(String, String)>, aviso: Option<String>) -> Response {
-    let familias = sqlx::query_as::<_, LinhaFamilia>(
-        "SELECT f.id, f.nome, f.slug,
-                (SELECT count(*) FROM acesso.membros m WHERE m.familia_id = f.id) AS membros,
-                (SELECT count(*) FROM conteudo.historias h WHERE h.familia_id = f.id) AS historias,
-                COALESCE(c.cli_habilitado, false) AS cli_habilitado,
-                COALESCE(c.usar_chave_sistema, false) AS usar_chave_sistema,
-                (c.limites->>'historias_semana')::bigint AS limite_semana,
-                (SELECT count(*) FROM ia.uso u WHERE u.familia_id = f.id AND u.criado_em > now() - interval '7 days'
-                    AND u.via IN ('cli', 'chave_sistema')) AS uso_semana,
-                COALESCE((SELECT sum(a.bytes) FROM midia.arquivos a WHERE a.familia_id = f.id), 0)::float8 / 1048576.0 AS espaco_mb
-           FROM acesso.familias f LEFT JOIN ia.config_familia c ON c.familia_id = f.id
-          ORDER BY f.nome",
-    )
-    .fetch_all(&st.db)
-    .await;
-    let clis = crate::cli_login::situacao().await;
-    match familias {
-        Ok(familias) => render(PaginaSistema {
-            clis,
-            s,
-            familias,
-            // A ElevenLabs é por família: cada uma usa a própria chave.
-            provedores: PROVEDORES.iter().copied().filter(|(p, _)| *p != "elevenlabs").collect(),
-            linhas_chaves: crate::chaves::linhas(st, None).await,
-            cripto_ok: segredos::disponivel(),
-            novo_link,
-            aviso,
-        }),
-        Err(e) => erro_interno(e.into()),
-    }
+const SELECT_FAMILIA: &str = "SELECT f.id, f.nome, f.slug,
+        (SELECT string_agg(u.nome || ' · ' || u.email, ', ' ORDER BY m.criado_em) FROM acesso.membros m
+           JOIN acesso.usuarios u ON u.id = m.usuario_id WHERE m.familia_id = f.id AND m.papel = 'admin') AS admins,
+        (SELECT count(*) FROM acesso.membros m WHERE m.familia_id = f.id) AS membros,
+        (SELECT count(*) FROM conteudo.historias h WHERE h.familia_id = f.id) AS historias,
+        COALESCE(c.clis, '{}') AS clis, COALESCE(c.modo_cli, 'ordem') AS modo_cli,
+        COALESCE(c.usar_chave_sistema, false) AS usar_chave_sistema,
+        (c.limites->>'historias_semana')::bigint AS limite_semana,
+        (SELECT count(*) FROM ia.uso u WHERE u.familia_id = f.id AND u.criado_em > now() - interval '7 days'
+            AND u.via IN ('cli', 'chave_sistema')) AS uso_semana,
+        COALESCE((SELECT sum(a.bytes) FROM midia.arquivos a WHERE a.familia_id = f.id), 0)::float8 / 1048576.0 AS espaco_mb
+   FROM acesso.familias f LEFT JOIN ia.config_familia c ON c.familia_id = f.id";
+
+/// Filtro da busca: nome ou @ da família, nome ou e-mail de qualquer membro.
+const FILTRO_BUSCA: &str = "($1 = '' OR f.nome ILIKE $1 OR f.slug ILIKE $1 OR EXISTS (
+        SELECT 1 FROM acesso.membros m JOIN acesso.usuarios u ON u.id = m.usuario_id
+         WHERE m.familia_id = f.id AND (u.nome ILIKE $1 OR u.email ILIKE $1)))";
+
+#[derive(serde::Deserialize, Default)]
+pub struct Consulta {
+    #[serde(default)]
+    aba: String,
+    #[serde(default)]
+    q: String,
+    #[serde(default)]
+    p: Option<i64>,
 }
 
-pub async fn ver(State(st): State<AppState>, s: Sessao) -> Response {
+async fn pagina(st: &AppState, s: Sessao, c: Consulta, aviso: Option<String>) -> Response {
+    let aba = if ABAS.iter().any(|(k, _)| *k == c.aba) { c.aba.clone() } else { "familias".to_string() };
+    let busca = c.q.trim().to_string();
+    let padrao = if busca.is_empty() { String::new() } else { format!("%{}%", busca.replace('%', "").replace('_', "")) };
+    let (mut familias, mut total, mut pag, mut paginas) = (Vec::new(), 0, 1, 1);
+    if aba == "familias" {
+        total = match sqlx::query_scalar::<_, i64>(&format!("SELECT count(*) FROM acesso.familias f WHERE {FILTRO_BUSCA}"))
+            .bind(&padrao)
+            .fetch_one(&st.db)
+            .await
+        {
+            Ok(n) => n,
+            Err(e) => return erro_interno(e.into()),
+        };
+        paginas = ((total + POR_PAGINA - 1) / POR_PAGINA).max(1);
+        pag = c.p.unwrap_or(1).clamp(1, paginas);
+        familias = match sqlx::query_as::<_, LinhaFamilia>(&format!(
+            "{SELECT_FAMILIA} WHERE {FILTRO_BUSCA} ORDER BY lower(f.nome), f.slug LIMIT $2 OFFSET $3"
+        ))
+        .bind(&padrao)
+        .bind(POR_PAGINA)
+        .bind((pag - 1) * POR_PAGINA)
+        .fetch_all(&st.db)
+        .await
+        {
+            Ok(f) => f,
+            Err(e) => return erro_interno(e.into()),
+        };
+    }
+    let clis = if aba == "assinaturas" { crate::cli_login::situacao().await } else { Vec::new() };
+    render(PaginaSistema {
+        clis,
+        s,
+        aba,
+        abas: ABAS.to_vec(),
+        familias,
+        busca,
+        pagina: pag,
+        paginas,
+        total,
+        // A ElevenLabs é por família: cada uma usa a própria chave.
+        provedores: PROVEDORES.iter().copied().filter(|(p, _)| *p != "elevenlabs").collect(),
+        linhas_chaves: crate::chaves::linhas(st, None).await,
+        cripto_ok: segredos::disponivel(),
+        aviso,
+    })
+}
+
+fn aba(nome: &str) -> Consulta {
+    Consulta { aba: nome.into(), ..Default::default() }
+}
+
+pub async fn ver(State(st): State<AppState>, s: Sessao, Query(c): Query<Consulta>) -> Response {
     if let Some(r) = so_admin_sistema(&s) {
         return r;
     }
-    pagina(&st, s, None, None).await
+    pagina(&st, s, c, None).await
 }
 
 fn campos(corpo: &[u8]) -> Vec<(String, String)> {
@@ -109,7 +212,86 @@ fn campo(form: &[(String, String)], k: &str) -> String {
     form.iter().find(|(n, _)| n == k).map(|(_, v)| v.trim().to_string()).unwrap_or_default()
 }
 
+// ───────────── página de uma família ─────────────
+
+/// Um CLI na página da família: chave, nome, situação no servidor, marcado para a família.
+struct OpcaoCli {
+    chave: String,
+    nome: &'static str,
+    situacao: String,
+    marcado: bool,
+}
+
+#[derive(Template)]
+#[template(path = "sistema_familia.html")]
+struct PaginaFamiliaSistema {
+    s: Sessao,
+    f: LinhaFamilia,
+    membros: Vec<(String, String, String)>,
+    uso: Vec<(String, String, i64)>,
+    clis: Vec<OpcaoCli>,
+    novo_link: Option<String>,
+    aviso: Option<String>,
+}
+
+fn conectado(situacao: &str) -> bool {
+    !situacao.starts_with("não conectado") && situacao != "indisponível"
+}
+
+/// CLIs para marcar: os da família na ordem dela e depois os outros conectados na plataforma.
+/// Um CLI desconectado só aparece se a família já tinha (para poder desmarcar).
+fn opcoes_cli(da_familia: &[String], situacao: &[(String, String)]) -> Vec<OpcaoCli> {
+    let sit = |c: &str| situacao.iter().find(|(n, _)| n == c).map(|(_, s)| s.clone()).unwrap_or_else(|| "não conectado".into());
+    let mut v: Vec<OpcaoCli> = da_familia
+        .iter()
+        .filter(|c| ["claude", "codex", "agy"].contains(&c.as_str()))
+        .map(|c| OpcaoCli { chave: c.clone(), nome: nome_cli(c), situacao: sit(c), marcado: true })
+        .collect();
+    for (c, st) in situacao {
+        if !v.iter().any(|o| o.chave == *c) && conectado(st) {
+            v.push(OpcaoCli { chave: c.clone(), nome: nome_cli(c), situacao: st.clone(), marcado: false });
+        }
+    }
+    v
+}
+
+async fn pagina_familia(st: &AppState, s: Sessao, id: Uuid, novo_link: Option<String>, aviso: Option<String>) -> Response {
+    let f = match sqlx::query_as::<_, LinhaFamilia>(&format!("{SELECT_FAMILIA} WHERE f.id = $1")).bind(id).fetch_optional(&st.db).await {
+        Ok(Some(f)) => f,
+        Ok(None) => return Redirect::to("/sistema").into_response(),
+        Err(e) => return erro_interno(e.into()),
+    };
+    let membros: Vec<(String, String, String)> = sqlx::query_as(
+        "SELECT u.nome, u.email, m.papel FROM acesso.membros m JOIN acesso.usuarios u ON u.id = m.usuario_id
+          WHERE m.familia_id = $1 ORDER BY m.papel, u.nome",
+    )
+    .bind(id)
+    .fetch_all(&st.db)
+    .await
+    .unwrap_or_default();
+    let uso: Vec<(String, String, i64)> = sqlx::query_as(
+        "SELECT via, provedor, count(*) FROM ia.uso WHERE familia_id = $1 AND criado_em > now() - interval '7 days'
+          GROUP BY via, provedor ORDER BY count(*) DESC",
+    )
+    .bind(id)
+    .fetch_all(&st.db)
+    .await
+    .unwrap_or_default();
+    let clis = opcoes_cli(&f.clis, &crate::cli_login::situacao().await);
+    render(PaginaFamiliaSistema { s, f, membros, uso, clis, novo_link, aviso })
+}
+
+/// GET /sistema/familias/{id}
+pub async fn ver_familia(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>, Query(q): Query<std::collections::HashMap<String, String>>) -> Response {
+    if let Some(r) = so_admin_sistema(&s) {
+        return r;
+    }
+    let aviso = q.contains_key("salvo").then(|| "Salvo ✓".to_string());
+    pagina_familia(&st, s, id, None, aviso).await
+}
+
 /// POST /sistema/familias: cria a família e gera o link de convite para o admin dela.
+/// O nome pode repetir (o @ ganha -2, -3...); o admin aparece na lista para diferenciar.
 pub async fn criar_familia(State(st): State<AppState>, s: Sessao, RawForm(corpo): RawForm) -> Response {
     if let Some(r) = so_admin_sistema(&s) {
         return r;
@@ -117,25 +299,32 @@ pub async fn criar_familia(State(st): State<AppState>, s: Sessao, RawForm(corpo)
     let form = campos(&corpo);
     let nome = campo(&form, "nome");
     if nome.is_empty() {
-        return pagina(&st, s, None, Some("Dê um nome para a família.".into())).await;
+        return pagina(&st, s, aba("familias"), Some("Dê um nome para a família.".into())).await;
     }
     let id = match familia::criar_familia(&st, &nome).await {
         Ok(id) => id,
         Err(e) => return erro_interno(e),
     };
     match familia::criar_convite_para(&st, id, "admin", s.usuario_id).await {
-        Ok(link) => pagina(&st, s, Some((nome, link)), None).await,
+        Ok(link) => pagina_familia(&st, s, id, Some(link), Some(format!("Família {nome} criada ✓"))).await,
         Err(e) => erro_interno(e),
     }
 }
 
-/// POST /sistema/familias/{id}: flags e limite.
+/// POST /sistema/familias/{id}: CLIs (em ordem), chave do sistema e limite.
 pub async fn salvar_familia(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>, RawForm(corpo): RawForm) -> Response {
     if let Some(r) = so_admin_sistema(&s) {
         return r;
     }
     let form = campos(&corpo);
-    let cli = form.iter().any(|(k, _)| k == "cli");
+    // Os "cli" marcados chegam na ordem da tela.
+    let mut clis: Vec<String> = Vec::new();
+    for (k, v) in &form {
+        if k == "cli" && ["claude", "codex", "agy"].contains(&v.as_str()) && !clis.contains(v) {
+            clis.push(v.clone());
+        }
+    }
+    let modo = Some(campo(&form, "modo_cli")).filter(|m| ["ordem", "rodizio", "fixo"].contains(&m.as_str())).unwrap_or_else(|| "ordem".into());
     let chave = form.iter().any(|(k, _)| k == "chave_sistema");
     let limite: Option<i64> = campo(&form, "limite").parse().ok().filter(|n: &i64| *n > 0);
     let limites = match limite {
@@ -143,17 +332,19 @@ pub async fn salvar_familia(State(st): State<AppState>, s: Sessao, Path(id): Pat
         None => serde_json::json!({}),
     };
     let r = sqlx::query(
-        "INSERT INTO ia.config_familia (familia_id, cli_habilitado, usar_chave_sistema, limites) VALUES ($1, $2, $3, $4)
-         ON CONFLICT (familia_id) DO UPDATE SET cli_habilitado = $2, usar_chave_sistema = $3, limites = $4",
+        "INSERT INTO ia.config_familia (familia_id, cli_habilitado, clis, usar_chave_sistema, limites, modo_cli) VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (familia_id) DO UPDATE SET cli_habilitado = $2, clis = $3, usar_chave_sistema = $4, limites = $5, modo_cli = $6",
     )
     .bind(id)
-    .bind(cli)
+    .bind(!clis.is_empty())
+    .bind(&clis)
     .bind(chave)
     .bind(limites)
+    .bind(&modo)
     .execute(&st.db)
     .await;
     match r {
-        Ok(_) => Redirect::to("/sistema").into_response(),
+        Ok(_) => Redirect::to(&format!("/sistema/familias/{id}?salvo=1")).into_response(),
         Err(e) => erro_interno(e.into()),
     }
 }
@@ -162,12 +353,8 @@ pub async fn convite_admin(State(st): State<AppState>, s: Sessao, Path(id): Path
     if let Some(r) = so_admin_sistema(&s) {
         return r;
     }
-    let nome: String = match sqlx::query_scalar("SELECT nome FROM acesso.familias WHERE id = $1").bind(id).fetch_one(&st.db).await {
-        Ok(n) => n,
-        Err(e) => return erro_interno(e.into()),
-    };
     match familia::criar_convite_para(&st, id, "admin", s.usuario_id).await {
-        Ok(link) => pagina(&st, s, Some((nome, link)), None).await,
+        Ok(link) => pagina_familia(&st, s, id, Some(link), None).await,
         Err(e) => erro_interno(e),
     }
 }
@@ -179,10 +366,10 @@ pub async fn salvar_chave(State(st): State<AppState>, s: Sessao, RawForm(corpo):
     let form = campos(&corpo);
     let (provedor, chave) = (campo(&form, "provedor"), campo(&form, "chave"));
     if !PROVEDORES.iter().any(|(p, _)| *p == provedor) || provedor == "elevenlabs" || chave.len() < 10 {
-        return pagina(&st, s, None, Some("Chave inválida.".into())).await;
+        return pagina(&st, s, aba("config"), Some("Chave inválida.".into())).await;
     }
     match familia::gravar_chave(&st, None, &provedor, &chave).await {
-        Ok(()) => pagina(&st, s, None, Some("Chave do sistema salva ✓".into())).await,
+        Ok(()) => pagina(&st, s, aba("config"), Some("Chave do sistema salva ✓".into())).await,
         Err(e) => erro_interno(e),
     }
 }
@@ -196,7 +383,7 @@ pub async fn remover_chave(State(st): State<AppState>, s: Sessao, Path(provedor)
         .execute(&st.db)
         .await
     {
-        Ok(_) => Redirect::to("/sistema").into_response(),
+        Ok(_) => Redirect::to("/sistema?aba=config").into_response(),
         Err(e) => erro_interno(e.into()),
     }
 }
@@ -224,7 +411,7 @@ pub async fn salvar_config(State(st): State<AppState>, s: Sessao, RawForm(corpo)
             return erro_interno(e);
         }
     }
-    pagina(&st, s, None, Some("Configurações salvas ✓".into())).await
+    pagina(&st, s, aba("config"), Some("Configurações salvas ✓".into())).await
 }
 
 /// POST /sistema/email-teste: manda um e-mail de teste para o admin.
@@ -245,7 +432,7 @@ pub async fn email_teste(State(st): State<AppState>, s: Sessao) -> Response {
             Err(e) => format!("Falhou: {e:#}"),
         }
     };
-    pagina(&st, s, None, Some(aviso)).await
+    pagina(&st, s, aba("config"), Some(aviso)).await
 }
 
 // ───────────── login dos CLIs pelo site ─────────────
@@ -315,5 +502,5 @@ pub async fn limpar_agora(State(st): State<AppState>, s: Sessao) -> Response {
     let ok = r.is_ok();
     let texto = crate::limpeza::registrar(&st, r).await;
     let aviso = if ok { format!("Limpeza feita ✓ {texto} (arquivos com menos de 24 h ficam).") } else { format!("A limpeza {texto}") };
-    pagina(&st, s, None, Some(aviso)).await
+    pagina(&st, s, aba("manutencao"), Some(aviso)).await
 }
