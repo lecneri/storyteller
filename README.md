@@ -126,3 +126,11 @@ scripts/      st-tts.py (narração com edge-tts), testar.sh
 - As assinaturas pessoais (Claude, ChatGPT, Google) são para uso pessoal. Compartilhar o acesso com outras pessoas pode violar os termos desses serviços. Por isso o uso de CLI é liberado **por família**, pelo admin.
 - O edge-tts usa um serviço não oficial da Microsoft e pode deixar de funcionar.
 - Os nomes de marcas usados como "estilo de referência" (ex.: um desenho animado famoso) servem só para orientar a IA. Este projeto não tem relação com essas marcas.
+
+---
+
+## 📄 Licença
+
+Código aberto sob a [GNU AGPL-3.0](LICENSE) (ou versão posterior). Pode usar, estudar, modificar e redistribuir. Quem oferecer o sistema pela internet, modificado ou não, precisa disponibilizar o código-fonte para os usuários.
+
+Precisa usar sem as obrigações da AGPL (por exemplo, num produto fechado)? **Licença comercial disponível sob consulta.**
