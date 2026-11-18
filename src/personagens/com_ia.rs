@@ -35,7 +35,14 @@ pub fn aparencia_variante(base: &str, variante: &str, descricao: Option<&str>) -
 
 /// Prompt do "model sheet" (folha de referência) de uma variante.
 pub fn prompt_model_sheet(nome: &str, aparencia: &str, estilo: Option<&str>, com_fotos: bool) -> String {
-    let estilo = estilo.map(str::trim).filter(|e| !e.is_empty()).map(|e| format!("{e}, ")).unwrap_or_default();
+    // O estilo da variante manda no traço: vem destacado e sem o "traço limpo" padrão misturado.
+    let estilo = match estilo.map(str::trim).filter(|e| !e.is_empty()) {
+        Some(e) => format!(
+            "ESTILO DE DESENHO: {e}. Desenhe exatamente nesse estilo (traço, formato dos olhos e do rosto, proporções, \
+             cores e sombreamento típicos de {e}), adaptado para livro infantil."
+        ),
+        None => "Estilo: ilustração de livro infantil, cores vivas, traço limpo e amigável.".to_string(),
+    };
     let fotos = if com_fotos {
         "\nUse as imagens anexadas só como referência de traços (rosto, cabelo, cores, roupa) e transforme em desenho; não faça foto realista."
     } else {
@@ -43,7 +50,7 @@ pub fn prompt_model_sheet(nome: &str, aparencia: &str, estilo: Option<&str>, com
     };
     format!(
         "Folha de personagem (model sheet) para livro infantil: {nome}. {aparencia}\n\
-         Estilo: {estilo}cores vivas, traço limpo e amigável.\n\
+         {estilo}\n\
          Corpo inteiro, de frente, pose neutra e simpática, fundo branco liso, formato retrato 3:4.\n\
          Não escreva nenhum texto, letra ou número na imagem.{fotos}"
     )
@@ -243,12 +250,12 @@ pub(super) async fn gerar_desenho_variante(st: &AppState, s: &Sessao, slug: &str
 pub fn nota_referencias(com_variante: bool, com_fotos: bool) -> String {
     let mut t = String::new();
     if com_variante {
-        t.push_str("\nAs primeiras imagens anexadas já são esta versão do personagem: mantenha o rosto, a roupa e o traço delas.");
+        t.push_str("\nAs primeiras imagens anexadas já são esta versão do personagem: mantenha o rosto e a roupa delas, mas o traço é sempre o do ESTILO DE DESENHO acima.");
     }
     if com_fotos {
         t.push_str(
             "\nA última imagem anexada é a referência do personagem (foto real ou desenho): use só para o rosto, o cabelo, a pele, \
-             a idade e as proporções, e desenhe no estilo pedido. Não copie a roupa nem o fundo dela; se for foto, não faça foto realista.",
+             a idade e as proporções, e desenhe no ESTILO DE DESENHO pedido. Não copie a roupa nem o fundo dela; se for foto, não faça foto realista.",
         );
     }
     t
@@ -329,6 +336,15 @@ pub async fn descrever_foto(State(st): State<AppState>, s: Sessao, mp: Multipart
 #[cfg(test)]
 mod testes {
     use super::aparencia_variante;
+
+    #[test]
+    fn estilo_vai_destacado_no_prompt() {
+        let p = super::prompt_model_sheet("Pedro", "Menino de 4 anos", Some("anime do Pokémon"), false);
+        assert!(p.contains("ESTILO DE DESENHO: anime do Pokémon."));
+        assert!(!p.contains("traço limpo"));
+        let sem = super::prompt_model_sheet("Pedro", "Menino de 4 anos", Some("  "), false);
+        assert!(sem.contains("cores vivas, traço limpo"));
+    }
 
     #[test]
     fn variante_soma_so_o_que_muda() {

@@ -6,7 +6,9 @@
     const f = b.form;
     const v = (n) => (f.querySelector('[name=' + n + ']')?.value || '').trim();
     let t = b.dataset.promptModelo.replaceAll('§NOME§', v('nome') || 'nova versão');
-    t = v('estilo') ? t.replaceAll('§ESTILO§', v('estilo')) : t.replaceAll('§ESTILO§, ', '');
+    // Sem estilo digitado, a linha do estilo vira o padrão (igual ao servidor).
+    t = t.split('\n').map((l) => (!l.includes('§ESTILO§') ? l : v('estilo') ? l.replaceAll('§ESTILO§', v('estilo'))
+      : 'Estilo: ilustração de livro infantil, cores vivas, traço limpo e amigável.')).join('\n');
     t = v('descricao') ? t.replaceAll('§MUDA§', v('descricao')) : t.split('\n').filter((l) => !l.includes('§MUDA§')).join('\n');
     const antes = b.textContent;
     try { await navigator.clipboard.writeText(t); b.textContent = '✅ Copiado'; } catch (_) { prompt('Copie o prompt:', t); }
