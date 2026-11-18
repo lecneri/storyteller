@@ -78,7 +78,9 @@ async fn main() -> anyhow::Result<()> {
     if let Err(e) = config::carregar(&state).await {
         tracing::warn!("não carreguei as configurações do sistema: {e:#}");
     }
-    tokio::spawn(jobs::worker(state.clone()));
+    jobs::recuperar(&state).await;
+    tokio::spawn(jobs::worker(state.clone(), false));
+    tokio::spawn(jobs::worker(state.clone(), true));
     tokio::spawn(limpeza::agendar(state.clone()));
     let app = Router::new()
         .route("/saude", get(saude))
@@ -134,6 +136,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/historias/{id}/memoria", post(historias::gerar_memoria_rota))
         .route("/historias/{id}/memoria/salvar", post(historias::salvar_memoria))
         .route("/historias/{id}/conteudo", post(historias::salvar))
+        .route("/historias/{id}/imagens", get(historias::imagens::estado).post(historias::imagens::pedir))
+        .route("/historias/{id}/imagens/parar", post(historias::imagens::parar))
         .route("/historias/{id}/midia", post(historias::enviar_midia))
         .route("/historias/{id}/capa", post(historias::definir_capa))
         .route("/historias/{id}/imagem-ia", post(historias::gerar_imagem))

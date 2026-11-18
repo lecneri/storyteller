@@ -337,38 +337,61 @@
   }
   // Gera pela API, uma de cada vez, as imagens das páginas (só as sem imagem, ou todas se o usuário quiser).
   let gerandoTodas = null; // { parar: bool }
+  // "Gerar todas as imagens": vai para a fila do servidor (pode fechar a aba). O editor acompanha e
+  // coloca cada imagem na página assim que fica pronta. Cada página ganha uma "chave" que não muda.
+  const novaChave = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
   async function gerarTodas(botao) {
-    if (gerandoTodas) { gerandoTodas.parar = true; botao.textContent = '⏳ Parando após a imagem atual…'; return; }
+    if (gerandoTodas) {
+      botao.textContent = '⏳ Parando após a imagem atual…';
+      await fetch(location.pathname + '/imagens/parar', { method: 'POST' }).catch(() => {});
+      return;
+    }
     let alvo = estado.paginas.filter((p) => !p.midia);
     if (!alvo.length) {
       if (!confirm('Todas as páginas já têm imagem. Gerar de novo todas? (as atuais saem das páginas)')) return;
       alvo = estado.paginas.slice();
-    } else if (!confirm('Gerar pela API as imagens de ' + alvo.length + ' página(s) sem imagem? Cada uma leva até 1 minuto. Deixe esta aba aberta.')) {
+    } else if (!confirm('Gerar pela API as imagens de ' + alvo.length + ' página(s) sem imagem? Cada uma leva até 1 minuto. Roda no servidor: pode fechar a página e voltar depois.')) {
       return;
     }
-    gerandoTodas = { parar: false };
-    let ok = 0; const falhas = [];
-    for (const [i, pag] of alvo.entries()) {
-      if (gerandoTodas.parar) break;
-      const n = estado.paginas.indexOf(pag) + 1;
-      botao.textContent = '⏹ Parar (' + (i + 1) + '/' + alvo.length + ', página ' + n + ')';
-      try {
-        const refs = referencias(pag).filter((r) => r.ref).map((r) => r.ref);
-        const r = await fetch(location.pathname + '/imagem-ia', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: promptImagem(pag), refs }) });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(j.erro || 'erro ' + r.status);
-        pag.midia = { id: j.id, tipo: j.tipo };
-        ok++;
-        mudou(); await salvar();
-        botao = desenharMantendo(botao);
-      } catch (e) {
-        falhas.push('página ' + n + ': ' + e.message);
-      }
+    alvo.forEach((p) => { if (!p.chave) p.chave = novaChave(); });
+    mudou(); await salvar();
+    try {
+      const r = await fetch(location.pathname + '/imagens', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paginas: alvo.map((pag) => ({ chave: pag.chave, prompt: promptImagem(pag),
+          refs: referencias(pag).filter((x) => x.ref).map((x) => x.ref) })) }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.erro || 'erro ' + r.status);
+      gerandoTodas = { feitas: 0, total: alvo.length, visto: true };
+      desenharMantendo(botao).textContent = '⏳ Na fila…';
+      setTimeout(acompanharImagens, 2000);
+    } catch (e) { aviso('Não pediu as imagens: ' + e.message, 6000); }
+  }
+  // Acompanha o lote no servidor (também ao abrir a história com um lote rodando).
+  async function acompanharImagens() {
+    let j;
+    try { j = await (await fetch(location.pathname + '/imagens')).json(); } catch (_) { setTimeout(acompanharImagens, 8000); return; }
+    const rodando = j.job === 'pendente' || j.job === 'rodando';
+    let chegou = false;
+    for (const im of j.imagens || []) {
+      const pag = estado.paginas.find((p) => p.chave === im.chave);
+      if (pag && im.midia && (!pag.midia || pag.midia.id !== im.midia.id)) { pag.midia = im.midia; chegou = true; }
+    }
+    const visto = gerandoTodas && gerandoTodas.visto;
+    if (rodando) {
+      gerandoTodas = { feitas: j.feitas, total: j.total, parando: j.parando, visto: true };
+      let botao = raiz.querySelector('[data-gerar-todas]');
+      if (chegou) botao = desenharMantendo(botao || document.createElement('button'));
+      if (botao) botao.textContent = j.parando ? '⏳ Parando após a imagem atual…'
+        : j.job === 'pendente' ? '⏳ Na fila… (⏹ parar)' : '⏹ Parar (' + j.feitas + '/' + j.total + ' prontas)';
+      setTimeout(acompanharImagens, 4000);
+      return;
     }
     gerandoTodas = null;
-    desenhar();
-    aviso(ok + ' imagem(ns) gerada(s)' + (falhas.length ? '. Falharam: ' + falhas.join('; ') : ' ✓'), falhas.length ? 10000 : 3000);
+    if (chegou || visto) desenhar();
+    if (visto) {
+      const falhas = (j.falhas || []).map((f) => f.erro || f).filter(Boolean);
+      aviso(j.feitas + ' imagem(ns) gerada(s)' + (falhas.length ? '. Falharam ' + falhas.length + ': ' + falhas.join('; ') : ' ✓'), falhas.length ? 10000 : 3000);
+    }
   }
   // Redesenha e devolve o botão novo de "gerar todas" (o antigo some no redesenho).
   function desenharMantendo(botao) {
@@ -1045,8 +1068,8 @@
           el('button', { type: 'submit', class: 'link perigo' }, '🗑 Apagar')),
         statusNarracao,
         dados.imagem_api && estado.paginas.length ? el('button', { type: 'button', class: 'secundario', 'data-gerar-todas': true,
-          title: 'Gera pela API a imagem de cada página sem imagem, uma por vez',
-          onclick: (e) => gerarTodas(e.currentTarget) }, gerandoTodas ? '⏹ Parar' : '🖼️ Gerar todas as imagens com IA') : null,
+          title: 'Gera pela API a imagem de cada página sem imagem, uma por vez, no servidor (pode fechar a aba)',
+          onclick: (e) => gerarTodas(e.currentTarget) }, gerandoTodas ? '⏹ Parar (' + gerandoTodas.feitas + '/' + gerandoTodas.total + ' prontas)' : '🖼️ Gerar todas as imagens com IA') : null,
         el('button', { type: 'button', class: 'secundario', onclick: gerarNarracao }, '🎙️ Gerar narração'),
         status, el('button', { type: 'button', onclick: salvar }, '💾 Salvar')),
     ].flat(Infinity).filter(Boolean));
@@ -1059,4 +1082,5 @@
   document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); salvar(); } });
   desenhar();
   verNarracao();
+  acompanharImagens();
 })();

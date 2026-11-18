@@ -32,6 +32,9 @@ pub struct Secundario {
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Pagina {
+    /// Identificador estável da página (o editor cria quando precisa: ex. imagens geradas na fila).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub chave: String,
     #[serde(default)]
     pub cena: String,
     #[serde(default)]

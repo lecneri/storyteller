@@ -331,13 +331,30 @@ pub async fn salvar(
     State(st): State<AppState>,
     s: Sessao,
     Path(id): Path<Uuid>,
-    Json(c): Json<SalvarConteudo>,
+    Json(mut c): Json<SalvarConteudo>,
 ) -> Response {
-    let titulo = c.titulo.trim();
+    let titulo = c.titulo.trim().to_string();
+    let titulo = titulo.as_str();
     if titulo.is_empty() {
         return erro_json("Dê um título para a história.");
     }
     let narracao = if c.narracao == "narrador" { "narrador" } else { "por-personagem" };
+    // Imagens sendo geradas na fila: o editor pode estar com a página ainda sem imagem; não apaga a que o job já pôs.
+    let protegidas = super::imagens::chaves_protegidas(&st, id).await;
+    if !protegidas.is_empty() {
+        let no_banco: serde_json::Value = sqlx::query_scalar("SELECT conteudo FROM conteudo.historias WHERE id = $1 AND familia_id = $2")
+            .bind(id)
+            .bind(s.familia_id)
+            .fetch_optional(&st.db)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        for pag in c.conteudo.paginas.iter_mut().filter(|p| p.midia.is_none() && protegidas.contains(&p.chave)) {
+            let atual = no_banco["paginas"].as_array().into_iter().flatten().find(|x| x["chave"] == pag.chave.as_str());
+            pag.midia = atual.and_then(|x| serde_json::from_value(x["midia"].clone()).ok());
+        }
+    }
     let valor = match serde_json::to_value(&c.conteudo) {
         Ok(v) => v,
         Err(e) => return erro_interno(e.into()),

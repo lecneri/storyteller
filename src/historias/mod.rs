@@ -4,6 +4,7 @@ mod ajuda;
 mod conteudo;
 mod deteccao;
 mod geracao;
+pub mod imagens;
 mod memoria;
 mod prompt;
 mod rotas;
