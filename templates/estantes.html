@@ -6,15 +6,22 @@
   {% if estantes.is_empty() %}
   <section class="cartao largo"><h2>📚 Estantes</h2><p class="suave">Nenhuma estante ainda. Crie a primeira abaixo (ex.: "Super Léo").</p></section>
   {% endif %}
+  {% if !estantes.is_empty() %}
+  <form class="largo linha busca" data-busca="main" role="search">
+    <input type="search" name="q" placeholder="🔎 Nome da estante ou título da história" style="flex:1" autocomplete="off">
+    <small class="suave" data-contador></small>
+  </form>
+  <p class="largo suave" data-sem-resultado hidden>Nada encontrado.</p>
+  {% endif %}
   {% for e in estantes %}
-  <section class="estante largo">
+  <section class="estante largo" data-grupo data-texto="{{ e.nome }}">
     <header>
       <h2><a href="/estantes/{{ e.slug }}">{{ e.nome }}</a></h2>
       <span class="suave">{% if !e.estilo().is_empty() %}{{ e.estilo() }} · {% endif %}{{ e.resumo_personagens() }}</span>
     </header>
     <div class="prateleira">
       {% for h in e.lista() %}
-      <div class="livro">
+      <div class="livro" data-item data-texto="{{ h.titulo }}">
         <a href="/ler/{{ h.id }}" title="Ler">
           {% if let Some(c) = h.capa %}<img src="/midia/{{ c }}" alt="">{% else %}<div class="capa-vazia">📖</div>{% endif %}
           <strong>{{ h.titulo }}</strong>
@@ -28,11 +35,11 @@
   {% endfor %}
 
   {% if !compartilhadas.is_empty() %}
-  <section class="estante largo">
+  <section class="estante largo" data-grupo data-texto="Compartilhadas comigo">
     <header><h2>📥 Compartilhadas comigo</h2></header>
     <div class="prateleira">
       {% for (hid, titulo, fam, capa) in compartilhadas %}
-      <div class="livro">
+      <div class="livro" data-item data-texto="{{ titulo }} {{ fam }}">
         <a href="/ler/{{ hid }}">{% if let Some(c) = capa %}<img src="/midia/{{ c }}" alt="">{% else %}<div class="capa-vazia">📖</div>{% endif %}
         <strong>{{ titulo }}</strong></a>
         <span class="suave">de {{ fam }}</span>
@@ -44,9 +51,9 @@
   {% endif %}
 
   {% if !soltas.is_empty() %}
-  <section class="cartao largo">
+  <section class="cartao largo" data-grupo data-texto="Fora das estantes">
     <h2>Fora das estantes</h2>
-    <ul class="lista">{% for h in soltas %}<li><a href="/historias/{{ h.id }}">{{ h.titulo }}</a></li>{% endfor %}</ul>
+    <ul class="lista">{% for h in soltas %}<li data-item data-texto="{{ h.titulo }}"><a href="/historias/{{ h.id }}">{{ h.titulo }}</a></li>{% endfor %}</ul>
   </section>
   {% endif %}
 
@@ -62,4 +69,5 @@
     </form>
   </section>
 </main>
+<script src="/busca.js?v={{ crate::web::versao() }}" defer></script>
 {% endblock %}

@@ -84,7 +84,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/creditos", get(creditos::ver))
         .route("/", get(estantes::inicio))
         .route("/leitores", get(web::painel))
-        .route("/estantes", post(estantes::criar))
+        .route("/estantes", get(|| async { axum::response::Redirect::to("/") }).post(estantes::criar))
         .route("/estantes/{slug}", get(estantes::abrir).post(estantes::salvar))
         .route("/estantes/{slug}/historias", post(estantes::incluir))
         .route("/estantes/{slug}/historias/{historia}/retirar", post(estantes::retirar))

@@ -41,10 +41,18 @@
   </section>
   <section class="cartao largo">
     <h2>Histórias</h2>
-    {% if itens.is_empty() %}<p class="suave">Nenhuma história ainda.</p>{% endif %}
-    <ul class="lista">
+    {% if itens.is_empty() %}<p class="suave">Nenhuma história ainda.</p>{% else %}
+    <form class="linha busca" data-busca="#lista-historias" role="search">
+      <input type="search" name="q" placeholder="🔎 Título, enredo ou @personagem" style="flex:1 1 220px" autocomplete="off">
+      <select name="pers"><option value="">Todos os personagens</option>{% for (slug, nome) in personagens %}<option value="{{ slug }}">{{ nome }}</option>{% endfor %}</select>
+      {% if !estantes.is_empty() %}<select name="est"><option value="">Todas as estantes</option>{% for (slug, nome) in estantes %}<option value="{{ slug }}">{{ nome }}</option>{% endfor %}</select>{% endif %}
+      <small class="suave" data-contador></small>
+    </form>
+    {% endif %}
+    <ul class="lista" id="lista-historias">
+    <li data-sem-resultado hidden class="suave">Nenhuma história encontrada.</li>
     {% for h in itens %}
-      <li><a href="/historias/{{ h.id }}"><strong>{{ h.titulo }}</strong></a>
+      <li data-item data-texto="{{ h.busca }}" data-pers="{{ h.pers }}" data-est="{{ h.est }}"><a href="/historias/{{ h.id }}"><strong>{{ h.titulo }}</strong></a>
         <span class="suave">· {{ h.faixa }} anos · {{ h.paginas }} páginas · {{ h.estado }}</span>
         {% if h.paginas > 0 %} · <a href="/ler/{{ h.id }}">📖 ler</a> · <a href="/imprimir/{{ h.id }}">🖨️ imprimir</a> · <a href="/historias/{{ h.id }}/exportar">⬇ exportar</a>{% endif %}
         {% if h.pode_apagar %}· <form method="post" action="/historias/{{ h.id }}/apagar" class="inline" data-confirmar="Apagar “{{ h.titulo }}”? As imagens e áudios dela também serão apagados (cópias em outras famílias continuam)." onsubmit="return confirm(this.dataset.confirmar)"><button class="link perigo">🗑 apagar</button></form>{% endif %}</li>
@@ -53,4 +61,5 @@
   </section>
 </main>
 <script src="/briefing.js?v={{ crate::web::versao() }}" defer></script>
+<script src="/busca.js?v={{ crate::web::versao() }}" defer></script>
 {% endblock %}

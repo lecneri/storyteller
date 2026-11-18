@@ -32,6 +32,12 @@ struct ItemHistoria {
     paginas: i32,
     /// Admin da família ou quem criou.
     pode_apagar: bool,
+    /// Para a busca: título, briefing e texto das páginas.
+    busca: String,
+    /// Slugs dos personagens que aparecem (cenas, falas e @ do briefing), separados por espaço.
+    pers: String,
+    /// Slugs das estantes onde ela está.
+    est: String,
 }
 
 #[derive(Template)]
@@ -45,9 +51,21 @@ struct PaginaHistorias {
 
 pub async fn lista(State(st): State<AppState>, s: Sessao) -> Response {
     let itens = sqlx::query_as::<_, ItemHistoria>(
-        "SELECT id, titulo, faixa, estado, jsonb_array_length(conteudo->'paginas') AS paginas,
-                ($2 OR criado_por = $3) AS pode_apagar
-           FROM conteudo.historias WHERE familia_id = $1 ORDER BY atualizado_em DESC",
+        "SELECT h.id, h.titulo, h.faixa, h.estado, jsonb_array_length(h.conteudo->'paginas') AS paginas,
+                ($2 OR h.criado_por = $3) AS pode_apagar,
+                concat_ws(' ', h.titulo, h.briefing,
+                    (SELECT string_agg(b->>'texto', ' ') FROM jsonb_array_elements(h.conteudo->'paginas') pg,
+                            jsonb_array_elements(COALESCE(pg->'blocos', '[]')) b)) AS busca,
+                COALESCE((SELECT string_agg(DISTINCT x, ' ') FROM (
+                    SELECT n->>'slug' AS x FROM jsonb_array_elements(h.conteudo->'paginas') pg,
+                           jsonb_array_elements(COALESCE(pg->'personagens', '[]')) n
+                    UNION SELECT b->>'quem' FROM jsonb_array_elements(h.conteudo->'paginas') pg,
+                           jsonb_array_elements(COALESCE(pg->'blocos', '[]')) b
+                    UNION SELECT (regexp_matches(COALESCE(h.briefing, ''), '@([A-Za-z0-9-]+)', 'g'))[1]
+                  ) t WHERE x IS NOT NULL AND x <> 'narrador'), '') AS pers,
+                COALESCE((SELECT string_agg(e.slug, ' ') FROM conteudo.estante_historias eh
+                            JOIN conteudo.estantes e ON e.id = eh.estante_id WHERE eh.historia_id = h.id), '') AS est
+           FROM conteudo.historias h WHERE h.familia_id = $1 ORDER BY h.atualizado_em DESC",
     )
     .bind(s.familia_id)
     .bind(s.admin_familia())
