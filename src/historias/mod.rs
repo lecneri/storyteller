@@ -13,3 +13,4 @@ pub use conteudo::*;
 pub use geracao::executar_geracao;
 pub use memoria::*;
 pub use rotas::*;
+pub use deteccao::grupos as grupos_da_ficha;

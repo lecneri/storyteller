@@ -1,4 +1,4 @@
-// Briefing: autocompletar de @personagem(:variante)(!voz) e #historia, e chips do que foi detectado.
+// Briefing: autocompletar de @personagem(:variante)(!voz), @grupo:nome e #historia, e chips do que foi detectado.
 // Voz extra: "@pedro!ingles" (só nessa voz/língua) ou "@pedro!misto-ingles" (mistura com português).
 // Caixas com data-mencoes="simples" (ex.: Relações da ficha) só sugerem @personagem, sem variante, voz ou #história.
 (function () {
@@ -26,6 +26,15 @@
       const termo = norm(m[2]);
       if (m[1] === '@') {
         opcoes = [];
+        // Grupos: "@grupo:familia" cita todos os personagens do grupo.
+        if (!simples) {
+          const t = termo.startsWith('grupo:') ? termo.slice(6) : termo;
+          for (const g of dados.grupos || []) {
+            if (!norm('grupo ' + g.slug + ' ' + g.nome).includes(t)) continue;
+            const nomes = g.membros.map((s) => (dados.personagens.find((p) => p.slug === s) || { nome: s }).nome);
+            opcoes.push({ txt: '@grupo:' + g.slug, rot: '👥 ' + g.nome + ' (' + nomes.join(', ') + ')' });
+          }
+        }
         for (const p of dados.personagens) {
           if (!norm(p.slug + ' ' + p.nome).includes(termo.split(/[:!]/)[0])) continue;
           if (simples) {
@@ -110,6 +119,11 @@
             detectar();
           } });
         }
+      }
+      for (const g of dados.grupos || []) {
+        if (!new RegExp('@grupo:' + g.slug + '(?![a-z0-9-])', 'i').test(texto)) continue;
+        const nomes = g.membros.map((s) => (dados.personagens.find((p) => p.slug === s) || { nome: s }).nome);
+        achados.push({ rot: '👥 ' + g.nome + ': ' + nomes.join(', '), remover: () => { ta.value = ta.value.replace(new RegExp('@grupo:' + g.slug + '\\s?', 'gi'), ''); detectar(); } });
       }
       for (const h of dados.historias) {
         if (new RegExp('#' + h.slug + '(?![a-z0-9-])', 'i').test(texto)) {

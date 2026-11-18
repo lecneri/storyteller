@@ -44,7 +44,12 @@ pub async fn personagens_da_familia(st: &AppState, familia_id: Uuid) -> Result<V
     .await
 }
 
-/// Personagens citados no briefing: `@slug`, `@slug:variante`, ou o nome/apelido escrito normalmente.
+/// Grupos do personagem (ficha.grupos: ["Família", "Pokémon"]).
+pub fn grupos(ficha: &Value) -> Vec<String> {
+    ficha["grupos"].as_array().into_iter().flatten().filter_map(|g| g.as_str().map(str::trim)).filter(|g| !g.is_empty()).map(String::from).collect()
+}
+
+/// Personagens citados no briefing (`@grupo:familia` cita todos do grupo): `@slug`, `@slug:variante`, ou o nome/apelido escrito normalmente.
 pub fn detectar(briefing: &str, todos: &[PersonagemIA]) -> Vec<NaCena> {
     let mut achados: Vec<NaCena> = Vec::new();
     let mut add = |slug: &str, variante: Option<String>, voz: Option<(String, bool)>| {
@@ -81,6 +86,15 @@ pub fn detectar(briefing: &str, todos: &[PersonagemIA]) -> Vec<NaCena> {
             Some((s, v)) => (util::slug(s), Some(util::slug(v))),
             None => (util::slug(&token), None),
         };
+        // "@grupo:familia": todos os personagens do grupo (se não houver um personagem chamado "grupo").
+        if s == "grupo" && !todos.iter().any(|p| p.slug == "grupo") {
+            if let Some(g) = v.filter(|g| !g.is_empty()) {
+                for p in todos.iter().filter(|p| grupos(&p.ficha).iter().any(|x| util::slug(x) == g)) {
+                    add(&p.slug, None, None);
+                }
+            }
+            continue;
+        }
         if let Some(p) = todos.iter().find(|p| p.slug == s) {
             let v = v.filter(|v| {
                 p.variantes.as_array().is_some_and(|a| a.iter().any(|x| x["slug"] == *v && x["arquivada"] != true))
@@ -142,6 +156,20 @@ mod testes {
     use super::*;
     use super::personagem_teste as p;
 
+
+    #[test]
+    fn grupo_cita_todos() {
+        let mut a = p("pedro", "Pedro", &[], &[]);
+        a.ficha["grupos"] = serde_json::json!(["Família", "Pokémon"]);
+        let mut b = p("henrique", "Henrique", &[], &[]);
+        b.ficha["grupos"] = serde_json::json!(["Pokémon"]);
+        let c = p("noob", "Noob", &[], &[]);
+        let todos = vec![a, b, c];
+        let slugs = |t: &str| detectar(t, &todos).into_iter().map(|n| n.slug).collect::<Vec<_>>();
+        assert_eq!(slugs("Os @grupo:pokemon vão ao parque"), vec!["pedro", "henrique"]);
+        assert_eq!(slugs("A @grupo:familia e o @noob"), vec!["pedro", "noob"]);
+        assert!(slugs("o @grupo:nada").is_empty());
+    }
 
     #[test]
     fn detecta_mencoes() {

@@ -17,6 +17,9 @@
         <select name="tipo">{% for (k, v) in tipos %}<option value="{{ k }}"{% if p.tipo == k.to_string() %} selected{% endif %}>{{ v }}</option>{% endfor %}</select>
       </label>
       <label>Apelidos <input name="apelidos" value="{{ p.apelidos() }}"></label>
+      <label class="inteiro">Grupos <small class="suave">(separados por vírgula; no briefing, @grupo:nome cita todos do grupo)</small>
+        <input name="grupos" value="{{ p.grupos() }}" list="grupos-familia" placeholder="Família, Pokémon..." autocomplete="off"></label>
+      <datalist id="grupos-familia">{% for g in grupos_familia %}<option value="{{ g }}">{% endfor %}</datalist>
 
       <div class="referencia inteiro">
         <div class="ref-foto" data-zona-colar tabindex="-1" title="Cole (Ctrl+V) ou arraste uma foto aqui">

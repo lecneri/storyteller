@@ -300,3 +300,5 @@ a.linha-familia:hover { border-color:var(--cor); }
 @media (max-width:560px) { .corpo-variante { flex-direction:column; } .corpo-variante .imgs-variante { max-width:100%; } }
 .foto-kit form.inline + form.inline::before { content:"· "; color:var(--suave); }
 .ref-foto:focus { outline:2px dashed var(--cor); outline-offset:4px; }
+.grupo-personagens { display:grid; gap:8px; margin-top:8px; }
+.grupo-personagens h3 { margin:6px 0 0; }

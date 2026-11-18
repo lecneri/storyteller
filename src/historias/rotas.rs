@@ -469,6 +469,22 @@ pub async fn salvar_secundario(State(st): State<AppState>, s: Sessao, Json(p): J
 }
 
 /// GET /mencoes: personagens (para @) e histórias (para #) da família, usados pelo autocompletar do briefing.
+/// Grupos de personagens para o autocompletar: [{slug, nome, membros: [slug]}].
+fn grupos_json(ps: &[super::deteccao::PersonagemIA]) -> Vec<serde_json::Value> {
+    let mut grupos: Vec<(String, String, Vec<String>)> = Vec::new();
+    for p in ps {
+        for g in super::deteccao::grupos(&p.ficha) {
+            let gs = crate::util::slug(&g);
+            match grupos.iter_mut().find(|(s, ..)| *s == gs) {
+                Some((.., m)) => m.push(p.slug.clone()),
+                None => grupos.push((gs, g, vec![p.slug.clone()])),
+            }
+        }
+    }
+    grupos.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
+    grupos.into_iter().map(|(slug, nome, membros)| json!({ "slug": slug, "nome": nome, "membros": membros })).collect()
+}
+
 pub async fn mencoes(State(st): State<AppState>, s: Sessao) -> Response {
     let personagens = personagens_da_familia(&st, s.familia_id).await;
     let historias: Result<Vec<(String, String)>, _> = sqlx::query_as(
@@ -487,6 +503,7 @@ pub async fn mencoes(State(st): State<AppState>, s: Sessao) -> Response {
                 "vozes": p.vozes_extras.as_array().map(|a| a.iter()
                     .map(|v| json!({ "slug": v["slug"], "nome": v["nome"], "lingua": v["lingua"] })).collect::<Vec<_>>()),
             })).collect::<Vec<_>>(),
+            "grupos": grupos_json(&p),
             "historias": h.into_iter().map(|(slug, titulo)| json!({ "slug": slug, "titulo": titulo })).collect::<Vec<_>>(),
         }))
         .into_response(),

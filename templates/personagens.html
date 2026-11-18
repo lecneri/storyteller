@@ -9,21 +9,26 @@
       <p class="suave">Nenhum personagem ainda. Crie o primeiro abaixo.</p>
     {% else %}
       <form class="linha busca" data-busca="#lista-personagens" role="search">
-        <input type="search" name="q" placeholder="🔎 Nome, @, apelido, variante ou estilo" style="flex:1" autocomplete="off">
+        <input type="search" name="q" placeholder="🔎 Nome, @, apelido, grupo, variante ou estilo" style="flex:1" autocomplete="off">
         <select name="tipo"><option value="">Todos os tipos</option>{% for (k, v) in tipos %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
         <small class="suave" data-contador></small>
       </form>
       <div id="lista-personagens">
       <p class="suave" data-sem-resultado hidden>Nenhum personagem encontrado.</p>
-      <div class="grade">
-      {% for p in itens %}
-        <a class="ficha" href="/personagens/{{ p.slug }}" data-item data-texto="{{ p.nome }} {{ p.tipo_nome() }} {{ p.busca }}" data-tipo="{{ p.tipo }}">
-          {% if let Some(m) = p.miniatura %}<img src="/midia/{{ m }}" alt="" loading="lazy">{% else %}<div class="sem-img">🎭</div>{% endif %}
-          <strong>{{ p.nome }}</strong>
-          <span class="suave">{{ p.tipo_nome() }}{% if let Some(v) = p.variante %} · {{ v }}{% endif %}</span>
-        </a>
-      {% endfor %}
+      {% for (grupo, idx) in secoes %}
+      <div class="grupo-personagens" data-grupo data-texto="{{ grupo }}">
+        {% if !grupo.is_empty() %}<h3>👥 {{ grupo }} <small class="suave">({{ idx.len() }})</small></h3>{% endif %}
+        <div class="grade">
+        {% for i in idx %}{% let p = self.item(i) %}
+          <a class="ficha" href="/personagens/{{ p.slug }}" data-item data-texto="{{ p.nome }} {{ p.tipo_nome() }} {{ p.busca }}" data-tipo="{{ p.tipo }}">
+            {% if let Some(m) = p.miniatura %}<img src="/midia/{{ m }}" alt="" loading="lazy">{% else %}<div class="sem-img">🎭</div>{% endif %}
+            <strong>{{ p.nome }}</strong>
+            <span class="suave">{{ p.tipo_nome() }}{% if let Some(v) = p.variante %} · {{ v }}{% endif %}</span>
+          </a>
+        {% endfor %}
+        </div>
       </div>
+      {% endfor %}
       </div>
     {% endif %}
   </section>

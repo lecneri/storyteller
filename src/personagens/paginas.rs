@@ -29,6 +29,7 @@ struct ItemLista {
     miniatura: Option<Uuid>,
     /// Para a busca: @, apelidos, nomes e estilos das variantes, relações.
     busca: String,
+    grupos: Vec<String>,
 }
 
 impl ItemLista {
@@ -42,8 +43,16 @@ impl ItemLista {
 struct PaginaLista {
     s: Sessao,
     itens: Vec<ItemLista>,
+    /// Seções da lista: (nome do grupo, índices dos itens). Sem nenhum grupo, uma seção só sem nome.
+    secoes: Vec<(String, Vec<usize>)>,
     tipos: Vec<(&'static str, &'static str)>,
     erro: Option<String>,
+}
+
+impl PaginaLista {
+    fn item(&self, i: &usize) -> &ItemLista {
+        &self.itens[*i]
+    }
 }
 
 pub(super) async fn lista_com(st: &AppState, s: Sessao, erro: Option<String>) -> Response {
@@ -56,7 +65,8 @@ pub(super) async fn lista_com(st: &AppState, s: Sessao, erro: Option<String>) ->
                            ORDER BY v.criado_em LIMIT 1)) AS miniatura
                 , concat_ws(' ', '@' || p.slug, p.ficha->>'relacoes',
                     (SELECT string_agg(x, ' ') FROM jsonb_array_elements_text(COALESCE(p.ficha->'apelidos', '[]')) x),
-                    (SELECT string_agg(concat_ws(' ', v.nome, v.estilo), ' ') FROM conteudo.variantes v WHERE v.personagem_id = p.id)) AS busca
+                    (SELECT string_agg(concat_ws(' ', v.nome, v.estilo), ' ') FROM conteudo.variantes v WHERE v.personagem_id = p.id)) AS busca,
+                ARRAY(SELECT trim(g) FROM jsonb_array_elements_text(COALESCE(p.ficha->'grupos', '[]')) g WHERE trim(g) <> '') AS grupos
            FROM conteudo.personagens p
            LEFT JOIN conteudo.variantes va ON va.id = p.variante_atual
           WHERE p.familia_id = $1
@@ -66,9 +76,34 @@ pub(super) async fn lista_com(st: &AppState, s: Sessao, erro: Option<String>) ->
     .fetch_all(&st.db)
     .await;
     match itens {
-        Ok(itens) => render(PaginaLista { s, itens, tipos: TIPOS.to_vec(), erro }),
+        Ok(itens) => {
+            let secoes = secoes(&itens);
+            render(PaginaLista { s, itens, secoes, tipos: TIPOS.to_vec(), erro })
+        }
         Err(e) => erro_interno(e.into()),
     }
+}
+
+/// Agrupa a lista: um personagem aparece em cada grupo dele; os sem grupo vão para "Sem grupo" no fim.
+fn secoes(itens: &[ItemLista]) -> Vec<(String, Vec<usize>)> {
+    if itens.iter().all(|i| i.grupos.is_empty()) {
+        return vec![(String::new(), (0..itens.len()).collect())];
+    }
+    let mut v: Vec<(String, Vec<usize>)> = Vec::new();
+    for (i, it) in itens.iter().enumerate() {
+        for g in &it.grupos {
+            match v.iter_mut().find(|(n, _)| util::slug(n) == util::slug(g)) {
+                Some((_, l)) => l.push(i),
+                None => v.push((g.clone(), vec![i])),
+            }
+        }
+    }
+    v.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+    let sem: Vec<usize> = itens.iter().enumerate().filter(|(_, i)| i.grupos.is_empty()).map(|(i, _)| i).collect();
+    if !sem.is_empty() {
+        v.push(("Sem grupo".into(), sem));
+    }
+    v
 }
 
 pub async fn lista(State(st): State<AppState>, s: Sessao) -> Response {
@@ -95,13 +130,23 @@ pub struct FormFicha {
     /// Novo @ para citar (só na ficha de um personagem que já existe).
     #[serde(default)]
     arroba: String,
+    /// Grupos separados por vírgula ("Família, Pokémon").
+    #[serde(default)]
+    grupos: String,
 }
 
 impl FormFicha {
     fn ficha(&self) -> serde_json::Value {
         let apelidos: Vec<&str> = self.apelidos.split(',').map(str::trim).filter(|a| !a.is_empty()).collect();
+        let mut grupos: Vec<&str> = Vec::new();
+        for g in self.grupos.split(',').map(str::trim).filter(|g| !g.is_empty()) {
+            if !grupos.iter().any(|x| util::slug(x) == util::slug(g)) {
+                grupos.push(g);
+            }
+        }
         json!({
             "apelidos": apelidos,
+            "grupos": grupos,
             "aparencia": self.aparencia.trim(),
             "personalidade": self.personalidade.trim(),
             "jeito_falar": self.jeito_falar.trim(),
@@ -129,6 +174,7 @@ pub async fn criar(State(st): State<AppState>, s: Sessao, mp: axum::extract::Mul
         jeito_falar: c("jeito_falar"),
         relacoes: c("relacoes"),
         arroba: String::new(),
+        grupos: c("grupos"),
     };
     let nome = f.nome.trim().to_string();
     let slug = util::slug(&nome);
@@ -212,6 +258,9 @@ impl Personagem {
     pub(super) fn campo(&self, k: &str) -> String {
         self.ficha.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string()
     }
+    fn grupos(&self) -> String {
+        crate::historias::grupos_da_ficha(&self.ficha).join(", ")
+    }
     fn apelidos(&self) -> String {
         self.ficha
             .get("apelidos")
@@ -246,6 +295,8 @@ struct PaginaPersonagem {
     recorte: bool,
     /// Outros personagens da família (slug, nome), para "virar variante de".
     outros: Vec<(String, String)>,
+    /// Grupos que já existem na família (sugestões).
+    grupos_familia: Vec<String>,
 }
 
 impl PaginaPersonagem {
@@ -306,7 +357,15 @@ pub(super) async fn detalhe_com(st: &AppState, s: Sessao, slug: &str, erro: Opti
                     .fetch_all(&st.db)
                     .await
                     .unwrap_or_default();
-            render(PaginaPersonagem { s, p, variantes, tipos: TIPOS.to_vec(), erro, imagem_api, recorte: crate::recorte::disponivel(), outros })
+            let grupos_familia: Vec<String> = sqlx::query_scalar(
+                "SELECT DISTINCT trim(g) FROM conteudo.personagens p, jsonb_array_elements_text(COALESCE(p.ficha->'grupos', '[]')) g
+                  WHERE p.familia_id = $1 AND trim(g) <> '' ORDER BY 1",
+            )
+            .bind(s.familia_id)
+            .fetch_all(&st.db)
+            .await
+            .unwrap_or_default();
+            render(PaginaPersonagem { s, p, variantes, tipos: TIPOS.to_vec(), erro, imagem_api, recorte: crate::recorte::disponivel(), outros, grupos_familia })
         }
         Err(e) => erro_interno(e.into()),
     }
