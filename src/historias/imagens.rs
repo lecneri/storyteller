@@ -41,7 +41,7 @@ async fn da_familia(st: &AppState, s: &Sessao, id: Uuid) -> Result<(), Response>
 }
 
 fn pedido_pagina(historia: Uuid, alvo: &'static str, chave: Option<String>, prompt: String, refs: Vec<Uuid>) -> PedidoFila {
-    PedidoFila { alvo, historia: Some(historia), chave, variante: None, prompt, refs, pasta: format!("historias/{historia}/midia"), recortar: false }
+    PedidoFila { alvo, historia: Some(historia), chave, variante: None, lugar: None, prompt, refs, pasta: format!("historias/{historia}/midia"), recortar: false }
 }
 
 /// Páginas que a fila ainda vai preencher ou acabou de preencher: o salvar do editor (que pode estar

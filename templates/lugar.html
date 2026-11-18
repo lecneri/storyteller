@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block titulo %}{{ l.nome }} · Lugares{% endblock %}
+{% block corpo %}
+{% include "topo.html" %}
+<main class="conteudo">
+  <p class="largo"><a href="/lugares">← Lugares</a></p>
+  {% if let Some(e) = erro %}<p class="erro largo">{{ e }}</p>{% endif %}
+  <section class="cartao largo">
+    <h2>📍 {{ l.nome }}</h2>
+    <form method="post" action="/lugares/{{ l.slug }}" class="grade-form">
+      <label>Nome <input name="nome" value="{{ l.nome }}" required></label>
+      <label>@ para citar <small class="suave">(no briefing: @lugar:{{ l.slug }})</small>
+        <input name="arroba" value="{{ l.slug }}" pattern="@?[A-Za-z0-9\- ]+" title="Letras, números e hífen"></label>
+      <label class="inteiro">Como é o lugar <small class="suave">(o que nunca muda; luz, hora e clima vêm da cena)</small>
+        <textarea name="descricao" rows="4">{{ l.descricao }}</textarea></label>
+      <button type="submit">💾 Salvar</button>
+    </form>
+  </section>
+  <section class="cartao largo">
+    <h2>🖼️ Imagens de referência</h2>
+    <p class="suave">A primeira vai junto no pedido de cada página que se passa aqui, para o lugar sair igual.</p>
+    {% if !l.referencias.is_empty() %}
+    <div class="minis imgs-variante">
+      {% for ref_id in l.referencias %}<div class="foto-kit">{% include "miniatura.html" %}
+        <form method="post" action="/lugares/{{ l.slug }}/tirar-ref/{{ ref_id }}" class="inline" onsubmit="return confirm('Tirar esta imagem do lugar?')">
+          <button type="submit" class="link">🗑 tirar</button></form></div>{% endfor %}
+    </div>
+    {% else %}<p class="suave">Sem imagem ainda: nas histórias vai só a descrição.</p>{% endif %}
+    {% for item in self.na_fila() %}<p class="na-fila" data-fila-imagem="{{ item.id }}">{{ item.rotulo() }}</p>{% endfor %}
+    {% if let Some(f) = self.falha() %}<p class="erro">{{ f }}</p>{% endif %}
+    <div class="acoes-variante">
+      {% if imagem_api %}
+      <form method="post" action="/lugares/{{ l.slug }}/gerar" class="linha" onsubmit="const b = this.querySelector('button'); b.disabled = true; b.textContent = '⏳ Pondo na fila…'">
+        <button type="submit" class="pequeno">✨ Gerar com IA</button></form>
+      {% endif %}
+      <details class="envio-variante">
+        <summary>📤 Enviar imagem pronta</summary>
+        <form method="post" action="/lugares/{{ l.slug }}/refs" enctype="multipart/form-data" class="linha">
+          <input type="file" name="refs" accept="image/png,image/jpeg,image/webp,image/gif" multiple required>
+          <button type="submit" class="pequeno">Enviar</button>
+        </form>
+      </details>
+      <details class="kit-personagem">
+        <summary>📋 Fazer no ChatGPT/Gemini</summary>
+        <div class="linha-kit"><span>Prompt</span>
+          <button type="button" class="pequeno" data-copiar-texto="prompt-lugar">📋 Copiar prompt</button></div>
+        <textarea id="prompt-lugar" class="prompt" readonly>{{ self.prompt() }}</textarea>
+      </details>
+    </div>
+  </section>
+  <section class="cartao largo">
+    <form method="post" action="/lugares/{{ l.slug }}/apagar" onsubmit="return confirm('Apagar o lugar {{ l.nome }}? As histórias que já usam ficam só com o nome.')">
+      <button type="submit" class="link perigo">🗑 Apagar lugar</button></form>
+  </section>
+</main>
+<script src="/fila-imagens.js?v={{ crate::web::versao() }}" defer></script>
+{% endblock %}

@@ -53,7 +53,24 @@
     });
   }
 
-  // ctx: { personagens, secundarios, estilo, faixa }
+  // Lugar da página: um da família (pag.lugar = slug, com imagem) ou um só desta história (pag.lugar = nome).
+  function lugarDaPagina(pag, ctx) {
+    if (!pag.lugar) return null;
+    const f = (ctx.lugares || []).find((l) => l.slug === pag.lugar);
+    if (f) return { nome: f.nome, descricao: f.descricao || '', ref: (f.referencias || [])[0] || null };
+    const h = (ctx.lugaresHistoria || []).find((l) => l.nome === pag.lugar);
+    return h ? { nome: h.nome, descricao: h.descricao || '', ref: null } : null;
+  }
+
+  // Imagens que vão junto no pedido, na ordem do prompt: personagens e depois o lugar.
+  function refsDaPagina(pag, ctx) {
+    const v = referencias(ctx.personagens, pag).filter((r) => r.ref).map((r) => r.ref);
+    const l = lugarDaPagina(pag, ctx);
+    if (l && l.ref) v.push(l.ref);
+    return v;
+  }
+
+  // ctx: { personagens, secundarios, lugares, lugaresHistoria, estilo, faixa }
   function promptImagem(pag, ctx) {
     const refs = referencias(ctx.personagens, pag);
     const estilo = [...new Set([ctx.estilo, ...refs.map((r) => r.estilo)].filter(Boolean))].join(', ');
@@ -67,11 +84,18 @@
       if (x) linhas.push('- ' + x.nome + (x.descricao ? ' — ' + x.descricao : ''));
     }
     const comImagem = refs.some((r) => r.num);
+    const lugar = lugarDaPagina(pag, ctx);
+    const numLugar = lugar && lugar.ref ? refs.filter((r) => r.num).length + 1 : null;
+    const cenario = lugar ? 'Cenário: ' + (numLugar ? 'Imagem ' + numLugar + ': ' : '') + lugar.nome +
+      (lugar.descricao ? ' — ' + lugar.descricao.trim().replace(/[.\s]+$/, '') : '') +
+      (numLugar ? ' (use a imagem só para o formato, os objetos e as cores do lugar; a luz, a hora do dia e o clima seguem a cena)' : '') +
+      '. O lugar deve ser reconhecível e igual em todas as páginas.' : null;
     return [
       'Ilustração de livro infantil, página inteira, formato retrato 3:4.',
       'Estilo: ' + (estilo ? estilo + ', ' : '') + 'cores vivas, traço limpo e amigável, para crianças de ' + ctx.faixa + ' anos.',
       '',
       'Cena: ' + (pag.cena || '(descreva a cena)'),
+      cenario,
       '',
       linhas.length ? 'Personagens' + (comImagem ? ' (siga fielmente as imagens de referência anexadas, na ordem; os sem imagem, pela descrição):' : ' (siga a descrição de cada um):') : null,
       ...linhas,
@@ -130,7 +154,7 @@
     return achado ? achado[0] : 'adulto';
   }
 
-  const api = { adivinharTipo, chaveVoz, nomeVoz, miniatura, varianteDe, referencias, promptImagem, promptAnimacao,
+  const api = { adivinharTipo, chaveVoz, nomeVoz, miniatura, varianteDe, referencias, promptImagem, promptAnimacao, lugarDaPagina, refsDaPagina,
     vozDoSecundario, secundarioVirouPersonagem, renomearSecundario };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else raiz.EditorLogica = api;

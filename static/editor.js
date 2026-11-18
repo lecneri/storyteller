@@ -9,7 +9,10 @@
     paginas: (dados.conteudo && dados.conteudo.paginas) || [],
     // Personagens só desta história: [{nome, descricao}] (aparência fixa para os prompts de imagem).
     secundarios: (dados.conteudo && dados.conteudo.secundarios) || [],
+    // Lugares só desta história: [{nome, descricao}]. Os da família vêm em dados.lugares.
+    lugares: (dados.conteudo && dados.conteudo.lugares) || [],
   };
+  const lugaresFamilia = dados.lugares || [];
   const secundario = (nome) => estado.secundarios.find((x) => x.nome === nome);
   const personagens = dados.personagens || [];
   let sujo = false;
@@ -32,7 +35,11 @@
   const nomeVoz = (id) => L.nomeVoz(vozesSistema, id);
   const miniatura = (slug, variante) => L.miniatura(personagens, slug, variante);
   const referencias = (pag) => L.referencias(personagens, pag);
-  const promptImagem = (pag) => L.promptImagem(pag, { personagens, secundarios: estado.secundarios, estilo: dados.estilo, faixa: dados.faixa });
+  const ctxImagem = () => ({ personagens, secundarios: estado.secundarios, lugares: lugaresFamilia, lugaresHistoria: estado.lugares,
+    estilo: dados.estilo, faixa: dados.faixa });
+  const promptImagem = (pag) => L.promptImagem(pag, ctxImagem());
+  // Imagens que vão no pedido: as dos personagens e a do lugar.
+  const refsImagem = (pag) => L.refsDaPagina(pag, ctxImagem());
   function avatar(quem, pag) {
     if (quem === 'narrador') return el('div', { class: 'avatar', title: 'Narrador' }, '🎙️');
     if (quem.startsWith('voz:')) return el('div', { class: 'avatar', title: 'Voz do sistema' }, '🎭');
@@ -349,7 +356,7 @@
     acompanharImagens();
   }
   async function gerarPelaApi(pag, botao) {
-    const refs = referencias(pag).filter((r) => r.ref).map((r) => r.ref);
+    const refs = refsImagem(pag);
     botao.disabled = true; botao.textContent = '⏳ Pondo na fila…';
     try {
       if (!pag.chave) { pag.chave = novaChave(); mudou(); }
@@ -383,7 +390,7 @@
       if (sujo) { await salvar(); if (sujo) throw new Error('a história não salvou'); }
       const r = await fetch(location.pathname + '/imagens', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ paginas: alvo.map((pag) => ({ chave: pag.chave, prompt: promptImagem(pag),
-          refs: referencias(pag).filter((x) => x.ref).map((x) => x.ref) })) }) });
+          refs: refsImagem(pag) })) }) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.erro || 'erro ' + r.status);
       botao.textContent = '⏳ Na fila…';
@@ -578,6 +585,7 @@
       palco,
       el('label', {}, 'Cena', cena),
       el('div', {}, el('small', { class: 'suave' }, 'Personagens na cena'), el('div', { class: 'chips' }, naCena, addSel)),
+      lugarUI(pag),
       estado.secundarios.length ? el('div', {}, el('small', { class: 'suave' }, 'Secundários na cena'),
         el('div', { class: 'chips' },
           (pag.secundarios || []).map((nome, i) => el('span', { class: 'chip', title: (secundario(nome) || {}).descricao || '' }, '🎭 ' + nome,
@@ -718,6 +726,66 @@
   }
 
   // Personagens só desta história (sem ficha): nome + aparência fixa, usada nos prompts de imagem.
+  // 📍 Onde a cena acontece: um lugar da família (com imagem) ou um só desta história.
+  function lugarUI(pag) {
+    if (!lugaresFamilia.length && !estado.lugares.length && !pag.lugar) return null;
+    const l = L.lugarDaPagina(pag, ctxImagem());
+    const perdido = pag.lugar && !l;
+    const sel = el('select', { onchange: (e) => { pag.lugar = e.target.value; mudou(); desenhar(); } },
+      el('option', { value: '' }, '(nenhum: a cena descreve)'),
+      lugaresFamilia.length ? el('optgroup', { label: 'Lugares da família' },
+        lugaresFamilia.map((x) => el('option', { value: x.slug, selected: x.slug === pag.lugar }, x.nome))) : null,
+      estado.lugares.length ? el('optgroup', { label: 'Só desta história' },
+        estado.lugares.map((x) => el('option', { value: x.nome, selected: x.nome === pag.lugar }, x.nome))) : null,
+      perdido ? el('option', { value: pag.lugar, selected: true }, pag.lugar + ' (não encontrado)') : null);
+    return el('div', { class: 'lugar-pagina' },
+      el('small', { class: 'suave' }, '📍 Lugar'),
+      el('div', { class: 'linha' },
+        l && l.ref ? el('img', { src: '/midia/' + l.ref, alt: '', class: 'mini-lugar', title: l.descricao }) : null,
+        sel));
+  }
+
+  // Lugares só desta história: descrição fixa (vai no prompt de toda página que se passa ali) e "Salvar como lugar".
+  function lugaresUI() {
+    const lista = estado.lugares;
+    return el('details', { class: 'memoria' },
+      el('summary', {}, '📍 Lugares só desta história (' + lista.length + ')'),
+      el('p', { class: 'suave' }, 'A descrição vai igual no prompt de imagem de todas as páginas que se passam ali. ' +
+        'Para usar em outras histórias, salve como lugar da família (aparece em Lugares, com imagem).'),
+      lista.map((x, i) => el('div', { class: 'sec-item' },
+        el('input', { value: x.nome, placeholder: 'Nome (ex.: Caverna do Zorgo)', onchange: (e) => {
+          const antigo = x.nome; x.nome = e.target.value.trim() || antigo;
+          estado.paginas.forEach((p) => { if (p.lugar === antigo) p.lugar = x.nome; });
+          mudou(); desenhar();
+        } }),
+        (() => { const t = el('textarea', { rows: 2, placeholder: 'Como é o lugar: formato, cores, objetos marcantes…',
+          oninput: (e) => { x.descricao = e.target.value; mudou(); } }); t.value = x.descricao || ''; return t; })(),
+        el('div', { class: 'linha' },
+          el('button', { type: 'button', class: 'pequeno', onclick: async (e) => {
+            const b = e.currentTarget; b.disabled = true; b.textContent = '⏳ Salvando…';
+            try {
+              const r = await fetch('/lugares/da-historia', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nome: x.nome, descricao: x.descricao || '' }) });
+              const j = await r.json().catch(() => ({}));
+              if (!r.ok || !j.slug) throw new Error(j.erro || 'erro ' + r.status);
+              lugaresFamilia.push(j);
+              estado.paginas.forEach((p) => { if (p.lugar === x.nome) p.lugar = j.slug; });
+              lista.splice(lista.indexOf(x), 1);
+              mudou(); desenhar(); await salvar();
+              aviso(j.nome + ' agora é lugar da família ✓ (em Lugares dá para gerar a imagem dele)', 5000);
+            } catch (err) { aviso('Não salvou: ' + err.message); b.disabled = false; b.textContent = '💾 Salvar como lugar'; }
+          } }, '💾 Salvar como lugar'),
+          el('button', { type: 'button', class: 'link perigo', onclick: () => {
+            if (!confirm('Tirar ' + x.nome + ' desta história?')) return;
+            lista.splice(i, 1);
+            estado.paginas.forEach((p) => { if (p.lugar === x.nome) p.lugar = ''; });
+            mudou(); desenhar();
+          } }, 'remover')))),
+      el('button', { type: 'button', class: 'pequeno secundario', onclick: () => {
+        lista.push({ nome: 'Novo lugar ' + (lista.length + 1), descricao: '' }); mudou(); desenhar();
+      } }, '＋ Adicionar'));
+  }
+
   function secundariosUI() {
     const lista = estado.secundarios;
     return el('details', { class: 'memoria', open: lista.some((x) => !x.descricao) },
@@ -769,10 +837,11 @@
   // A IA devolve a história inteira ajustada; o editor mostra, e a família salva ou desfaz.
   const ajuda = { aberto: false, pedido: '', msg: '', ocupado: false, externo: false, prompt: '', resposta: '', backup: null };
   function aplicarAjuda(r) {
-    ajuda.backup = JSON.parse(JSON.stringify({ titulo: estado.titulo, paginas: estado.paginas, secundarios: estado.secundarios }));
+    ajuda.backup = JSON.parse(JSON.stringify({ titulo: estado.titulo, paginas: estado.paginas, secundarios: estado.secundarios, lugares: estado.lugares }));
     if (r.titulo) estado.titulo = r.titulo;
     estado.paginas = (r.conteudo && r.conteudo.paginas) || [];
     estado.secundarios = (r.conteudo && r.conteudo.secundarios) || [];
+    estado.lugares = (r.conteudo && r.conteudo.lugares) || [];
     ajuda.msg = 'Pronto! Confira as páginas e clique em 💾 Salvar. Não gostou? Use ↩ Desfazer.';
     ajuda.externo = false; ajuda.resposta = '';
     mudou(); desenhar();
@@ -885,7 +954,7 @@
       const r = await fetch(location.pathname + '/conteudo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ titulo: estado.titulo, narracao: estado.narracao, conteudo: { paginas: estado.paginas, secundarios: estado.secundarios } }),
+        body: JSON.stringify({ titulo: estado.titulo, narracao: estado.narracao, conteudo: { paginas: estado.paginas, secundarios: estado.secundarios, lugares: estado.lugares } }),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.erro || 'erro ' + r.status);
@@ -979,7 +1048,7 @@
       } catch (err) { aviso('Não enviou: ' + err.message); }
     } });
     const gerar = async (botao) => {
-      const refs = referencias(pagCapa).filter((r) => r.ref).map((r) => r.ref);
+      const refs = refsImagem(pagCapa);
       botao.disabled = true; botao.textContent = '⏳ Pondo na fila…';
       try {
         await pedirImagem({ prompt, refs, capa: true });
@@ -1117,7 +1186,7 @@
       (dados.continua || []).length ? el('p', { class: 'suave' }, '📚 Continua de: ',
         dados.continua.map((c, i) => [i ? ', ' : '', el('a', { href: '/historias/' + c.id }, c.titulo)])) : null,
       // Painéis lado a lado (fechados viram "botões"); o aberto ocupa a linha inteira.
-      el('div', { class: 'paineis' }, [capaUI(), musicaUI(), memoriaUI(), ajudaUI(), secundariosUI()].filter(Boolean)),
+      el('div', { class: 'paineis' }, [capaUI(), musicaUI(), memoriaUI(), ajudaUI(), secundariosUI(), lugaresUI()].filter(Boolean)),
       modo === 'carrossel' && estado.paginas.length
         ? (atual = Math.min(atual, estado.paginas.length - 1),
            [navCarrossel(), inserirPaginaUI(atual), paginaUI(estado.paginas[atual], atual), inserirPaginaUI(atual + 1), navCarrossel()])

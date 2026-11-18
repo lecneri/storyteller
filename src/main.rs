@@ -14,6 +14,7 @@ mod historias;
 mod imprimir;
 mod fila_imagens;
 mod imagem;
+mod lugares;
 mod ia;
 mod jobs;
 mod limpeza;
@@ -105,6 +106,13 @@ async fn main() -> anyhow::Result<()> {
         .route("/redefinir/{token}", get(conta::pagina_redefinir).post(conta::redefinir))
         .route("/exportar", get(exportar::exportar))
         .route("/leitores/novo", post(web::criar_leitor))
+        .route("/lugares", get(lugares::lista).post(lugares::criar))
+        .route("/lugares/da-historia", post(lugares::criar_da_historia))
+        .route("/lugares/{slug}", get(lugares::detalhe).post(lugares::salvar))
+        .route("/lugares/{slug}/apagar", post(lugares::apagar))
+        .route("/lugares/{slug}/refs", post(lugares::enviar_refs))
+        .route("/lugares/{slug}/tirar-ref/{ref_id}", post(lugares::tirar_ref))
+        .route("/lugares/{slug}/gerar", post(lugares::gerar))
         .route("/personagens", get(personagens::lista).post(personagens::criar))
         .route("/personagens/ia", post(personagens::criar_com_ia))
         .route("/personagens/descrever-foto", post(personagens::descrever_foto))

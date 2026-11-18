@@ -115,3 +115,17 @@ test('variante sem imagem empresta a de outra variante; a foto real da ficha nun
   assert.equal(L.miniatura(sem, 'leo'), null);
   assert.equal(L.referencias(sem, { personagens: [{ slug: 'leo' }] })[0].ref || null, null);
 });
+
+test('lugar da página: cenário no prompt e a imagem depois das dos personagens', () => {
+  const ctx = { personagens, faixa: '4-6',
+    lugares: [{ slug: 'castelo', nome: 'Castelo de Areia', descricao: '3 torres e bandeira azul', referencias: ['img-castelo'] }],
+    lugaresHistoria: [{ nome: 'Caverna do Zorgo', descricao: 'pedras roxas' }] };
+  const pag = { cena: 'À noite, com chuva', lugar: 'castelo', personagens: [{ slug: 'pedro', variante: 'normal' }] };
+  const p = L.promptImagem(pag, ctx);
+  assert.match(p, /Cenário: Imagem 2: Castelo de Areia — 3 torres e bandeira azul \(use a imagem só para o formato/);
+  assert.deepEqual(L.refsDaPagina(pag, ctx), ['img-normal', 'img-castelo']);
+  const cav = L.promptImagem({ cena: 'x', lugar: 'Caverna do Zorgo' }, ctx);
+  assert.match(cav, /Cenário: Caverna do Zorgo — pedras roxas\. O lugar deve/);
+  assert.doesNotMatch(L.promptImagem({ cena: 'x' }, ctx), /Cenário/);
+  assert.equal(L.lugarDaPagina({ lugar: 'sumiu' }, ctx), null);
+});

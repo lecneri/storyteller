@@ -276,6 +276,7 @@ pub async fn abrir(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) 
         "id": h.id, "titulo": h.titulo, "faixa": h.faixa, "narracao": h.narracao,
         "briefing": h.briefing, "conteudo": h.conteudo,
         "personagens": personagens,
+        "lugares": crate::lugares::da_familia(&st, s.familia_id).await,
         "tipos": crate::personagens::TIPOS.iter().map(|(k, n)| json!({ "id": k, "nome": n })).collect::<Vec<_>>(),
         "vozes_sistema": crate::tts::VOZES.iter().map(|(id, n)| json!({ "id": id, "nome": n })).collect::<Vec<_>>(),
         "animacoes": ANIMACOES, "estilo": h.estilo,
@@ -534,6 +535,8 @@ pub async fn mencoes(State(st): State<AppState>, s: Sessao) -> Response {
                     .map(|v| json!({ "slug": v["slug"], "nome": v["nome"], "lingua": v["lingua"] })).collect::<Vec<_>>()),
             })).collect::<Vec<_>>(),
             "grupos": grupos_json(&p),
+            "lugares": crate::lugares::da_familia(&st, s.familia_id).await.into_iter()
+                .map(|l| json!({ "slug": l.slug, "nome": l.nome })).collect::<Vec<_>>(),
             "historias": h.into_iter().map(|(slug, titulo)| json!({ "slug": slug, "titulo": titulo })).collect::<Vec<_>>(),
         }))
         .into_response(),

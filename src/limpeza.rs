@@ -79,6 +79,7 @@ pub async fn limpar(st: &AppState) -> anyhow::Result<(u64, i64)> {
                          jsonb_array_elements(pg->'blocos') b WHERE b->'gravacao'->>'id' IS NOT NULL
             UNION SELECT capa FROM conteudo.estantes WHERE capa IS NOT NULL
             UNION SELECT unnest(referencias) FROM conteudo.variantes
+            UNION SELECT unnest(referencias) FROM conteudo.lugares
             UNION SELECT (f)::uuid FROM conteudo.personagens p, jsonb_array_elements_text(COALESCE(p.ficha->'fotos', '[]')) f
             UNION SELECT arquivo FROM midia.audios
          )

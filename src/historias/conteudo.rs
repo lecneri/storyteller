@@ -18,6 +18,16 @@ pub struct Conteudo {
     /// Personagens só desta história (sem ficha), com a aparência fixa usada nos prompts de imagem.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub secundarios: Vec<Secundario>,
+    /// Lugares só desta história (inventados pela IA ou à mão), com a descrição fixa para as ilustrações.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lugares: Vec<LugarHistoria>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct LugarHistoria {
+    pub nome: String,
+    #[serde(default)]
+    pub descricao: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -42,6 +52,9 @@ pub struct Pagina {
     /// Nomes dos secundários (Conteudo.secundarios) que aparecem na ilustração desta página.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub secundarios: Vec<String>,
+    /// Onde a cena acontece: slug de um lugar da família ou nome de um lugar só desta história ("" = nenhum).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub lugar: String,
     #[serde(default)]
     pub animacao: Option<String>,
     #[serde(default)]

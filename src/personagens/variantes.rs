@@ -20,7 +20,7 @@ use super::paginas::{buscar, detalhe_com};
 // ───────────── variantes ─────────────
 
 /// Lê um formulário multipart: campos de texto + imagens de referência.
-pub(super) async fn ler_multipart(mut mp: Multipart) -> Result<(HashMap<String, String>, Vec<Vec<u8>>), String> {
+pub(crate) async fn ler_multipart(mut mp: Multipart) -> Result<(HashMap<String, String>, Vec<Vec<u8>>), String> {
     let mut campos = HashMap::new();
     let mut arquivos = Vec::new();
     while let Some(campo) = mp.next_field().await.map_err(|e| format!("Envio inválido: {e}"))? {

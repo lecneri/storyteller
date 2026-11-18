@@ -1,4 +1,4 @@
-// Briefing: autocompletar de @personagem(:variante)(!voz), @grupo:nome e #historia, e chips do que foi detectado.
+// Briefing: autocompletar de @personagem(:variante)(!voz), @grupo:nome, @lugar:nome e #historia, e chips do que foi detectado.
 // Voz extra: "@pedro!ingles" (só nessa voz/língua) ou "@pedro!misto-ingles" (mistura com português).
 // Caixas com data-mencoes="simples" (ex.: Relações da ficha) só sugerem @personagem, sem variante, voz ou #história.
 (function () {
@@ -33,6 +33,13 @@
             if (!norm('grupo ' + g.slug + ' ' + g.nome).includes(t)) continue;
             const nomes = g.membros.map((s) => (dados.personagens.find((p) => p.slug === s) || { nome: s }).nome);
             opcoes.push({ txt: '@grupo:' + g.slug, rot: '👥 ' + g.nome + ' (' + nomes.join(', ') + ')' });
+          }
+        }
+        // Lugares: "@lugar:castelo".
+        if (!simples) {
+          const t = termo.startsWith('lugar:') ? termo.slice(6) : termo;
+          for (const l of dados.lugares || []) {
+            if (norm('lugar ' + l.slug + ' ' + l.nome).includes(t)) opcoes.push({ txt: '@lugar:' + l.slug, rot: '📍 ' + l.nome });
           }
         }
         for (const p of dados.personagens) {
@@ -124,6 +131,10 @@
         if (!new RegExp('@grupo:' + g.slug + '(?![a-z0-9-])', 'i').test(texto)) continue;
         const nomes = g.membros.map((s) => (dados.personagens.find((p) => p.slug === s) || { nome: s }).nome);
         achados.push({ rot: '👥 ' + g.nome + ': ' + nomes.join(', '), remover: () => { ta.value = ta.value.replace(new RegExp('@grupo:' + g.slug + '\\s?', 'gi'), ''); detectar(); } });
+      }
+      for (const l of dados.lugares || []) {
+        if (!new RegExp('@lugar:' + l.slug + '(?![a-z0-9-])', 'i').test(texto)) continue;
+        achados.push({ rot: '📍 ' + l.nome, remover: () => { ta.value = ta.value.replace(new RegExp('@lugar:' + l.slug + '\\s?', 'gi'), ''); detectar(); } });
       }
       for (const h of dados.historias) {
         if (new RegExp('#' + h.slug + '(?![a-z0-9-])', 'i').test(texto)) {

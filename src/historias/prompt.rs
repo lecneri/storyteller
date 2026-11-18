@@ -9,9 +9,17 @@ pub fn schema_historia() -> Value {
     json!({
         "type": "object",
                     "additionalProperties": false,
-        "required": ["titulo", "faixa", "secundarios", "paginas"],
+        "required": ["titulo", "faixa", "secundarios", "lugares", "paginas"],
         "properties": {
             "titulo": { "type": "string" },
+            "lugares": {
+                "type": "array",
+                "description": "lugares inventados nesta história (não os da lista LUGARES DA FAMÍLIA), com a aparência fixa",
+                "items": {
+                    "type": "object", "additionalProperties": false, "required": ["nome", "descricao"],
+                    "properties": { "nome": { "type": "string" }, "descricao": { "type": "string" } }
+                }
+            },
             "secundarios": {
                 "type": "array",
                 "description": "personagens sem ficha que aparecem nas ilustrações, com a aparência fixa",
@@ -28,8 +36,10 @@ pub fn schema_historia() -> Value {
                 "items": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["cena", "personagens", "secundarios", "animacao", "blocos"],
+                    "required": ["cena", "personagens", "secundarios", "lugar", "animacao", "blocos"],
                     "properties": {
+                        "lugar": { "type": "string",
+                                   "description": "onde a cena acontece: o slug de um lugar da família, o nome de um lugar da lista lugares, ou \"\"" },
                         "cena": { "type": "string", "description": "Descrição visual da ilustração da página (para o gerador de imagem)" },
                         "personagens": {
                             "type": "array",
@@ -216,6 +226,43 @@ pub fn montar_prompt(
         regras.join("\n"),
         serde_json::to_string_pretty(&fichas).unwrap_or_default()
     )
+}
+
+/// Trecho do prompt sobre lugares: os da família citados (com descrição) e como preencher "lugar" e "lugares".
+pub fn bloco_lugares(da_familia: &[Value]) -> String {
+    let lista = if da_familia.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "LUGARES DA FAMÍLIA (use pelo slug em \"lugar\" nas páginas que se passam neles; a aparência é a da descrição):\n{}\n",
+            serde_json::to_string_pretty(da_familia).unwrap_or_default()
+        )
+    };
+    format!(
+        "\n{lista}- LUGARES: em cada página, \"lugar\" diz onde a cena acontece. Use o slug de um LUGAR DA FAMÍLIA quando for um deles; \
+         se a história inventar um lugar que aparece em várias páginas (ex.: a caverna do vilão), descreva-o UMA vez em \"lugares\" \
+         (nome e aparência FIXA: formato, cores, objetos marcantes, sem luz nem hora do dia) e use o nome dele em \"lugar\". \
+         Lugar de uma página só pode ficar \"\" (a cena já descreve). A hora do dia, a luz e o clima ficam na \"cena\".\n"
+    )
+}
+
+/// "lugar" de cada página: slug de um lugar da família, nome de um lugar da história, ou "".
+pub fn ajustar_lugares(c: &mut super::Conteudo, slugs_familia: &[String]) {
+    c.lugares.retain(|l| !l.nome.trim().is_empty());
+    for l in &mut c.lugares {
+        l.nome = l.nome.trim().to_string();
+    }
+    let nomes: Vec<String> = c.lugares.iter().map(|l| l.nome.clone()).collect();
+    for p in &mut c.paginas {
+        let v = p.lugar.trim().trim_start_matches('@').trim_start_matches("lugar:").to_string();
+        p.lugar = if slugs_familia.contains(&v) {
+            v
+        } else if let Some(n) = nomes.iter().find(|n| n.eq_ignore_ascii_case(&v)) {
+            n.clone()
+        } else {
+            String::new()
+        };
+    }
 }
 
 /// Vozes extras disponíveis sem pedido no briefing: fala inteira na língua da voz → usa a voz;
@@ -458,4 +505,20 @@ mod testes {
         let t = montar_prompt("", &[], "narrador", &[], &todos, "", "Ensine palavras em inglês", &[], &[]);
         assert!(t.contains("INSTRUÇÕES DESTA COLEÇÃO (valem para toda história dela; siga junto com o briefing):\nEnsine palavras em inglês"));
     }
+
+    #[test]
+    fn lugar_da_pagina_e_da_familia_ou_da_historia() {
+        let mut c: Conteudo = serde_json::from_value(json!({
+            "lugares": [{ "nome": "Caverna do Zorgo", "descricao": "pedras roxas" }, { "nome": " ", "descricao": "" }],
+            "paginas": [{ "lugar": "castelo" }, { "lugar": "@lugar:castelo" }, { "lugar": "caverna do zorgo" }, { "lugar": "lua" }, {}]
+        }))
+        .unwrap();
+        ajustar_lugares(&mut c, &["castelo".into()]);
+        let l: Vec<&str> = c.paginas.iter().map(|p| p.lugar.as_str()).collect();
+        assert_eq!(l, vec!["castelo", "castelo", "Caverna do Zorgo", "", ""]);
+        assert_eq!(c.lugares.len(), 1);
+        assert!(bloco_lugares(&[json!({ "slug": "castelo" })]).contains("LUGARES DA FAMÍLIA"));
+        assert!(!bloco_lugares(&[]).contains("LUGARES DA FAMÍLIA"));
+    }
+
 }

@@ -23,7 +23,7 @@ use crate::{
 };
 
 /// O que a IA vê de cada página (sem mídia, som etc.).
-const CAMPOS_PAGINA: [&str; 5] = ["cena", "personagens", "secundarios", "animacao", "blocos"];
+const CAMPOS_PAGINA: [&str; 6] = ["cena", "personagens", "secundarios", "lugar", "animacao", "blocos"];
 
 /// Schema da história com "origem" em cada página (para manter a imagem da página em que ela se baseia).
 pub fn schema_edicao() -> Value {
@@ -57,7 +57,9 @@ pub fn pedido_edicao(p: &Preparo, titulo: &str, conteudo: &Value, pedido: &str) 
             Value::Object(m)
         })
         .collect();
-    let atual = json!({ "titulo": titulo, "faixa": p.faixa, "secundarios": conteudo["secundarios"], "paginas": paginas });
+    let atual = json!({
+        "titulo": titulo, "faixa": p.faixa, "secundarios": conteudo["secundarios"], "lugares": conteudo["lugares"], "paginas": paginas,
+    });
     let prompt = format!(
         "{}\n\n\
          ATENÇÃO: esta história JÁ EXISTE. Não escreva outra: ajuste a HISTÓRIA ATUAL abaixo conforme o PEDIDO DE AJUSTE.\n\
@@ -77,16 +79,20 @@ pub fn pedido_edicao(p: &Preparo, titulo: &str, conteudo: &Value, pedido: &str) 
 
 /// Resposta da IA → { titulo, conteudo } pronto para o editor, com a mídia de cada página de origem.
 pub fn processar(p: &Preparo, atual: &Value, resposta: &Value) -> anyhow::Result<Value> {
-    let mut c: Conteudo = serde_json::from_value(json!({ "paginas": resposta["paginas"], "secundarios": resposta["secundarios"] }))?;
+    let mut c: Conteudo = serde_json::from_value(
+        json!({ "paginas": resposta["paginas"], "secundarios": resposta["secundarios"], "lugares": resposta["lugares"] }),
+    )?;
     let antigas: Vec<Pagina> = serde_json::from_value(atual["paginas"].clone()).unwrap_or_default();
     let origens: Vec<i64> = resposta["paginas"].as_array().into_iter().flatten().map(|pg| pg["origem"].as_i64().unwrap_or(0)).collect();
     for (pg, o) in c.paginas.iter_mut().zip(origens) {
         if let Some(a) = usize::try_from(o).ok().filter(|o| *o >= 1).and_then(|o| antigas.get(o - 1)) {
             pg.midia = a.midia.clone();
             pg.som = a.som;
+            pg.chave = a.chave.clone();
         }
     }
     let mut c = normalizar(c, &p.narracao, &p.citados, &p.todos);
+    super::prompt::ajustar_lugares(&mut c, &p.lugares);
     manter_gravacoes(&mut c, &antigas);
     if c.paginas.is_empty() {
         anyhow::bail!("a IA devolveu uma história vazia");

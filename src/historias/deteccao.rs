@@ -95,6 +95,10 @@ pub fn detectar(briefing: &str, todos: &[PersonagemIA]) -> Vec<NaCena> {
             }
             continue;
         }
+        // "@lugar:castelo" é um lugar, não um personagem (ver lugares_citados).
+        if s == "lugar" && !todos.iter().any(|p| p.slug == "lugar") {
+            continue;
+        }
         if let Some(p) = todos.iter().find(|p| p.slug == s) {
             let v = v.filter(|v| {
                 p.variantes.as_array().is_some_and(|a| a.iter().any(|x| x["slug"] == *v && x["arquivada"] != true))
@@ -120,6 +124,19 @@ pub fn detectar(briefing: &str, todos: &[PersonagemIA]) -> Vec<NaCena> {
         }
     }
     achados
+}
+
+/// Lugares citados no briefing com `@lugar:slug`.
+pub fn lugares_citados(briefing: &str) -> Vec<String> {
+    let mut v: Vec<String> = Vec::new();
+    for parte in briefing.split("@lugar:").skip(1) {
+        let token: String = parte.chars().take_while(|c| c.is_alphanumeric() || *c == '-' || *c == '_').collect();
+        let s = util::slug(&token);
+        if !s.is_empty() && !v.contains(&s) {
+            v.push(s);
+        }
+    }
+    v
 }
 
 /// Slugs citados com `#` no briefing.
@@ -156,6 +173,15 @@ mod testes {
     use super::*;
     use super::personagem_teste as p;
 
+
+    #[test]
+    fn lugar_citado_nao_vira_personagem() {
+        assert_eq!(lugares_citados("O @pedro no @lugar:castelo-de-areia e depois no @lugar:Escola."), vec!["castelo-de-areia", "escola"]);
+        assert!(lugares_citados("sem lugar").is_empty());
+        let todos = vec![p("pedro", "Pedro", &[], &[])];
+        let achados = detectar("O @pedro no @lugar:castelo", &todos);
+        assert_eq!(achados.iter().map(|a| a.slug.as_str()).collect::<Vec<_>>(), vec!["pedro"]);
+    }
 
     #[test]
     fn grupo_cita_todos() {

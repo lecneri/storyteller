@@ -27,6 +27,7 @@ pub struct Pedido {
     pub historia: Option<Uuid>,
     pub chave: Option<String>,
     pub variante: Option<Uuid>,
+    pub lugar: Option<Uuid>,
     pub prompt: String,
     pub refs: Vec<Uuid>,
     /// Pasta da mídia, dentro de familias/{slug}/.
@@ -63,8 +64,8 @@ pub async fn pedir(st: &AppState, familia: Uuid, familia_slug: &str, pedidos: Ve
     for p in pedidos {
         let id: i64 = sqlx::query_scalar(
             "INSERT INTO jobs.imagens (familia_id, familia_slug, alvo, historia_id, chave, variante_id, lote, prompt, refs, pasta,
-                                       recortar, prioridade, fila)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id",
+                                       recortar, prioridade, fila, lugar_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id",
         )
         .bind(familia)
         .bind(familia_slug)
@@ -79,6 +80,7 @@ pub async fn pedir(st: &AppState, familia: Uuid, familia_slug: &str, pedidos: Ve
         .bind(p.recortar)
         .bind(prioridade)
         .bind(&fila)
+        .bind(p.lugar)
         .fetch_one(&mut *tx)
         .await?;
         ids.push(id);
@@ -103,6 +105,7 @@ struct Item {
     historia_id: Option<Uuid>,
     chave: Option<String>,
     variante_id: Option<Uuid>,
+    lugar_id: Option<Uuid>,
     prompt: String,
     refs: Vec<Uuid>,
     pasta: String,
@@ -118,7 +121,8 @@ pub async fn trabalhador(st: AppState, fila: &'static str) {
             "UPDATE jobs.imagens SET estado = 'rodando', atualizado_em = now()
               WHERE id = (SELECT id FROM jobs.imagens WHERE estado = 'pendente' AND fila = $1
                            ORDER BY prioridade DESC, id FOR UPDATE SKIP LOCKED LIMIT 1)
-              RETURNING id, familia_id, familia_slug, alvo, historia_id, chave, variante_id, prompt, refs, pasta, recortar, tentadas, erro",
+              RETURNING id, familia_id, familia_slug, alvo, historia_id, chave, variante_id, lugar_id, prompt, refs, pasta, recortar,
+                        tentadas, erro",
         )
         .bind(fila)
         .fetch_optional(&st.db)
@@ -203,6 +207,13 @@ async fn aplicar(st: &AppState, item: &Item, fila: &str, midia: Uuid, tipo: &str
         ("capa", Some(h), _) => {
             sqlx::query("UPDATE conteudo.historias SET capa = $2 WHERE id = $1").bind(h).bind(midia).execute(&st.db).await?;
         }
+        ("lugar", _, _) if item.lugar_id.is_some() => {
+            sqlx::query("UPDATE conteudo.lugares SET referencias = array_append(referencias, $2), atualizado_em = now() WHERE id = $1")
+                .bind(item.lugar_id)
+                .bind(midia)
+                .execute(&st.db)
+                .await?;
+        }
         ("variante", _, Some(v)) => {
             sqlx::query("UPDATE conteudo.variantes SET referencias = array_append(referencias, $2) WHERE id = $1")
                 .bind(v)
@@ -250,6 +261,7 @@ pub struct Situacao {
     pub alvo: String,
     pub chave: Option<String>,
     pub variante_id: Option<Uuid>,
+    pub lugar_id: Option<Uuid>,
     pub lote: Option<Uuid>,
     pub estado: String,
     pub fila: String,
@@ -281,7 +293,7 @@ impl Situacao {
     }
     pub fn json(&self) -> Value {
         json!({
-            "id": self.id, "alvo": self.alvo, "chave": self.chave, "variante": self.variante_id, "lote": self.lote,
+            "id": self.id, "alvo": self.alvo, "chave": self.chave, "variante": self.variante_id, "lugar": self.lugar_id, "lote": self.lote,
             "estado": self.estado, "fila": self.fila, "feita_por": self.feita_por,
             "midia": self.midia.map(|m| json!({ "id": m, "tipo": self.midia_tipo })),
             "erro": self.erro, "rotulo": self.rotulo(),
@@ -289,7 +301,7 @@ impl Situacao {
     }
 }
 
-const SELECT_SITUACAO: &str = "SELECT i.id, i.alvo, i.chave, i.variante_id, i.lote, i.estado, i.fila, i.feita_por, i.midia, i.midia_tipo, i.erro,
+const SELECT_SITUACAO: &str = "SELECT i.id, i.alvo, i.chave, i.variante_id, i.lugar_id, i.lote, i.estado, i.fila, i.feita_por, i.midia, i.midia_tipo, i.erro,
         CASE WHEN i.estado = 'pendente' THEN (
           SELECT count(*) FROM jobs.imagens o WHERE o.fila = i.fila AND (o.estado = 'rodando' OR (o.estado = 'pendente'
              AND (o.prioridade > i.prioridade OR (o.prioridade = i.prioridade AND o.id < i.id))))) ELSE 0 END AS na_frente
@@ -318,6 +330,20 @@ pub async fn do_personagem(st: &AppState, familia: Uuid, personagem: Uuid) -> Ve
     ))
     .bind(familia)
     .bind(personagem)
+    .fetch_all(&st.db)
+    .await
+    .unwrap_or_default()
+}
+
+/// Desenhos de um lugar: os ativos e os que falharam há pouco.
+pub async fn do_lugar(st: &AppState, familia: Uuid, lugar: Uuid) -> Vec<Situacao> {
+    sqlx::query_as(&format!(
+        "{SELECT_SITUACAO} WHERE i.familia_id = $1 AND i.lugar_id = $2
+            AND (i.estado IN ('pendente', 'rodando') OR (i.estado = 'erro' AND i.atualizado_em > now() - interval '15 minutes'))
+          ORDER BY i.id"
+    ))
+    .bind(familia)
+    .bind(lugar)
     .fetch_all(&st.db)
     .await
     .unwrap_or_default()
@@ -365,7 +391,7 @@ mod testes {
 
     fn item(estado: &str, na_frente: i64) -> Situacao {
         Situacao {
-            id: 1, alvo: "pagina".into(), chave: None, variante_id: None, lote: None, estado: estado.into(), fila: "codex".into(),
+            id: 1, alvo: "pagina".into(), chave: None, variante_id: None, lugar_id: None, lote: None, estado: estado.into(), fila: "codex".into(),
             feita_por: None, midia: None, midia_tipo: None, erro: Some("sem cota".into()), na_frente,
         }
     }

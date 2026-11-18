@@ -26,6 +26,8 @@ pub struct Preparo {
     pub(super) narracao: String,
     pub(super) citados: Vec<NaCena>,
     pub(super) todos: Vec<super::deteccao::PersonagemIA>,
+    /// Slugs dos lugares da família (para validar o "lugar" das páginas).
+    pub(super) lugares: Vec<String>,
     continua_de: Vec<Uuid>,
     pub pedido: ia::PedidoTexto,
 }
@@ -117,13 +119,21 @@ pub async fn preparar(st: &AppState, id: Uuid) -> anyhow::Result<Preparo> {
     let vozes = crate::tts::vozes_da_familia(st, h.familia_id).await?;
     let mut vozes_usadas: Vec<String> = vec![vozes.narrador.id.clone()];
     vozes_usadas.extend(vozes.personagens.iter().chain(vozes.extras.iter()).map(|(_, v)| v.id.clone()));
-    let pedido = ia::PedidoTexto {
-        sistema: SISTEMA.into(),
-        imagens: Vec::new(),
-        prompt: montar_prompt(&briefing, &leitores, &h.narracao, &citados, &todos, estilo, instrucoes, &memorias, &vozes_usadas),
-        schema: schema_historia(),
-    };
-    Ok(Preparo { familia_id: h.familia_id, faixa: h.faixa, narracao: h.narracao, citados, todos, continua_de, pedido })
+    // Lugares: os citados com @lugar:slug e os que a história já usa (na ajuda da IA).
+    let lugares_familia = crate::lugares::da_familia(st, h.familia_id).await;
+    let mut lugares_citados = super::deteccao::lugares_citados(&briefing);
+    for pg in h.conteudo["paginas"].as_array().into_iter().flatten() {
+        if let Some(l) = pg["lugar"].as_str().filter(|l| !l.is_empty()) {
+            if !lugares_citados.iter().any(|x| x == l) {
+                lugares_citados.push(l.to_string());
+            }
+        }
+    }
+    let mut prompt = montar_prompt(&briefing, &leitores, &h.narracao, &citados, &todos, estilo, instrucoes, &memorias, &vozes_usadas);
+    prompt.push_str(&super::prompt::bloco_lugares(&crate::lugares::para_ia(&lugares_familia, &lugares_citados)));
+    let pedido = ia::PedidoTexto { sistema: SISTEMA.into(), imagens: Vec::new(), prompt, schema: schema_historia() };
+    let lugares = lugares_familia.into_iter().map(|l| l.slug).collect();
+    Ok(Preparo { familia_id: h.familia_id, faixa: h.faixa, narracao: h.narracao, citados, todos, lugares, continua_de, pedido })
 }
 
 pub async fn executar_geracao(st: &AppState, payload: &Value) -> anyhow::Result<()> {
@@ -149,8 +159,11 @@ pub async fn gravar(st: &AppState, id: Uuid, p: &Preparo, resposta: &Value) -> a
     let (h, citados, todos, continua_de) = (p, &p.citados, &p.todos, &p.continua_de);
     let titulo = resposta["titulo"].as_str().unwrap_or("Nova história").trim().to_string();
     let faixa = resposta["faixa"].as_str().filter(|f| FAIXAS.contains(f)).unwrap_or(&h.faixa).to_string();
-    let conteudo: Conteudo = serde_json::from_value(json!({ "paginas": resposta["paginas"], "secundarios": resposta["secundarios"] }))?;
-    let conteudo = normalizar(conteudo, &h.narracao, citados, todos);
+    let conteudo: Conteudo = serde_json::from_value(
+        json!({ "paginas": resposta["paginas"], "secundarios": resposta["secundarios"], "lugares": resposta["lugares"] }),
+    )?;
+    let mut conteudo = normalizar(conteudo, &h.narracao, citados, todos);
+    super::prompt::ajustar_lugares(&mut conteudo, &p.lugares);
     if conteudo.paginas.is_empty() {
         anyhow::bail!("a IA devolveu uma história vazia");
     }
