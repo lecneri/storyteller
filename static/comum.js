@@ -50,7 +50,7 @@
 
   // Área para colar (Ctrl+V), arrastar ou usar o botão "📋 Colar" junto de um <input type=file>.
   // Os arquivos colados entram no próprio input (respeitando accept e multiple) e disparam "change".
-  function zonaColar(input, texto) {
+  function zonaColar(input, texto, compacto) {
     const aceita = (f) => {
       const tipos = (input.accept || '').split(',').map((t) => t.trim()).filter(Boolean);
       return !tipos.length || tipos.some((t) => (t.endsWith('/*') ? f.type.startsWith(t.slice(0, -1)) : f.type === t));
@@ -106,6 +106,19 @@
       } catch (e) {
         aviso('O navegador não deixou ler a imagem copiada. Clique na área tracejada e aperte Ctrl+V.', 4000);
       }
+    }
+    // Compacto: só os botões 📤 e 📋; colar (Ctrl+V) e arrastar valem na caixa em volta (data-zona-colar).
+    if (compacto) {
+      input.hidden = true;
+      const caixa = el('span', { class: 'linha envio-compacto' },
+        el('button', { type: 'button', class: 'pequeno secundario', onclick: () => input.click() }, compacto),
+        navigator.clipboard && navigator.clipboard.read ? el('button', { type: 'button', class: 'pequeno secundario', onclick: colarDoBotao }, '📋 Colar') : null);
+      const area = input.closest('[data-zona-colar]') || caixa;
+      area.addEventListener('dragover', (e) => e.preventDefault());
+      area.addEventListener('drop', (e) => { e.preventDefault(); receber(e.dataTransfer.files); });
+      area.addEventListener('paste', (e) => { const f = (e.clipboardData || {}).files || []; if (f.length) { e.preventDefault(); receber(f); } });
+      input.after(caixa);
+      return caixa;
     }
     const zona = el('div', { class: 'zona-envio', tabindex: 0, title: 'Clique aqui e cole com Ctrl+V',
       onclick: () => zona.focus(),

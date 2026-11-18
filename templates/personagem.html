@@ -19,16 +19,16 @@
       <label>Apelidos <input name="apelidos" value="{{ p.apelidos() }}"></label>
 
       <div class="referencia inteiro">
-        <div class="ref-foto">
+        <div class="ref-foto" data-zona-colar tabindex="-1" title="Cole (Ctrl+V) ou arraste uma foto aqui">
           <strong>📷 Foto de referência</strong>
           {% for ref_id in self.fotos() %}
           <div class="foto-kit">{% include "miniatura.html" %}
-            <button type="submit" class="pequeno secundario" formaction="/personagens/{{ p.slug }}/fotos/{{ ref_id }}/tirar" formnovalidate
-                    onclick="return confirm('Tirar esta foto?')">🗑 Tirar</button></div>
+            <button type="submit" class="link" formaction="/personagens/{{ p.slug }}/fotos/{{ ref_id }}/tirar" formnovalidate
+                    onclick="return confirm('Tirar esta foto?')">🗑 tirar</button></div>
           {% endfor %}
           <input type="file" name="fotos" form="form-foto" accept="image/png,image/jpeg,image/webp" multiple
-                 onchange="if (this.files.length) this.form.submit()">
-          <small class="suave">Opcional: a foto real (privada, nunca aparece nas histórias) ou o desenho de uma variante. Serve para descrever a aparência e, se você marcar, de referência ao desenhar variantes.</small>
+                 data-compacto="📤 {% if self.fotos().is_empty() %}Enviar foto{% else %}Mais uma{% endif %}" onchange="if (this.files.length) this.form.submit()">
+          <small class="suave">Opcional e privada: nunca aparece nas histórias. Cole (Ctrl+V) ou arraste aqui.</small>
         </div>
         <div class="ref-texto">
           <label>Aparência <small class="suave">(o que não muda: rosto, cabelo, pele, idade)</small>
@@ -68,7 +68,9 @@
             {% for ref_id in v.referencias %}<div class="foto-kit">{% include "miniatura.html" %}
               <form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/tirar-ref/{{ ref_id }}" class="inline"
                     onsubmit="return confirm('Tirar esta imagem da variante {{ v.nome }}? A IA deixa de usar ela como referência.')">
-                <button type="submit" class="link" title="Tirar esta imagem">🗑 tirar</button></form></div>{% endfor %}
+                <button type="submit" class="link" title="Tirar esta imagem">🗑 tirar</button></form>
+              {% if recorte %}<form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/recortar/{{ ref_id }}" class="inline"
+                    onsubmit="this.querySelector('button').textContent = '⏳'"><button type="submit" class="link" title="Tirar o fundo (fica um PNG transparente no lugar)">✂️ fundo</button></form>{% endif %}</div>{% endfor %}
           </div>
           {% endif %}
           <div class="texto-variante">

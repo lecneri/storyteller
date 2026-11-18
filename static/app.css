@@ -298,3 +298,5 @@ a.linha-familia:hover { border-color:var(--cor); }
 .acoes-variante > details[open] { flex-basis:100%; }
 .acoes-variante > details > summary { cursor:pointer; color:var(--cor); font-weight:600; }
 @media (max-width:560px) { .corpo-variante { flex-direction:column; } .corpo-variante .imgs-variante { max-width:100%; } }
+.foto-kit form.inline + form.inline::before { content:"· "; color:var(--suave); }
+.ref-foto:focus { outline:2px dashed var(--cor); outline-offset:4px; }

@@ -8,6 +8,8 @@ services:
         APP_UID: ${APP_UID:-1000}
         APP_GID: ${APP_GID:-1000}
     env_file: .env
+    environment:
+      RECORTE_URL: http://recorte:7000
     ports: ["${APP_BIND_IP:-127.0.0.1}:${APP_PORT:-8090}:8080"]
     volumes:
       - ${DATA_HOST_DIR:-storyteller-data}:/data
@@ -18,6 +20,12 @@ services:
         condition: service_healthy
         required: false
     restart: unless-stopped
+
+  # Recorte de fundo das imagens dos personagens (rembg), só na rede interna.
+  recorte:
+    build: ./recorte
+    restart: unless-stopped
+    mem_limit: 2g
 
   db:
     profiles: [dev]

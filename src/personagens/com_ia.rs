@@ -163,6 +163,8 @@ pub async fn criar_com_ia(State(st): State<AppState>, s: Sessao, mp: Multipart) 
         let prompt = prompt_model_sheet(&nome, &aparencia, Some(&estilo), !refs.is_empty());
         match crate::imagem::gerar(&st, s.familia_id, &s.familia_slug, &format!("personagens/{slug}/refs"), &prompt, &refs).await {
             Ok((img, _)) => {
+                let pasta = format!("familias/{}/personagens/{slug}/refs", s.familia_slug);
+                let img = crate::recorte::sem_fundo_se_der(&st, s.familia_id, &pasta, img).await;
                 let _ = sqlx::query("UPDATE conteudo.variantes SET referencias = array_append(referencias, $2) WHERE id = $1")
                     .bind(vid)
                     .bind(img)
@@ -224,6 +226,8 @@ pub(super) async fn gerar_desenho_variante(st: &AppState, s: &Sessao, slug: &str
     prompt.push_str(&nota_referencias(!refs_atuais.is_empty(), !fotos.is_empty()));
     match crate::imagem::gerar(&st, s.familia_id, &s.familia_slug, &format!("personagens/{slug}/refs"), &prompt, &refs).await {
         Ok((img, _)) => {
+            let pasta = format!("familias/{}/personagens/{slug}/refs", s.familia_slug);
+            let img = crate::recorte::sem_fundo_se_der(st, s.familia_id, &pasta, img).await;
             let _ = sqlx::query("UPDATE conteudo.variantes SET referencias = array_append(referencias, $2) WHERE id = $1")
                 .bind(vid)
                 .bind(img)

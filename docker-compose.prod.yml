@@ -9,14 +9,23 @@ services:
         APP_UID: ${APP_UID:-1000}
         APP_GID: ${APP_GID:-1000}
     container_name: storyteller
+    environment:
+      RECORTE_URL: http://storyteller-recorte:7000
     env_file:
       - .env
       - .env.db          # DATABASE_URL do banco storyteller
     volumes:
       - ${DATA_HOST_DIR:-storyteller-data}:/data
       - storyteller-cli:/home/app   # logins dos CLIs (claude/gemini/codex) persistem aqui
-    networks: [db_net, proxy_net]
+    networks: [db_net, proxy_net, default]
     restart: unless-stopped
+
+  # Recorte de fundo das imagens dos personagens (rembg), só na rede interna.
+  recorte:
+    build: ./recorte
+    container_name: storyteller-recorte
+    restart: unless-stopped
+    mem_limit: 2g
 
 networks:
   db_net:

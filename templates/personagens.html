@@ -8,14 +8,22 @@
     {% if itens.is_empty() %}
       <p class="suave">Nenhum personagem ainda. Crie o primeiro abaixo.</p>
     {% else %}
+      <form class="linha busca" data-busca="#lista-personagens" role="search">
+        <input type="search" name="q" placeholder="🔎 Nome, @, apelido, variante ou estilo" style="flex:1" autocomplete="off">
+        <select name="tipo"><option value="">Todos os tipos</option>{% for (k, v) in tipos %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
+        <small class="suave" data-contador></small>
+      </form>
+      <div id="lista-personagens">
+      <p class="suave" data-sem-resultado hidden>Nenhum personagem encontrado.</p>
       <div class="grade">
       {% for p in itens %}
-        <a class="ficha" href="/personagens/{{ p.slug }}">
+        <a class="ficha" href="/personagens/{{ p.slug }}" data-item data-texto="{{ p.nome }} {{ p.tipo_nome() }} {{ p.busca }}" data-tipo="{{ p.tipo }}">
           {% if let Some(m) = p.miniatura %}<img src="/midia/{{ m }}" alt="" loading="lazy">{% else %}<div class="sem-img">🎭</div>{% endif %}
           <strong>{{ p.nome }}</strong>
           <span class="suave">{{ p.tipo_nome() }}{% if let Some(v) = p.variante %} · {{ v }}{% endif %}</span>
         </a>
       {% endfor %}
+      </div>
       </div>
     {% endif %}
   </section>
@@ -63,4 +71,5 @@
 <script src="/vozes.js?v={{ crate::web::versao() }}" defer></script>
 <script src="/descrever.js?v={{ crate::web::versao() }}" defer></script>
 <script src="/briefing.js?v={{ crate::web::versao() }}" defer></script>
+<script src="/busca.js?v={{ crate::web::versao() }}" defer></script>
 {% endblock %}

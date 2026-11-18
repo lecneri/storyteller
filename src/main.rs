@@ -19,6 +19,7 @@ mod limpeza;
 mod midia;
 mod musica;
 mod narracao;
+mod recorte;
 mod partilha;
 mod personagens;
 mod player;
@@ -107,6 +108,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/personagens/{slug}/variantes/{vslug}/atual", post(personagens::marcar_atual))
         .route("/personagens/{slug}/variantes/{vslug}/refs", post(personagens::adicionar_refs))
         .route("/personagens/{slug}/variantes/{vslug}/tirar-ref/{ref_id}", post(personagens::tirar_ref))
+        .route("/personagens/{slug}/variantes/{vslug}/recortar/{ref_id}", post(personagens::recortar_ref))
         .route("/personagens/{slug}/fotos", post(personagens::fotos::enviar_fotos))
         .route("/personagens/{slug}/fotos/{foto}/tirar", post(personagens::fotos::tirar_foto))
         .route("/personagens/{slug}/variantes/{vslug}/arquivar", post(personagens::alternar_arquivo))

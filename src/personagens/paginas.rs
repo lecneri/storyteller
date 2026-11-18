@@ -27,6 +27,8 @@ struct ItemLista {
     tipo: String,
     variante: Option<String>,
     miniatura: Option<Uuid>,
+    /// Para a busca: @, apelidos, nomes e estilos das variantes, relações.
+    busca: String,
 }
 
 impl ItemLista {
@@ -52,6 +54,9 @@ pub(super) async fn lista_com(st: &AppState, s: Sessao, erro: Option<String>) ->
                          (SELECT v.referencias[1] FROM conteudo.variantes v
                            WHERE v.personagem_id = p.id AND cardinality(v.referencias) > 0
                            ORDER BY v.criado_em LIMIT 1)) AS miniatura
+                , concat_ws(' ', '@' || p.slug, p.ficha->>'relacoes',
+                    (SELECT string_agg(x, ' ') FROM jsonb_array_elements_text(COALESCE(p.ficha->'apelidos', '[]')) x),
+                    (SELECT string_agg(concat_ws(' ', v.nome, v.estilo), ' ') FROM conteudo.variantes v WHERE v.personagem_id = p.id)) AS busca
            FROM conteudo.personagens p
            LEFT JOIN conteudo.variantes va ON va.id = p.variante_atual
           WHERE p.familia_id = $1
@@ -237,6 +242,8 @@ struct PaginaPersonagem {
     tipos: Vec<(&'static str, &'static str)>,
     erro: Option<String>,
     imagem_api: bool,
+    /// Serviço de tirar o fundo das imagens disponível.
+    recorte: bool,
     /// Outros personagens da família (slug, nome), para "virar variante de".
     outros: Vec<(String, String)>,
 }
@@ -299,7 +306,7 @@ pub(super) async fn detalhe_com(st: &AppState, s: Sessao, slug: &str, erro: Opti
                     .fetch_all(&st.db)
                     .await
                     .unwrap_or_default();
-            render(PaginaPersonagem { s, p, variantes, tipos: TIPOS.to_vec(), erro, imagem_api, outros })
+            render(PaginaPersonagem { s, p, variantes, tipos: TIPOS.to_vec(), erro, imagem_api, recorte: crate::recorte::disponivel(), outros })
         }
         Err(e) => erro_interno(e.into()),
     }

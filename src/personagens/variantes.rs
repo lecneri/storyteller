@@ -198,6 +198,42 @@ pub async fn tirar_ref(
     }
 }
 
+/// POST /personagens/{slug}/variantes/{vslug}/recortar/{ref}: tira o fundo da imagem (a recortada fica no lugar dela).
+pub async fn recortar_ref(
+    State(st): State<AppState>,
+    s: Sessao,
+    Path((slug, vslug, ref_id)): Path<(String, String, Uuid)>,
+) -> Response {
+    let vid: Option<Uuid> = sqlx::query_scalar(
+        "SELECT v.id FROM conteudo.variantes v JOIN conteudo.personagens p ON p.id = v.personagem_id
+          WHERE p.familia_id = $1 AND p.slug = $2 AND v.slug = $3 AND $4 = ANY(v.referencias)",
+    )
+    .bind(s.familia_id)
+    .bind(&slug)
+    .bind(&vslug)
+    .bind(ref_id)
+    .fetch_optional(&st.db)
+    .await
+    .unwrap_or(None);
+    let Some(vid) = vid else { return ir_para(&slug, &vslug) };
+    let pasta = format!("familias/{}/personagens/{slug}/refs", s.familia_slug);
+    match crate::recorte::recortar(&st, s.familia_id, &pasta, ref_id).await {
+        Ok(novo) => {
+            let r = sqlx::query("UPDATE conteudo.variantes SET referencias = array_replace(referencias, $2, $3) WHERE id = $1")
+                .bind(vid)
+                .bind(ref_id)
+                .bind(novo)
+                .execute(&st.db)
+                .await;
+            match r {
+                Ok(_) => ir_para(&slug, &vslug),
+                Err(e) => erro_interno(e.into()),
+            }
+        }
+        Err(e) => detalhe_com(&st, s, &slug, Some(format!("Não consegui tirar o fundo: {e:#}"))).await,
+    }
+}
+
 /// POST /personagens/{slug}/variantes/{vslug}/arquivar: arquiva ou restaura (alterna).
 /// Arquivada não aparece para histórias novas; as antigas continuam usando.
 pub async fn alternar_arquivo(

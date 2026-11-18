@@ -1,5 +1,5 @@
 // Busca na hora (sem recarregar) em listas da página.
-// <form data-busca> com <input type=search name=q> e, opcionalmente, <select name=pers> / <select name=est>.
+// <form data-busca> com <input type=search name=q> e, opcionalmente, <select name=pers|est|tipo>.
 // Itens: [data-item] com data-texto (onde procurar), data-pers e data-est (slugs separados por espaço).
 // Grupos (ex.: estantes): [data-grupo] com data-texto; se o grupo bate, aparece inteiro; senão só os itens que batem.
 (function () {
@@ -16,13 +16,14 @@
       const palavras = q.replace(/@[a-z0-9-]+/g, ' ').split(/\s+/).filter(Boolean);
       const pers = [...arrobas, form.pers && form.pers.value].filter(Boolean);
       const est = form.est && form.est.value;
+      const tipo = form.tipo && form.tipo.value;
       const bate = (el) => {
         const texto = norm(el.dataset.texto);
         const ps = (el.dataset.pers || '').split(' ');
         return palavras.every((p) => texto.includes(p)) && pers.every((p) => ps.includes(p))
-          && (!est || (el.dataset.est || '').split(' ').includes(est));
+          && (!est || (el.dataset.est || '').split(' ').includes(est)) && (!tipo || el.dataset.tipo === tipo);
       };
-      const filtrando = palavras.length || pers.length || est;
+      const filtrando = palavras.length || pers.length || est || tipo;
       let vistos = 0;
       const grupos = [...raiz.querySelectorAll('[data-grupo]')];
       if (grupos.length) {
