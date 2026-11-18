@@ -5,6 +5,8 @@ services:
   app:
     build:
       context: .
+      # "pronto": usa o binário compilado no PC (scripts/subir.sh). Para compilar aqui mesmo: STORYTELLER_ETAPA=final
+      target: ${STORYTELLER_ETAPA:-pronto}
       args:
         APP_UID: ${APP_UID:-1000}
         APP_GID: ${APP_GID:-1000}

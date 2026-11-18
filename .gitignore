@@ -4,3 +4,5 @@
 .env.db
 .playwright-mcp/
 PLANO.md
+/dist
+.deploy.env
