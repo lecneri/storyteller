@@ -362,7 +362,37 @@ pub async fn enviar_codigo(nome: &str, codigo: &str) -> anyhow::Result<Estado> {
 }
 
 /// Situação atual de cada CLI (sem gastar uso): token salvo / `codex login status` / arquivos do agy.
+/// Último "Testar" de cada CLI (desde que o app subiu): (quando, Ok(modelo) ou Err(erro)).
+type Teste = (chrono::DateTime<chrono::Utc>, Result<Option<String>, String>);
+fn testes() -> &'static Mutex<HashMap<String, Teste>> {
+    static T: OnceLock<Mutex<HashMap<String, Teste>>> = OnceLock::new();
+    T.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+pub fn anotar_teste(cli: &str, r: Result<Option<String>, String>) {
+    if let Ok(mut t) = testes().lock() {
+        t.insert(cli.to_string(), (chrono::Utc::now(), r));
+    }
+}
+
+/// Situação de cada CLI, com o resultado do último teste quando houver.
 pub async fn situacao() -> Vec<(String, String)> {
+    let mut v = situacao_login().await;
+    let testes = testes().lock().map(|t| t.clone()).unwrap_or_default();
+    for (cli, s) in v.iter_mut() {
+        if let Some((quando, r)) = testes.get(cli.as_str()) {
+            let hora = quando.with_timezone(&chrono::FixedOffset::west_opt(3 * 3600).expect("fuso")).format("%d/%m %H:%M");
+            *s = match r {
+                Ok(Some(m)) => format!("✅ funcionando (testado {hora}, modelo {m})"),
+                Ok(None) => format!("✅ funcionando (testado {hora})"),
+                Err(e) => format!("❌ falhou no teste de {hora}: {}", e.chars().take(120).collect::<String>()),
+            };
+        }
+    }
+    v
+}
+
+async fn situacao_login() -> Vec<(String, String)> {
     let home = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/home/app".into()));
     let claude = if config::get("CLAUDE_CODE_OAUTH_TOKEN").is_some() {
         "conectado (token salvo)"

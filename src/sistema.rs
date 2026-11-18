@@ -28,6 +28,8 @@ struct LinhaFamilia {
     modo_cli: String,
     clis_imagem: Vec<String>,
     ordem_fontes: Vec<String>,
+    /// Modelo e esforço por CLI: {"claude": {"modelo": "...", "esforco": "..."}}.
+    cli_ajustes: serde_json::Value,
     usar_chave_sistema: bool,
     limite_semana: Option<i64>,
     uso_semana: i64,
@@ -129,6 +131,7 @@ const SELECT_FAMILIA: &str = "SELECT f.id, f.nome, f.slug,
         (SELECT count(*) FROM conteudo.historias h WHERE h.familia_id = f.id) AS historias,
         COALESCE(c.clis, '{}') AS clis, COALESCE(c.modo_cli, 'ordem') AS modo_cli,
         COALESCE(c.clis_imagem, '{}') AS clis_imagem, COALESCE(c.ordem_fontes, '{cli,familia,sistema}') AS ordem_fontes,
+        COALESCE(c.cli_ajustes, '{}') AS cli_ajustes,
         COALESCE(c.usar_chave_sistema, false) AS usar_chave_sistema,
         (c.limites->>'historias_semana')::bigint AS limite_semana,
         (SELECT count(*) FROM ia.uso u WHERE u.familia_id = f.id AND u.criado_em > now() - interval '7 days'
@@ -229,6 +232,19 @@ struct OpcaoCli {
     marcado: bool,
 }
 
+/// Modelo e esforço de uma CLI na família (tela).
+struct AjusteTela {
+    chave: String,
+    nome: &'static str,
+    modelo: String,
+    esforco: String,
+    /// Sugestões: (id, nome).
+    modelos: Vec<(String, String)>,
+    padrao: String,
+    /// Último modelo usado de verdade por esta família nesta CLI.
+    ultimo: Option<String>,
+}
+
 #[derive(Template)]
 #[template(path = "sistema_familia.html")]
 struct PaginaFamiliaSistema {
@@ -241,6 +257,9 @@ struct PaginaFamiliaSistema {
     clis_imagem: Vec<OpcaoCli>,
     /// Fontes de IA na ordem da família: (chave, rótulo).
     fontes: Vec<(&'static str, &'static str)>,
+    /// Modelo e esforço de cada CLI conectada.
+    ajustes: Vec<AjusteTela>,
+    esforcos: Vec<(&'static str, &'static str)>,
     novo_link: Option<String>,
     aviso: Option<String>,
 }
@@ -300,7 +319,34 @@ async fn pagina_familia(st: &AppState, s: Sessao, id: Uuid, novo_link: Option<St
             _ => "🏢 Chave de API do sistema (se liberada abaixo)",
         }))
         .collect();
-    render(PaginaFamiliaSistema { s, f, membros, uso, clis, clis_imagem, fontes, novo_link, aviso })
+    let mut ajustes = Vec::new();
+    for (c, sit) in &situacao {
+        if !conectado(sit) {
+            continue;
+        }
+        let a = crate::ia::AjusteCli::de(&f.cli_ajustes, c);
+        let ultimo: Option<String> = sqlx::query_scalar(
+            "SELECT modelo FROM ia.uso WHERE familia_id = $1 AND via = 'cli' AND provedor = $2 AND modelo IS NOT NULL ORDER BY id DESC LIMIT 1",
+        )
+        .bind(id)
+        .bind(c)
+        .fetch_optional(&st.db)
+        .await
+        .ok()
+        .flatten();
+        ajustes.push(AjusteTela {
+            chave: c.clone(),
+            nome: nome_cli(c),
+            modelo: a.modelo.unwrap_or_default(),
+            esforco: a.esforco.unwrap_or_default(),
+            modelos: crate::ia::modelos(c).await,
+            padrao: crate::ia::modelo_padrao(c),
+            ultimo,
+        });
+    }
+    render(PaginaFamiliaSistema {
+        s, f, membros, uso, clis, clis_imagem, fontes, ajustes, esforcos: crate::ia::ESFORCOS.to_vec(), novo_link, aviso,
+    })
 }
 
 /// GET /sistema/familias/{id}
@@ -358,6 +404,22 @@ pub async fn salvar_familia(State(st): State<AppState>, s: Sessao, Path(id): Pat
     .into_iter()
     .map(String::from)
     .collect();
+    // Modelo e esforço de cada CLI (vazio = padrão dela).
+    let mut ajustes = serde_json::Map::new();
+    for c in ["claude", "codex", "agy"] {
+        let modelo = campo(&form, &format!("modelo_{c}"));
+        let esforco = campo(&form, &format!("esforco_{c}"));
+        let mut o = serde_json::Map::new();
+        if crate::ia::cli_nome_seguro(modelo.trim()) {
+            o.insert("modelo".into(), modelo.trim().into());
+        }
+        if crate::ia::ESFORCOS.iter().any(|(k, _)| *k == esforco) {
+            o.insert("esforco".into(), esforco.into());
+        }
+        if !o.is_empty() {
+            ajustes.insert(c.into(), o.into());
+        }
+    }
     let modo = Some(campo(&form, "modo_cli")).filter(|m| ["ordem", "rodizio", "fixo"].contains(&m.as_str())).unwrap_or_else(|| "ordem".into());
     let chave = form.iter().any(|(k, _)| k == "chave_sistema");
     let limite: Option<i64> = campo(&form, "limite").parse().ok().filter(|n: &i64| *n > 0);
@@ -366,10 +428,10 @@ pub async fn salvar_familia(State(st): State<AppState>, s: Sessao, Path(id): Pat
         None => serde_json::json!({}),
     };
     let r = sqlx::query(
-        "INSERT INTO ia.config_familia (familia_id, cli_habilitado, clis, usar_chave_sistema, limites, modo_cli, clis_imagem, ordem_fontes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        "INSERT INTO ia.config_familia (familia_id, cli_habilitado, clis, usar_chave_sistema, limites, modo_cli, clis_imagem, ordem_fontes, cli_ajustes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (familia_id) DO UPDATE SET cli_habilitado = $2, clis = $3, usar_chave_sistema = $4, limites = $5, modo_cli = $6,
-                                                clis_imagem = $7, ordem_fontes = $8",
+                                                clis_imagem = $7, ordem_fontes = $8, cli_ajustes = $9",
     )
     .bind(id)
     .bind(!clis.is_empty())
@@ -379,6 +441,7 @@ pub async fn salvar_familia(State(st): State<AppState>, s: Sessao, Path(id): Pat
     .bind(&modo)
     .bind(&clis_imagem)
     .bind(&fontes)
+    .bind(serde_json::Value::Object(ajustes))
     .execute(&st.db)
     .await;
     match r {
@@ -519,15 +582,21 @@ pub async fn cli_testar(s: Sessao, Path(nome): Path<String>) -> Response {
         schema: serde_json::json!({ "type": "object", "additionalProperties": false, "required": ["resposta"],
                                     "properties": { "resposta": { "type": "string" } } }),
     };
+    // Esforço baixo: o teste só confere se responde (com o padrão o agy leva mais de 1 minuto).
+    let a = crate::ia::AjusteCli { modelo: None, esforco: Some("low".into()) };
     let r = match nome.as_str() {
-        "claude" => crate::ia::claude_cli(&pedido).await,
-        "agy" => crate::ia::testar_agy(&pedido).await,
-        "codex" => crate::ia::codex_cli(&pedido).await,
+        "claude" => crate::ia::claude_cli(&pedido, &a).await,
+        "agy" => crate::ia::testar_agy(&pedido, &a).await,
+        "codex" => crate::ia::codex_cli(&pedido, &a).await,
         _ => Err(anyhow::anyhow!("CLI desconhecido")),
     };
+    crate::cli_login::anotar_teste(&nome, r.as_ref().map(|(_, m)| m.clone()).map_err(|e| format!("{e:#}")));
+    let situacao = crate::cli_login::situacao().await.into_iter().find(|(n, _)| *n == nome).map(|(_, s)| s);
     match r {
-        Ok(v) => axum::Json(serde_json::json!({ "ok": true, "resposta": v["resposta"] })).into_response(),
-        Err(e) => axum::Json(serde_json::json!({ "ok": false, "erro": format!("{e:#}") })).into_response(),
+        Ok((v, modelo)) => {
+            axum::Json(serde_json::json!({ "ok": true, "resposta": v["resposta"], "modelo": modelo, "situacao": situacao })).into_response()
+        }
+        Err(e) => axum::Json(serde_json::json!({ "ok": false, "erro": format!("{e:#}"), "situacao": situacao })).into_response(),
     }
 }
 

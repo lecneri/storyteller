@@ -11,7 +11,7 @@ use anyhow::{anyhow, bail};
 use serde_json::Value;
 
 pub use api::{base_kimi, por_api};
-pub use cli::{claude_cli, codex_cli, gerar_imagem as gerar_imagem_cli, testar_agy, CLIS_IMAGEM};
+pub use cli::{claude_cli, codex_cli, gerar_imagem as gerar_imagem_cli, modelo_padrao, modelos, nome_seguro as cli_nome_seguro, testar_agy, AjusteCli, CLIS_IMAGEM, ESFORCOS};
 use api::gemini_api;
 use cli::agy_cli;
 
@@ -66,11 +66,12 @@ async fn chaves(st: &crate::AppState, familia: Option<uuid::Uuid>) -> anyhow::Re
     Ok(v)
 }
 
-async fn registrar_uso(st: &crate::AppState, familia: uuid::Uuid, via: &str, provedor: &str) {
-    let _ = sqlx::query("INSERT INTO ia.uso (familia_id, tarefa, via, provedor) VALUES ($1, 'texto', $2, $3)")
+async fn registrar_uso(st: &crate::AppState, familia: uuid::Uuid, via: &str, provedor: &str, modelo: Option<&str>) {
+    let _ = sqlx::query("INSERT INTO ia.uso (familia_id, tarefa, via, provedor, modelo) VALUES ($1, 'texto', $2, $3, $4)")
         .bind(familia)
         .bind(via)
         .bind(provedor)
+        .bind(modelo)
         .execute(&st.db)
         .await;
 }
@@ -108,9 +109,9 @@ fn ordem_clis(clis: &[String], modo: &str, vezes: i64) -> Vec<String> {
 /// CLIs liberados para a família (na ordem dela) → chave da família → chave do sistema → chave gratuita do Gemini (GEMINI_CHAVE_GRATIS).
 /// O limite semanal vale para o que o admin paga (CLI e chave do sistema).
 pub async fn gerar_texto(st: &crate::AppState, familia: uuid::Uuid, p: &PedidoTexto) -> anyhow::Result<Value> {
-    let (clis, modo, sistema, limites, fontes): (Vec<String>, String, bool, Value, Vec<String>) = sqlx::query_as(
+    let (clis, modo, sistema, limites, fontes, ajustes): (Vec<String>, String, bool, Value, Vec<String>, Value) = sqlx::query_as(
         "SELECT COALESCE(c.clis, '{}'), COALESCE(c.modo_cli, 'ordem'), COALESCE(c.usar_chave_sistema, false), COALESCE(c.limites, '{}'),
-                COALESCE(c.ordem_fontes, '{cli,familia,sistema}')
+                COALESCE(c.ordem_fontes, '{cli,familia,sistema}'), COALESCE(c.cli_ajustes, '{}')
            FROM acesso.familias f LEFT JOIN ia.config_familia c ON c.familia_id = f.id WHERE f.id = $1",
     )
     .bind(familia)
@@ -141,17 +142,19 @@ pub async fn gerar_texto(st: &crate::AppState, familia: uuid::Uuid, p: &PedidoTe
                         0
                     };
                     for nome in &ordem_clis(&clis, &modo, vezes) {
+                        // Modelo e esforço escolhidos para esta CLI na família (vazio = padrão dela).
+                        let a = AjusteCli::de(&ajustes, nome);
                         let r = match nome.as_str() {
                             // O agy não aceita imagens anexadas: pula para a próxima.
                             "agy" if !p.imagens.is_empty() => continue,
-                            "agy" => agy_cli(p).await,
-                            "codex" => codex_cli(p).await,
-                            "claude" => claude_cli(p).await,
+                            "agy" => agy_cli(p, &a).await,
+                            "codex" => codex_cli(p, &a).await,
+                            "claude" => claude_cli(p, &a).await,
                             _ => continue,
                         };
                         match r {
-                            Ok(v) => {
-                                registrar_uso(st, familia, "cli", nome).await;
+                            Ok((v, modelo)) => {
+                                registrar_uso(st, familia, "cli", nome, modelo.as_deref()).await;
                                 return Ok(v);
                             }
                             Err(e) => erros.push(format!("CLI {nome}: {e:#}")),
@@ -163,7 +166,7 @@ pub async fn gerar_texto(st: &crate::AppState, familia: uuid::Uuid, p: &PedidoTe
                 for (prov, chave, modelo) in chaves(st, Some(familia)).await? {
                     match por_api(&prov, &chave, modelo.as_deref(), p).await {
                         Ok(v) => {
-                            registrar_uso(st, familia, "chave_familia", &prov).await;
+                            registrar_uso(st, familia, "chave_familia", &prov, modelo.as_deref()).await;
                             return Ok(v);
                         }
                         Err(e) => erros.push(format!("chave da família ({prov}): {e:#}")),
@@ -175,7 +178,7 @@ pub async fn gerar_texto(st: &crate::AppState, familia: uuid::Uuid, p: &PedidoTe
                     for (prov, chave, modelo) in chaves(st, None).await? {
                         match por_api(&prov, &chave, modelo.as_deref(), p).await {
                             Ok(v) => {
-                                registrar_uso(st, familia, "chave_sistema", &prov).await;
+                                registrar_uso(st, familia, "chave_sistema", &prov, modelo.as_deref()).await;
                                 return Ok(v);
                             }
                             Err(e) => erros.push(format!("chave do sistema ({prov}): {e:#}")),
@@ -189,7 +192,7 @@ pub async fn gerar_texto(st: &crate::AppState, familia: uuid::Uuid, p: &PedidoTe
         if !chave.trim().is_empty() {
             match gemini_api(chave.trim(), None, p).await {
                 Ok(v) => {
-                    registrar_uso(st, familia, "gratis", "gemini").await;
+                    registrar_uso(st, familia, "gratis", "gemini", None).await;
                     return Ok(v);
                 }
                 Err(e) => erros.push(format!("Gemini gratuito: {e:#}")),

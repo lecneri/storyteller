@@ -73,15 +73,15 @@ async fn gemini(chave: &str, modelo: Option<&str>, prompt: &str, refs: &[Referen
 
 /// Um jeito de gerar imagem: pela assinatura (CLI) ou por uma chave de API.
 enum Fonte {
-    Cli(String),
+    Cli(String, crate::ia::AjusteCli),
     Chave { provedor: String, chave: String, via: &'static str, modelo: Option<String> },
 }
 
 /// Fontes de imagem da família, na ordem dela (assinaturas, chave da família, chave do sistema se liberada e no limite).
 async fn fontes_imagem(st: &AppState, familia: Uuid) -> anyhow::Result<Vec<Fonte>> {
-    let (sistema, limites, clis, ordem): (bool, Value, Vec<String>, Vec<String>) = sqlx::query_as(
+    let (sistema, limites, clis, ordem, ajustes): (bool, Value, Vec<String>, Vec<String>, Value) = sqlx::query_as(
         "SELECT COALESCE(c.usar_chave_sistema, false), COALESCE(c.limites, '{}'), COALESCE(c.clis_imagem, '{}'),
-                COALESCE(c.ordem_fontes, '{cli,familia,sistema}')
+                COALESCE(c.ordem_fontes, '{cli,familia,sistema}'), COALESCE(c.cli_ajustes, '{}')
            FROM acesso.familias f LEFT JOIN ia.config_familia c ON c.familia_id = f.id WHERE f.id = $1",
     )
     .bind(familia)
@@ -118,7 +118,7 @@ async fn fontes_imagem(st: &AppState, familia: Uuid) -> anyhow::Result<Vec<Fonte
     let mut v = Vec::new();
     for fonte in crate::ia::ordem_fontes(&ordem) {
         match fonte {
-            "cli" => v.extend(clis.iter().filter(|c| crate::ia::CLIS_IMAGEM.contains(&c.as_str())).map(|c| Fonte::Cli(c.clone()))),
+            "cli" => v.extend(clis.iter().filter(|c| crate::ia::CLIS_IMAGEM.contains(&c.as_str())).map(|c| Fonte::Cli(c.clone(), crate::ia::AjusteCli::de(&ajustes, c)))),
             via => {
                 let alvo = if via == "familia" { "chave_familia" } else { "chave_sistema" };
                 let (essas, resto): (Vec<Fonte>, Vec<Fonte>) =
@@ -138,7 +138,7 @@ pub async fn disponivel(st: &AppState, familia: Uuid) -> bool {
 /// Fila de cada fonte: uma por CLI ("codex", "agy") e uma para as chaves de API ("api").
 fn fila_da(f: &Fonte) -> &str {
     match f {
-        Fonte::Cli(nome) => nome,
+        Fonte::Cli(nome, _) => nome,
         Fonte::Chave { .. } => "api",
     }
 }
@@ -186,36 +186,39 @@ pub async fn gerar_na_fila(
     }
     let mut erros = Vec::new();
     for fonte in fontes {
-        let (r, via, prov) = match &fonte {
-            Fonte::Cli(nome) => {
+        let (r, via, prov, modelo) = match &fonte {
+            Fonte::Cli(nome, ajuste) => {
                 let anexos: Vec<(String, Vec<u8>)> = refs.iter().map(|r| (r.mime.clone(), r.bytes.clone())).collect();
                 // A imagem sai da pasta da CLI direto para a pasta do sistema; vira mídia e o arquivo de passagem some.
-                let r = match crate::ia::gerar_imagem_cli(nome, prompt, &anexos, &st.data_dir.join("tmp/cli-imagens")).await {
-                    Ok(arquivo) => {
+                let mut modelo = None;
+                let r = match crate::ia::gerar_imagem_cli(nome, prompt, &anexos, &st.data_dir.join("tmp/cli-imagens"), ajuste).await {
+                    Ok((arquivo, m)) => {
+                        modelo = m;
                         let b = tokio::fs::read(&arquivo).await.map_err(anyhow::Error::from);
                         let _ = tokio::fs::remove_file(&arquivo).await;
                         b
                     }
                     Err(e) => Err(e),
                 };
-                (r, "cli", nome.clone())
+                (r, "cli", nome.clone(), modelo)
             }
             Fonte::Chave { provedor, chave, via, modelo } => {
                 let r = match provedor.as_str() {
                     "openai" => openai(chave, modelo.as_deref(), prompt, refs).await,
                     _ => gemini(chave, modelo.as_deref(), prompt, refs).await,
                 };
-                (r, *via, provedor.clone())
+                (r, *via, provedor.clone(), modelo.clone())
             }
         };
         match r {
             Ok(bytes) => {
                 let (mime, ext) = midia::tipo_imagem(&bytes).context("a IA devolveu um arquivo que não é imagem")?;
                 let id = midia::salvar(st, familia, &format!("familias/{familia_slug}/{pasta}"), &bytes, mime, ext).await?;
-                let _ = sqlx::query("INSERT INTO ia.uso (familia_id, tarefa, via, provedor) VALUES ($1, 'imagem', $2, $3)")
+                let _ = sqlx::query("INSERT INTO ia.uso (familia_id, tarefa, via, provedor, modelo) VALUES ($1, 'imagem', $2, $3, $4)")
                     .bind(familia)
                     .bind(via)
                     .bind(&prov)
+                    .bind(&modelo)
                     .execute(&st.db)
                     .await;
                 return Ok((id, mime.to_string()));

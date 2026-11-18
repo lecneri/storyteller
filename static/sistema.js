@@ -65,10 +65,15 @@
     });
     const testar = linha.querySelector('[data-acao="testar"]');
     if (testar) testar.addEventListener('click', async () => {
-      testar.disabled = true; testar.textContent = '⏳ Testando…';
-      const r = await post('/sistema/cli/' + nome + '/testar');
+      testar.disabled = true; testar.textContent = '⏳ Testando… (até 1 min)';
+      let r;
+      try { r = await post('/sistema/cli/' + nome + '/testar'); }
+      catch (e) { r = { ok: false, j: { erro: 'a conexão caiu antes da resposta (' + e.message + ')' } }; }
       testar.disabled = false; testar.textContent = '🧪 Testar';
-      aviso(r.j.ok ? '✅ Respondeu: ' + r.j.resposta : '❌ ' + (r.j.erro || 'falhou').slice(0, 200));
+      // A situação da linha passa a mostrar o resultado do teste.
+      const situ = linha.querySelector('[data-situacao]');
+      if (situ && r.j.situacao) situ.textContent = '· ' + r.j.situacao;
+      aviso(r.j.ok ? '✅ Respondeu: ' + r.j.resposta + (r.j.modelo ? ' · modelo: ' + r.j.modelo : '') : '❌ ' + (r.j.erro || 'falhou').slice(0, 200));
     });
   });
 })();

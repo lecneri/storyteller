@@ -57,6 +57,27 @@
             <span class="linha"><button type="button" class="pequeno secundario" data-mover="-1" title="Subir">↑</button><button type="button" class="pequeno secundario" data-mover="1" title="Descer">↓</button></span></li>{% endfor %}</ol>
       </fieldset>
       <fieldset class="inteiro">
+        <legend>⚙️ Modelo e esforço de cada assinatura</legend>
+        <p class="suave">Vale para texto e imagem. Vazio = o padrão da CLI. Esforço maior capricha mais, mas demora e gasta mais da cota.</p>
+        {% if ajustes.is_empty() %}<p class="suave">Nenhuma assinatura conectada.</p>{% endif %}
+        {% for a in ajustes %}
+        <div class="ajuste-cli">
+          <strong>{{ a.nome }}</strong>
+          <label>Modelo
+            <input name="modelo_{{ a.chave }}" value="{{ a.modelo }}" list="modelos-{{ a.chave }}" placeholder="Padrão: {{ a.padrao }}" pattern="[A-Za-z0-9._:\/\-]+" title="Nome do modelo (sem espaços)">
+            <datalist id="modelos-{{ a.chave }}">{% for (id, nome) in a.modelos %}<option value="{{ id }}">{{ nome }}</option>{% endfor %}</datalist>
+          </label>
+          <label>Esforço
+            <select name="esforco_{{ a.chave }}">
+              <option value="">Padrão</option>
+              {% for (k, rotulo) in esforcos %}<option value="{{ k }}"{% if a.esforco == k.to_string() %} selected{% endif %}>{{ rotulo }}</option>{% endfor %}
+            </select>
+          </label>
+          <small class="suave">{% if let Some(u) = a.ultimo %}Último usado: <code>{{ u }}</code>{% else %}Ainda sem uso registrado{% endif %}</small>
+        </div>
+        {% endfor %}
+      </fieldset>
+      <fieldset class="inteiro">
         <legend>Como escolher a CLI de texto</legend>
         <label class="check"><input type="radio" name="modo_cli" value="ordem"{% if f.modo_cli == "ordem" %} checked{% endif %}> <strong>Ordem</strong> — usa a primeira; se falhar, a próxima</label>
         <label class="check"><input type="radio" name="modo_cli" value="rodizio"{% if f.modo_cli == "rodizio" %} checked{% endif %}> <strong>Rodízio</strong> — alterna entre as marcadas a cada pedido (se uma falhar, tenta as outras)</label>

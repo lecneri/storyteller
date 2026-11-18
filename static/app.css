@@ -311,3 +311,6 @@ a.linha-familia:hover { border-color:var(--cor); }
 .paineis > details.memoria > summary::-webkit-details-marker { display:none; }
 .paineis > details.memoria[open] { flex-basis:100%; order:1; padding:10px 14px; }
 .paineis > details.memoria[open] > summary { white-space:normal; margin-bottom:6px; font-weight:600; }
+.ajuste-cli { display:grid; grid-template-columns: 140px 1fr 160px; gap:8px 12px; align-items:end; padding:8px 0; border-bottom:1px solid var(--borda); }
+.ajuste-cli > small { grid-column: 2 / -1; }
+@media (max-width: 640px) { .ajuste-cli { grid-template-columns: 1fr; } .ajuste-cli > small { grid-column: auto; } }

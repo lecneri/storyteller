@@ -51,7 +51,7 @@
     <div class="cli-linha" data-cli="{{ nome }}">
       <div class="linha" style="justify-content:space-between">
         <span><strong>{% if nome == "claude" %}Claude{% else %}{% if nome == "codex" %}ChatGPT (Codex){% else %}Gemini (agy){% endif %}{% endif %}</strong>
-          <span class="suave">· {{ situ }}</span>
+          <span class="suave" data-situacao>· {{ situ }}</span>
           <small class="suave">· faz: {% if nome == "claude" %}texto{% else %}texto e imagem{% endif %}</small></span>
         <span class="linha">
           <button type="button" class="pequeno" data-acao="iniciar">🔌 Conectar</button>
