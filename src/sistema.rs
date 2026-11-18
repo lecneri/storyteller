@@ -183,7 +183,8 @@ async fn pagina(st: &AppState, s: Sessao, c: Consulta, aviso: Option<String>) ->
             Err(e) => return erro_interno(e.into()),
         };
     }
-    let clis = if aba == "assinaturas" { crate::cli_login::situacao().await } else { Vec::new() };
+    let clis: Vec<(String, String)> =
+        if aba == "assinaturas" { crate::ia::situacao_clis().await.into_iter().map(|c| (c.nome, c.situacao)).collect() } else { Vec::new() };
     let fila_imagens = if aba == "assinaturas" { crate::fila_imagens::resumo(st).await } else { Vec::new() };
     render(PaginaSistema {
         clis,
@@ -265,7 +266,7 @@ struct PaginaFamiliaSistema {
 }
 
 fn conectado(situacao: &str) -> bool {
-    !situacao.starts_with("não conectado") && situacao != "indisponível"
+    !situacao.starts_with("não conectado") && !situacao.starts_with("indisponível")
 }
 
 /// CLIs para marcar: os da família na ordem dela e depois os outros conectados na plataforma.
@@ -307,7 +308,8 @@ async fn pagina_familia(st: &AppState, s: Sessao, id: Uuid, novo_link: Option<St
     .fetch_all(&st.db)
     .await
     .unwrap_or_default();
-    let situacao = crate::cli_login::situacao().await;
+    let todas = crate::ia::situacao_clis().await;
+    let situacao: Vec<(String, String)> = todas.iter().map(|c| (c.nome.clone(), c.situacao.clone())).collect();
     let clis = opcoes_cli(&f.clis, &situacao);
     let so_imagem: Vec<(String, String)> = situacao.iter().filter(|(c, _)| crate::ia::CLIS_IMAGEM.contains(&c.as_str())).cloned().collect();
     let clis_imagem = opcoes_cli(&f.clis_imagem, &so_imagem).into_iter().filter(|o| crate::ia::CLIS_IMAGEM.contains(&o.chave.as_str())).collect();
@@ -320,10 +322,8 @@ async fn pagina_familia(st: &AppState, s: Sessao, id: Uuid, novo_link: Option<St
         }))
         .collect();
     let mut ajustes = Vec::new();
-    for (c, sit) in &situacao {
-        if !conectado(sit) {
-            continue;
-        }
+    for sc in todas.iter().filter(|c| c.conectado) {
+        let c = &sc.nome;
         let a = crate::ia::AjusteCli::de(&f.cli_ajustes, c);
         let ultimo: Option<String> = sqlx::query_scalar(
             "SELECT modelo FROM ia.uso WHERE familia_id = $1 AND via = 'cli' AND provedor = $2 AND modelo IS NOT NULL ORDER BY id DESC LIMIT 1",
@@ -339,8 +339,8 @@ async fn pagina_familia(st: &AppState, s: Sessao, id: Uuid, novo_link: Option<St
             nome: nome_cli(c),
             modelo: a.modelo.unwrap_or_default(),
             esforco: a.esforco.unwrap_or_default(),
-            modelos: crate::ia::modelos(c).await,
-            padrao: crate::ia::modelo_padrao(c),
+            modelos: sc.modelos.clone(),
+            padrao: if sc.modelo_padrao.is_empty() { "padrão do CLI".into() } else { sc.modelo_padrao.clone() },
             ultimo,
         });
     }
@@ -536,66 +536,17 @@ pub async fn email_teste(State(st): State<AppState>, s: Sessao) -> Response {
     pagina(&st, s, aba("config"), Some(aviso)).await
 }
 
-// ───────────── login dos CLIs pelo site ─────────────
+// ───────────── assinaturas (no ia-cli) ─────────────
 
-pub async fn cli_iniciar(State(st): State<AppState>, s: Sessao, Path(nome): Path<String>) -> Response {
-    if let Some(r) = so_admin_sistema(&s) {
-        return r;
-    }
-    match crate::cli_login::iniciar(&st, &nome).await {
-        Ok(e) => axum::Json(e).into_response(),
-        Err(e) => crate::web::erro_json(format!("{e:#}")),
-    }
-}
-
-pub async fn cli_estado(s: Sessao, Path(nome): Path<String>) -> Response {
-    if let Some(r) = so_admin_sistema(&s) {
-        return r;
-    }
-    axum::Json(crate::cli_login::estado(&nome).await).into_response()
-}
-
-#[derive(serde::Deserialize)]
-pub struct PedidoCodigo {
-    codigo: String,
-}
-
-pub async fn cli_codigo(s: Sessao, Path(nome): Path<String>, axum::Json(p): axum::Json<PedidoCodigo>) -> Response {
-    if let Some(r) = so_admin_sistema(&s) {
-        return r;
-    }
-    match crate::cli_login::enviar_codigo(&nome, &p.codigo).await {
-        Ok(e) => axum::Json(e).into_response(),
-        Err(e) => crate::web::erro_json(format!("{e:#}")),
-    }
-}
-
-/// POST /sistema/cli/{nome}/testar: um pedido curtinho para confirmar que o CLI responde.
+/// POST /sistema/cli/{nome}/testar: um pedido curtinho no ia-cli para confirmar que o CLI responde.
 pub async fn cli_testar(s: Sessao, Path(nome): Path<String>) -> Response {
     if let Some(r) = so_admin_sistema(&s) {
         return r;
     }
-    let pedido = crate::ia::PedidoTexto {
-        sistema: "Responda só com o JSON pedido.".into(),
-        imagens: Vec::new(),
-        prompt: "Diga oi em português.".into(),
-        schema: serde_json::json!({ "type": "object", "additionalProperties": false, "required": ["resposta"],
-                                    "properties": { "resposta": { "type": "string" } } }),
-    };
-    // Esforço baixo: o teste só confere se responde (com o padrão o agy leva mais de 1 minuto).
-    let a = crate::ia::AjusteCli { modelo: None, esforco: Some("low".into()) };
-    let r = match nome.as_str() {
-        "claude" => crate::ia::claude_cli(&pedido, &a).await,
-        "agy" => crate::ia::testar_agy(&pedido, &a).await,
-        "codex" => crate::ia::codex_cli(&pedido, &a).await,
-        _ => Err(anyhow::anyhow!("CLI desconhecido")),
-    };
-    crate::cli_login::anotar_teste(&nome, r.as_ref().map(|(_, m)| m.clone()).map_err(|e| format!("{e:#}")));
-    let situacao = crate::cli_login::situacao().await.into_iter().find(|(n, _)| *n == nome).map(|(_, s)| s);
+    let r = crate::ia::testar_cli(&nome).await;
+    let situacao = crate::ia::situacao_clis().await.into_iter().find(|c| c.nome == nome).map(|c| c.situacao);
     match r {
-        Ok((v, modelo)) => {
-            axum::Json(serde_json::json!({ "ok": true, "resposta": v["resposta"], "modelo": modelo, "situacao": situacao })).into_response()
-        }
+        Ok(modelo) => axum::Json(serde_json::json!({ "ok": true, "resposta": "ok", "modelo": modelo, "situacao": situacao })).into_response(),
         Err(e) => axum::Json(serde_json::json!({ "ok": false, "erro": format!("{e:#}"), "situacao": situacao })).into_response(),
     }
 }

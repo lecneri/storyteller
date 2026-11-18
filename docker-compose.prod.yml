@@ -18,8 +18,7 @@ services:
       - .env.db          # DATABASE_URL do banco storyteller
     volumes:
       - ${DATA_HOST_DIR:-storyteller-data}:/data
-      - storyteller-cli:/home/app   # logins dos CLIs (claude/gemini/codex) persistem aqui
-    networks: [db_net, proxy_net, default]
+    networks: [db_net, proxy_net, ia_net, default]
     restart: unless-stopped
 
   # Recorte de fundo das imagens dos personagens (rembg), só na rede interna.
@@ -34,7 +33,9 @@ networks:
     external: true
   proxy_net:
     external: true
+  # Rede do serviço ia-cli (CLIs de assinatura compartilhados); ele precisa estar no ar antes.
+  ia_net:
+    external: true
 
 volumes:
   storyteller-data:
-  storyteller-cli:

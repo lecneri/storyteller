@@ -29,8 +29,8 @@ pub const CHAVES: [(&str, bool); 16] = [
     ("SMTP_REMETENTE", false),
     ("SMTP_SENHA", true),
     ("GEMINI_CHAVE_GRATIS", true),
-    ("CLAUDE_CODE_OAUTH_TOKEN", true),
-    ("GEMINI_API_KEY", true),
+    ("IA_CLI_URL", false),
+    ("IA_CLI_CHAVE", true),
 ];
 
 pub fn secreta(chave: &str) -> bool {

@@ -13,7 +13,6 @@ services:
     ports: ["${APP_BIND_IP:-127.0.0.1}:${APP_PORT:-8090}:8080"]
     volumes:
       - ${DATA_HOST_DIR:-storyteller-data}:/data
-      - storyteller-cli:/home/app   # logins dos CLIs (claude/codex/agy) persistem aqui
       - ./static:/app/static:ro     # dev: CSS/JS sem precisar rebuild
     depends_on:
       db:
@@ -43,5 +42,4 @@ services:
 
 volumes:
   storyteller-data:
-  storyteller-cli:
   storyteller-pg:

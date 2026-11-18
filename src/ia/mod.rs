@@ -5,15 +5,14 @@ mod api;
 mod cli;
 pub mod gemini;
 
-use std::time::Duration;
-
 use anyhow::{anyhow, bail};
 use serde_json::Value;
 
 pub use api::{base_kimi, por_api};
-pub use cli::{claude_cli, codex_cli, gerar_imagem as gerar_imagem_cli, modelo_padrao, modelos, nome_seguro as cli_nome_seguro, testar_agy, AjusteCli, CLIS_IMAGEM, ESFORCOS};
+pub use cli::{
+    gerar_imagem as gerar_imagem_cli, nome_seguro as cli_nome_seguro, situacao as situacao_clis, testar as testar_cli, AjusteCli, CLIS_IMAGEM, ESFORCOS,
+};
 use api::gemini_api;
-use cli::agy_cli;
 
 pub struct PedidoTexto {
     pub sistema: String,
@@ -23,9 +22,6 @@ pub struct PedidoTexto {
     /// Imagens anexadas (mime, bytes), ex.: fotos para a IA descrever o personagem.
     pub imagens: Vec<(String, Vec<u8>)>,
 }
-
-/// Tempo máximo de uma chamada à IA.
-const TEMPO_MAXIMO: Duration = Duration::from_secs(300);
 
 fn b64(b: &[u8]) -> String {
     use base64::Engine;
@@ -147,9 +143,7 @@ pub async fn gerar_texto(st: &crate::AppState, familia: uuid::Uuid, p: &PedidoTe
                         let r = match nome.as_str() {
                             // O agy não aceita imagens anexadas: pula para a próxima.
                             "agy" if !p.imagens.is_empty() => continue,
-                            "agy" => agy_cli(p, &a).await,
-                            "codex" => codex_cli(p, &a).await,
-                            "claude" => claude_cli(p, &a).await,
+                            "agy" | "codex" | "claude" => cli::texto(nome, p, &a).await,
                             _ => continue,
                         };
                         match r {
@@ -157,7 +151,7 @@ pub async fn gerar_texto(st: &crate::AppState, familia: uuid::Uuid, p: &PedidoTe
                                 registrar_uso(st, familia, "cli", nome, modelo.as_deref()).await;
                                 return Ok(v);
                             }
-                            Err(e) => erros.push(format!("CLI {nome}: {e:#}")),
+                            Err(e) => erros.push(format!("CLI {e:#}")),
                         }
                     }
                 }

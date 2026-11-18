@@ -1,6 +1,5 @@
 mod auth;
 mod chaves;
-mod cli_login;
 mod config;
 mod conta;
 mod creditos;
@@ -205,9 +204,6 @@ async fn main() -> anyhow::Result<()> {
         .route("/chaves/{escopo}/{provedor}/testar", post(chaves::testar))
         .route("/sistema/limpar", post(sistema::limpar_agora))
         .route("/sistema/email-teste", post(sistema::email_teste))
-        .route("/sistema/cli/{nome}/iniciar", post(sistema::cli_iniciar))
-        .route("/sistema/cli/{nome}/estado", get(sistema::cli_estado))
-        .route("/sistema/cli/{nome}/codigo", post(sistema::cli_codigo))
         .route("/sistema/cli/{nome}/testar", post(sistema::cli_testar))
         .route("/vozes", get(narracao::vozes))
         .route("/tts/previa", post(narracao::previa))

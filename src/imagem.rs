@@ -189,16 +189,10 @@ pub async fn gerar_na_fila(
         let (r, via, prov, modelo) = match &fonte {
             Fonte::Cli(nome, ajuste) => {
                 let anexos: Vec<(String, Vec<u8>)> = refs.iter().map(|r| (r.mime.clone(), r.bytes.clone())).collect();
-                // A imagem sai da pasta da CLI direto para a pasta do sistema; vira mídia e o arquivo de passagem some.
-                let mut modelo = None;
-                let r = match crate::ia::gerar_imagem_cli(nome, prompt, &anexos, &st.data_dir.join("tmp/cli-imagens"), ajuste).await {
-                    Ok((arquivo, m)) => {
-                        modelo = m;
-                        let b = tokio::fs::read(&arquivo).await.map_err(anyhow::Error::from);
-                        let _ = tokio::fs::remove_file(&arquivo).await;
-                        b
-                    }
-                    Err(e) => Err(e),
+                // O ia-cli devolve os bytes; a pasta da CLI fica limpa lá.
+                let (r, modelo) = match crate::ia::gerar_imagem_cli(nome, prompt, &anexos, ajuste).await {
+                    Ok((b, m)) => (Ok(b), m),
+                    Err(e) => (Err(e), None),
                 };
                 (r, "cli", nome.clone(), modelo)
             }

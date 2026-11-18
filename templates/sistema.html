@@ -44,7 +44,8 @@
   {% if aba == "assinaturas" %}
   <section class="cartao largo">
     <h2>🤖 Assinaturas (CLIs)</h2>
-    <p class="suave">Conecte as suas assinaturas sem SSH: clique em “Conectar”, abra o link, autorize e (se pedir) cole o código aqui.</p>
+    <p class="suave">Os CLIs rodam no serviço <strong>ia-cli</strong>, compartilhado com os outros sistemas do servidor. Login e token do Claude ficam lá:
+      <a href="https://ia.len.net.br/admin" target="_blank" rel="noopener">🔌 Abrir o admin do ia-cli ↗</a></p>
     <p class="suave">🖼️ Fila de imagens (todas as famílias; cada fonte desenha uma por vez):
       {% for (nome, esperando, desenhando) in fila_imagens %}<strong>{{ nome }}</strong> {{ desenhando }} desenhando, {{ esperando }} esperando{% if !loop.last %} · {% endif %}{% endfor %}</p>
     {% for (nome, situ) in clis %}
@@ -54,11 +55,9 @@
           <span class="suave" data-situacao>· {{ situ }}</span>
           <small class="suave">· faz: {% if nome == "claude" %}texto{% else %}texto e imagem{% endif %}</small></span>
         <span class="linha">
-          <button type="button" class="pequeno" data-acao="iniciar">🔌 Conectar</button>
           <button type="button" class="pequeno secundario" data-acao="testar">🧪 Testar</button>
         </span>
       </div>
-      <div class="cli-fluxo" hidden></div>
     </div>
     {% endfor %}
   </section>
@@ -72,12 +71,12 @@
     <form method="post" action="/sistema/config" class="grade-form">
       <label class="inteiro">Endereço público do site <small class="suave">{{ self.origem("URL_PUBLICA") }}</small>
         <input name="URL_PUBLICA" value="{{ self.cfg("URL_PUBLICA") }}" placeholder="https://historias.seudominio.com.br"></label>
-      <label>Token do Claude <small class="suave">{% if self.tem("CLAUDE_CODE_OAUTH_TOKEN") %}✅ {{ self.origem("CLAUDE_CODE_OAUTH_TOKEN") }}{% else %}ou use “Conectar” acima{% endif %}</small>
-        <input name="CLAUDE_CODE_OAUTH_TOKEN" type="password" autocomplete="off" placeholder="sk-ant-oat… (opcional)"></label>
       <label>Chave grátis do Gemini <small class="suave">{% if self.tem("GEMINI_CHAVE_GRATIS") %}✅ {{ self.origem("GEMINI_CHAVE_GRATIS") }}{% else %}para famílias sem outra IA{% endif %}</small>
         <input name="GEMINI_CHAVE_GRATIS" type="password" autocomplete="off" placeholder="AIza…"></label>
-      <label>Chave Gemini para o agy <small class="suave">{% if self.tem("GEMINI_API_KEY") %}✅ {{ self.origem("GEMINI_API_KEY") }}{% else %}só se o login do agy não ficar salvo{% endif %}</small>
-        <input name="GEMINI_API_KEY" type="password" autocomplete="off"></label>
+      <label>Endereço do ia-cli <small class="suave">{{ self.origem("IA_CLI_URL") }}</small>
+        <input name="IA_CLI_URL" value="{{ self.cfg("IA_CLI_URL") }}" placeholder="http://ia-cli:8080"></label>
+      <label>Chave do ia-cli <small class="suave">{% if self.tem("IA_CLI_CHAVE") %}✅ {{ self.origem("IA_CLI_CHAVE") }}{% else %}criada no admin do ia-cli; sem ela, nada de assinaturas{% endif %}</small>
+        <input name="IA_CLI_CHAVE" type="password" autocomplete="off"></label>
       <details class="inteiro"><summary>Modelos padrão (usados quando a chave não tem modelo escolhido)</summary>
         <div class="grade-form" style="margin-top:8px">
           <label>Anthropic <input name="ANTHROPIC_MODELO" value="{{ self.cfg("ANTHROPIC_MODELO") }}" placeholder="claude-opus-5-5"></label>
