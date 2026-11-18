@@ -297,6 +297,8 @@ struct PaginaPersonagem {
     outros: Vec<(String, String)>,
     /// Grupos que já existem na família (sugestões).
     grupos_familia: Vec<String>,
+    /// Desenhos das variantes na fila de imagens (e os que falharam há pouco).
+    fila: Vec<crate::fila_imagens::Situacao>,
 }
 
 impl PaginaPersonagem {
@@ -317,6 +319,14 @@ impl PaginaPersonagem {
     fn prompt_modelo(&self) -> String {
         let aparencia = super::com_ia::aparencia_variante(&self.p.campo("aparencia"), "§NOME§", Some("§MUDA§"));
         prompt_model_sheet(&self.p.nome, &aparencia, Some("§ESTILO§"), false) + &super::com_ia::nota_referencias(false, !self.fotos().is_empty())
+    }
+    /// Desenhos desta variante na fila agora.
+    fn na_fila(&self, v: &Variante) -> Vec<&crate::fila_imagens::Situacao> {
+        self.fila.iter().filter(|i| i.variante_id == Some(v.id) && i.ativo()).collect()
+    }
+    /// Último desenho desta variante que não saiu (há pouco).
+    fn falha(&self, v: &Variante) -> Option<String> {
+        self.fila.iter().rev().find(|i| i.variante_id == Some(v.id) && i.estado == "erro").map(|i| i.rotulo())
     }
     fn eh_atual(&self, v: &Variante) -> bool {
         self.p.variante_atual == Some(v.id)
@@ -365,7 +375,10 @@ pub(super) async fn detalhe_com(st: &AppState, s: Sessao, slug: &str, erro: Opti
             .fetch_all(&st.db)
             .await
             .unwrap_or_default();
-            render(PaginaPersonagem { s, p, variantes, tipos: TIPOS.to_vec(), erro, imagem_api, recorte: crate::recorte::disponivel(), outros, grupos_familia })
+            let fila = crate::fila_imagens::do_personagem(st, s.familia_id, p.id).await;
+            render(PaginaPersonagem {
+                s, p, variantes, tipos: TIPOS.to_vec(), erro, imagem_api, recorte: crate::recorte::disponivel(), outros, grupos_familia, fila,
+            })
         }
         Err(e) => erro_interno(e.into()),
     }

@@ -135,18 +135,70 @@ pub async fn disponivel(st: &AppState, familia: Uuid) -> bool {
     fontes_imagem(st, familia).await.map(|v| !v.is_empty()).unwrap_or(false)
 }
 
-/// Gera uma imagem 3:4 e grava como mídia da família. Devolve (id, mime).
-pub async fn gerar(st: &AppState, familia: Uuid, familia_slug: &str, pasta: &str, prompt: &str, refs: &[Referencia]) -> anyhow::Result<(Uuid, String)> {
-    let fontes = fontes_imagem(st, familia).await?;
+/// Fila de cada fonte: uma por CLI ("codex", "agy") e uma para as chaves de API ("api").
+fn fila_da(f: &Fonte) -> &str {
+    match f {
+        Fonte::Cli(nome) => nome,
+        Fonte::Chave { .. } => "api",
+    }
+}
+
+/// Todas as filas que existem (um trabalhador para cada).
+pub fn todas_filas() -> Vec<&'static str> {
+    crate::ia::CLIS_IMAGEM.iter().copied().chain(["api"]).collect()
+}
+
+/// Nome para mostrar na tela.
+pub fn nome_fila(fila: &str) -> &'static str {
+    match fila {
+        "codex" => "ChatGPT (Codex)",
+        "agy" => "Gemini (agy)",
+        "api" => "Chave de API",
+        _ => "?",
+    }
+}
+
+/// Filas da família, na ordem dela (sem repetir).
+pub async fn filas(st: &AppState, familia: Uuid) -> anyhow::Result<Vec<String>> {
+    let mut v: Vec<String> = Vec::new();
+    for f in fontes_imagem(st, familia).await? {
+        let q = fila_da(&f);
+        if !v.iter().any(|x| x == q) {
+            v.push(q.to_string());
+        }
+    }
+    Ok(v)
+}
+
+/// Gera uma imagem 3:4 pelas fontes da família que são desta fila e grava como mídia. Devolve (id, mime).
+pub async fn gerar_na_fila(
+    st: &AppState,
+    familia: Uuid,
+    familia_slug: &str,
+    pasta: &str,
+    prompt: &str,
+    refs: &[Referencia],
+    fila: &str,
+) -> anyhow::Result<(Uuid, String)> {
+    let fontes: Vec<Fonte> = fontes_imagem(st, familia).await?.into_iter().filter(|f| fila_da(f) == fila).collect();
     if fontes.is_empty() {
-        bail!("Sem IA de imagem para esta família: use o modo manual (copie o prompt e as referências).");
+        bail!("{} não está liberada para esta família.", nome_fila(fila));
     }
     let mut erros = Vec::new();
     for fonte in fontes {
         let (r, via, prov) = match &fonte {
             Fonte::Cli(nome) => {
                 let anexos: Vec<(String, Vec<u8>)> = refs.iter().map(|r| (r.mime.clone(), r.bytes.clone())).collect();
-                (crate::ia::gerar_imagem_cli(nome, prompt, &anexos).await, "cli", nome.clone())
+                // A imagem sai da pasta da CLI direto para a pasta do sistema; vira mídia e o arquivo de passagem some.
+                let r = match crate::ia::gerar_imagem_cli(nome, prompt, &anexos, &st.data_dir.join("tmp/cli-imagens")).await {
+                    Ok(arquivo) => {
+                        let b = tokio::fs::read(&arquivo).await.map_err(anyhow::Error::from);
+                        let _ = tokio::fs::remove_file(&arquivo).await;
+                        b
+                    }
+                    Err(e) => Err(e),
+                };
+                (r, "cli", nome.clone())
             }
             Fonte::Chave { provedor, chave, via, modelo } => {
                 let r = match provedor.as_str() {
@@ -168,10 +220,14 @@ pub async fn gerar(st: &AppState, familia: Uuid, familia_slug: &str, pasta: &str
                     .await;
                 return Ok((id, mime.to_string()));
             }
-            Err(e) => erros.push(format!("{prov}: {e:#}")),
+            Err(e) => {
+                tracing::warn!("imagem por {prov} falhou: {e:#}");
+                // A CLI já diz o nome dela no erro.
+                erros.push(if via == "cli" { format!("{e:#}") } else { format!("{prov}: {e:#}") });
+            }
         }
     }
-    bail!("Nenhuma IA de imagem conseguiu gerar: {}", erros.join(" | "))
+    bail!("{}", erros.join(" | "))
 }
 
 /// Lê arquivos de mídia da família para usar como referência.

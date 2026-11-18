@@ -45,6 +45,8 @@
   <section class="cartao largo">
     <h2>🤖 Assinaturas (CLIs)</h2>
     <p class="suave">Conecte as suas assinaturas sem SSH: clique em “Conectar”, abra o link, autorize e (se pedir) cole o código aqui.</p>
+    <p class="suave">🖼️ Fila de imagens (todas as famílias; cada fonte desenha uma por vez):
+      {% for (nome, esperando, desenhando) in fila_imagens %}<strong>{{ nome }}</strong> {{ desenhando }} desenhando, {{ esperando }} esperando{% if !loop.last %} · {% endif %}{% endfor %}</p>
     {% for (nome, situ) in clis %}
     <div class="cli-linha" data-cli="{{ nome }}">
       <div class="linha" style="justify-content:space-between">

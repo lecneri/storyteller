@@ -163,25 +163,22 @@ pub async fn criar_com_ia(State(st): State<AppState>, s: Sessao, mp: Multipart) 
         Err(e) => return erro_interno(e.into()),
     };
 
-    // 4) Desenho de referência pela API de imagem (se houver); senão fica o kit manual na página do personagem.
-    let mut destino = format!("/personagens/{slug}");
+    // 4) Desenho de referência na fila de imagens (se houver IA de imagem); senão fica o kit manual na página do personagem.
+    let destino = format!("/personagens/{slug}");
     if crate::imagem::disponivel(&st, s.familia_id).await {
-        let refs = crate::imagem::carregar_refs(&st, s.familia_id, &fotos).await;
-        let prompt = prompt_model_sheet(&nome, &aparencia, Some(&estilo), !refs.is_empty());
-        match crate::imagem::gerar(&st, s.familia_id, &s.familia_slug, &format!("personagens/{slug}/refs"), &prompt, &refs).await {
-            Ok((img, _)) => {
-                let pasta = format!("familias/{}/personagens/{slug}/refs", s.familia_slug);
-                let img = crate::recorte::sem_fundo_se_der(&st, s.familia_id, &pasta, img).await;
-                let _ = sqlx::query("UPDATE conteudo.variantes SET referencias = array_append(referencias, $2) WHERE id = $1")
-                    .bind(vid)
-                    .bind(img)
-                    .execute(&st.db)
-                    .await;
-            }
-            Err(e) => {
-                tracing::warn!("model sheet pela API falhou: {e:#}");
-                destino.push_str("?kit=erro");
-            }
+        let prompt = prompt_model_sheet(&nome, &aparencia, Some(&estilo), !fotos.is_empty());
+        let pedido = crate::fila_imagens::Pedido {
+            alvo: "variante",
+            historia: None,
+            chave: None,
+            variante: Some(vid),
+            prompt,
+            refs: fotos.clone(),
+            pasta: format!("personagens/{slug}/refs"),
+            recortar: true,
+        };
+        if let Err(e) = crate::fila_imagens::pedir(&st, s.familia_id, &s.familia_slug, vec![pedido], crate::fila_imagens::AVULSO).await {
+            tracing::warn!("model sheet não entrou na fila: {e:#}");
         }
     }
     Redirect::to(&destino).into_response()
@@ -194,7 +191,7 @@ pub struct FormGerar {
     foto: Option<String>,
 }
 
-/// POST /personagens/{slug}/variantes/{vslug}/gerar-ref: gera mais um desenho da variante pela API.
+/// POST /personagens/{slug}/variantes/{vslug}/gerar-ref: pede mais um desenho da variante (vai para a fila).
 pub async fn gerar_ref(
     State(st): State<AppState>,
     s: Sessao,
@@ -207,7 +204,7 @@ pub async fn gerar_ref(
     }
 }
 
-/// Gera um desenho da variante pela API (✨ Gerar e ao criar a variante): aparência da ficha + estilo + o que muda.
+/// Pede um desenho da variante à fila de imagens (✨ Gerar e ao criar a variante): aparência da ficha + estilo + o que muda.
 /// Vão como referência as imagens que a variante já tem e, se `usar_foto`, as fotos reais da ficha.
 pub(super) async fn gerar_desenho_variante(st: &AppState, s: &Sessao, slug: &str, vslug: &str, usar_foto: bool) -> Result<(), String> {
     let linha: Option<(Uuid, String, serde_json::Value, Option<String>, Option<String>, Vec<Uuid>, String)> = sqlx::query_as(
@@ -227,23 +224,23 @@ pub(super) async fn gerar_desenho_variante(st: &AppState, s: &Sessao, slug: &str
     let fotos = if usar_foto { super::fotos::fotos(&ficha) } else { Vec::new() };
     let mut ids = refs_atuais.clone();
     ids.extend(fotos.iter().copied());
-    let refs = crate::imagem::carregar_refs(&st, s.familia_id, &ids).await;
     let aparencia = aparencia_variante(ficha["aparencia"].as_str().unwrap_or_default(), &vnome, descricao.as_deref());
     let mut prompt = prompt_model_sheet(&nome, &aparencia, estilo.as_deref(), false);
     prompt.push_str(&nota_referencias(!refs_atuais.is_empty(), !fotos.is_empty()));
-    match crate::imagem::gerar(&st, s.familia_id, &s.familia_slug, &format!("personagens/{slug}/refs"), &prompt, &refs).await {
-        Ok((img, _)) => {
-            let pasta = format!("familias/{}/personagens/{slug}/refs", s.familia_slug);
-            let img = crate::recorte::sem_fundo_se_der(st, s.familia_id, &pasta, img).await;
-            let _ = sqlx::query("UPDATE conteudo.variantes SET referencias = array_append(referencias, $2) WHERE id = $1")
-                .bind(vid)
-                .bind(img)
-                .execute(&st.db)
-                .await;
-            Ok(())
-        }
-        Err(e) => Err(format!("{e:#}")),
-    }
+    let pedido = crate::fila_imagens::Pedido {
+        alvo: "variante",
+        historia: None,
+        chave: None,
+        variante: Some(vid),
+        prompt,
+        refs: ids,
+        pasta: format!("personagens/{slug}/refs"),
+        recortar: true,
+    };
+    crate::fila_imagens::pedir(st, s.familia_id, &s.familia_slug, vec![pedido], crate::fila_imagens::AVULSO)
+        .await
+        .map(|_| ())
+        .map_err(|e| format!("{e:#}"))
 }
 
 /// O que dizer à IA sobre as imagens anexadas: primeiro as desta variante, depois as fotos reais.

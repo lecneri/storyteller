@@ -3,6 +3,7 @@
 //! arquivos ou variáveis do servidor ao alcance da IA.
 
 use std::{
+    collections::HashMap,
     path::{Path, PathBuf},
     process::Stdio,
 };
@@ -199,9 +200,18 @@ fn ler_resposta_agy(stdout: &str) -> anyhow::Result<Value> {
 /// CLIs que geram imagem.
 pub const CLIS_IMAGEM: [&str; 2] = ["codex", "agy"];
 
-/// Arquivo de imagem mais novo dentro de `raiz` (recursivo) modificado depois de `desde`.
-fn imagem_mais_nova(raiz: &Path, desde: std::time::SystemTime) -> Option<PathBuf> {
-    let mut melhor: Option<(std::time::SystemTime, PathBuf)> = None;
+/// Onde cada CLI guarda as imagens que gera (dentro do HOME). Único lugar que sabe disso.
+const PASTAS_IMAGEM: [(&str, &str); 2] = [("codex", ".codex/generated_images"), ("agy", ".gemini/antigravity-cli/brain")];
+
+fn pasta_imagens(nome: &str) -> Option<PathBuf> {
+    let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/home/app".into()));
+    PASTAS_IMAGEM.iter().find(|(n, _)| *n == nome).map(|(_, p)| home.join(p))
+}
+
+/// Imagens dentro de `raiz` (recursivo), com a data de modificação. Pula pastas ocultas: o agy guarda nelas
+/// cópias das imagens que recebe (.tempmediaStorage, .user_uploaded, .system_generated), que não são a gerada.
+fn imagens_em(raiz: &Path) -> HashMap<PathBuf, std::time::SystemTime> {
+    let mut v = HashMap::new();
     let mut pilha = vec![raiz.to_path_buf()];
     while let Some(dir) = pilha.pop() {
         let Ok(itens) = std::fs::read_dir(&dir) else { continue };
@@ -209,25 +219,44 @@ fn imagem_mais_nova(raiz: &Path, desde: std::time::SystemTime) -> Option<PathBuf
             let caminho = item.path();
             let Ok(meta) = item.metadata() else { continue };
             if meta.is_dir() {
-                pilha.push(caminho);
+                if !item.file_name().to_string_lossy().starts_with('.') {
+                    pilha.push(caminho);
+                }
                 continue;
             }
             let ext = caminho.extension().and_then(|e| e.to_str()).unwrap_or_default().to_lowercase();
-            if !["png", "jpg", "jpeg", "webp"].contains(&ext.as_str()) {
-                continue;
-            }
-            let Ok(quando) = meta.modified() else { continue };
-            if quando >= desde && melhor.as_ref().is_none_or(|(m, _)| quando > *m) {
-                melhor = Some((quando, caminho));
+            if ["png", "jpg", "jpeg", "webp"].contains(&ext.as_str()) {
+                if let Ok(quando) = meta.modified() {
+                    v.insert(caminho, quando);
+                }
             }
         }
     }
-    melhor.map(|(_, c)| c)
+    v
+}
+
+/// A imagem que apareceu (ou mudou) entre as duas listagens; havendo mais de uma, a mais nova.
+fn imagem_nova(
+    antes: &HashMap<PathBuf, std::time::SystemTime>,
+    depois: HashMap<PathBuf, std::time::SystemTime>,
+) -> Option<PathBuf> {
+    depois.into_iter().filter(|(c, q)| antes.get(c) != Some(q)).max_by_key(|(_, q)| *q).map(|(c, _)| c)
+}
+
+/// Move o arquivo (rename; entre discos diferentes, copia e apaga).
+async fn mover(de: &Path, para: &Path) -> std::io::Result<()> {
+    if tokio::fs::rename(de, para).await.is_ok() {
+        return Ok(());
+    }
+    tokio::fs::copy(de, para).await?;
+    tokio::fs::remove_file(de).await
 }
 
 /// Gera uma imagem pela assinatura (`codex` ou `agy`). `refs`: (mime, bytes) das referências.
-/// A CLI salva a imagem na pasta dela; pegamos o arquivo novo e apagamos de lá (não acumula disco).
-pub async fn gerar_imagem(nome: &str, prompt: &str, refs: &[(String, Vec<u8>)]) -> anyhow::Result<Vec<u8>> {
+/// A CLI salva a imagem na pasta dela; assim que termina, a imagem nova é movida para `destino`
+/// (pasta do sistema) e a pasta da CLI fica limpa. Devolve o caminho em `destino`.
+pub async fn gerar_imagem(nome: &str, prompt: &str, refs: &[(String, Vec<u8>)], destino: &Path) -> anyhow::Result<PathBuf> {
+    let Some(raiz) = pasta_imagens(nome) else { bail!("a CLI {nome} não gera imagem") };
     let pasta = PastaTemp::nova().await?;
     let dir = pasta.caminho();
     let mut anexos = Vec::new();
@@ -237,7 +266,6 @@ pub async fn gerar_imagem(nome: &str, prompt: &str, refs: &[(String, Vec<u8>)]) 
         tokio::fs::write(&caminho, b).await?;
         anexos.push(caminho);
     }
-    let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/home/app".into()));
     let pedido = format!(
         "Gere UMA imagem com a sua ferramenta de geração de imagens. Não rode comandos e não crie nem edite arquivos.\n{}{prompt}",
         if anexos.is_empty() {
@@ -249,9 +277,9 @@ pub async fn gerar_imagem(nome: &str, prompt: &str, refs: &[(String, Vec<u8>)]) 
             )
         }
     );
-    // Um pouco antes, por causa da precisão do relógio dos arquivos.
-    let inicio = std::time::SystemTime::now() - std::time::Duration::from_secs(2);
-    let (raiz, saida) = match nome {
+    // O que já estava na pasta da CLI antes (a imagem é o que aparecer de novo).
+    let antes = imagens_em(&raiz);
+    let saida = match nome {
         "codex" => {
             let mut cmd = comando_isolado("codex", dir, &AMBIENTE);
             cmd.args(["exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only", "-c", "approval_policy=\"never\""])
@@ -260,7 +288,7 @@ pub async fn gerar_imagem(nome: &str, prompt: &str, refs: &[(String, Vec<u8>)]) 
                 .args(anexos.iter().map(|a| format!("--image={}", a.display())))
                 .arg(&pedido)
                 .stdin(Stdio::null());
-            (home.join(".codex/generated_images"), tokio::time::timeout(TEMPO_MAXIMO, cmd.output()).await.map_err(estourou)??)
+            tokio::time::timeout(TEMPO_MAXIMO, cmd.output()).await.map_err(estourou)??
         }
         "agy" => {
             // Pode ver as referências e gerar a imagem; comandos e escrita de arquivos ficam negados.
@@ -270,24 +298,50 @@ pub async fn gerar_imagem(nome: &str, prompt: &str, refs: &[(String, Vec<u8>)]) 
             if let Some(k) = crate::config::get("GEMINI_API_KEY") {
                 cmd.env("GEMINI_API_KEY", k);
             }
-            (home.join(".gemini/antigravity-cli/brain"), tokio::time::timeout(TEMPO_MAXIMO, cmd.output()).await.map_err(estourou)??)
+            tokio::time::timeout(TEMPO_MAXIMO, cmd.output()).await.map_err(estourou)??
         }
         outro => bail!("a CLI {outro} não gera imagem"),
     };
-    let Some(arquivo) = imagem_mais_nova(&raiz, inicio) else {
+    let Some(arquivo) = imagem_nova(&antes, imagens_em(&raiz)) else {
         bail!(
             "{nome} não gerou imagem: {}",
             resumo(ultima_linha(&String::from_utf8_lossy(&saida.stdout)).or(ultima_linha(&String::from_utf8_lossy(&saida.stderr))).unwrap_or("sem resposta"))
         );
     };
-    let bytes = tokio::fs::read(&arquivo).await?;
-    let _ = tokio::fs::remove_file(&arquivo).await;
-    Ok(bytes)
+    tokio::fs::create_dir_all(destino).await?;
+    let ext = arquivo.extension().and_then(|e| e.to_str()).unwrap_or("png").to_lowercase();
+    let movida = destino.join(format!("{nome}-{}.{ext}", uuid::Uuid::new_v4()));
+    mover(&arquivo, &movida).await.with_context(|| format!("não consegui mover a imagem de {}", arquivo.display()))?;
+    // agy: a conversa (com as cópias das referências) fica numa pasta própria em brain/; apaga ela.
+    if nome == "agy" {
+        if let Some(conversa) = arquivo.strip_prefix(&raiz).ok().and_then(|r| r.components().next()).map(|c| raiz.join(c)) {
+            if conversa != raiz && conversa.is_dir() {
+                let _ = tokio::fs::remove_dir_all(&conversa).await;
+            }
+        }
+    }
+    Ok(movida)
 }
 
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    #[test]
+    fn imagem_gerada_e_a_nova_e_nao_a_copia_da_referencia() {
+        let raiz = std::env::temp_dir().join(format!("teste-brain-{}", std::process::id()));
+        let conversa = raiz.join("conversa");
+        std::fs::create_dir_all(conversa.join(".tempmediaStorage")).unwrap();
+        std::fs::write(raiz.join("velha.png"), b"v").unwrap();
+        let antes = imagens_em(&raiz);
+        std::fs::write(conversa.join("cena_pokemon_123.jpg"), b"x").unwrap();
+        std::fs::write(conversa.join(".tempmediaStorage/media_1.png"), b"y").unwrap();
+        assert_eq!(imagem_nova(&antes, imagens_em(&raiz)), Some(conversa.join("cena_pokemon_123.jpg")));
+        // Nada novo: nenhuma imagem (nem a velha).
+        let agora = imagens_em(&raiz);
+        assert_eq!(imagem_nova(&agora, imagens_em(&raiz)), None);
+        std::fs::remove_dir_all(&raiz).unwrap();
+    }
 
     #[test]
     fn le_resposta_do_claude() {

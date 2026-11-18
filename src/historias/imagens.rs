@@ -1,6 +1,6 @@
-//! "Gerar todas as imagens" na fila do servidor: a família pode fechar a aba.
-//! O editor monta o prompt e as referências de cada página e manda a lista; o job gera uma por vez
-//! e põe cada imagem na página certa (pela `chave` da página, que não muda se as páginas forem reordenadas).
+//! Imagens da história pela fila do servidor (crate::fila_imagens): o pedido volta na hora e o editor acompanha.
+//! O editor monta o prompt e as referências; a imagem pronta vai direto para a página certa (pela `chave`
+//! da página, que não muda se as páginas forem reordenadas) ou para a capa.
 
 use axum::{
     extract::{Path, State},
@@ -9,19 +9,17 @@ use axum::{
     Json,
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::json;
 use uuid::Uuid;
 
 use crate::{
     auth::Sessao,
-    jobs,
+    fila_imagens::{self, Pedido as PedidoFila, AVULSO, LOTE},
     web::{erro_interno, erro_json},
     AppState,
 };
 
-pub const TIPO: &str = "gerar_imagens";
-
-#[derive(Deserialize, serde::Serialize, Clone)]
+#[derive(Deserialize)]
 pub struct PedidoPagina {
     chave: String,
     prompt: String,
@@ -34,160 +32,143 @@ pub struct Pedido {
     paginas: Vec<PedidoPagina>,
 }
 
-/// Job em andamento (pendente ou rodando) desta história: (id, payload).
-async fn em_andamento(st: &AppState, historia: Uuid) -> Option<(i64, Value)> {
-    sqlx::query_as(
-        "SELECT id, payload FROM jobs.fila WHERE tipo = $1 AND payload->>'historia_id' = $2
-            AND estado IN ('pendente', 'rodando') ORDER BY id DESC LIMIT 1",
-    )
-    .bind(TIPO)
-    .bind(historia.to_string())
-    .fetch_optional(&st.db)
-    .await
-    .unwrap_or(None)
-}
-
-/// Chaves das páginas que o job ainda vai preencher (o salvar do editor não pode apagar a imagem delas).
-pub async fn chaves_protegidas(st: &AppState, historia: Uuid) -> Vec<String> {
-    em_andamento(st, historia)
-        .await
-        .map(|(_, p)| p["paginas"].as_array().into_iter().flatten().filter_map(|x| x["chave"].as_str().map(String::from)).collect())
-        .unwrap_or_default()
-}
-
-/// POST /historias/{id}/imagens: põe na fila.
-pub async fn pedir(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>, Json(p): Json<Pedido>) -> Response {
-    match crate::web::historia_da_familia(&st, s.familia_id, id).await {
-        Ok(true) => {}
-        Ok(false) => return StatusCode::NOT_FOUND.into_response(),
-        Err(e) => return erro_interno(e.into()),
+async fn da_familia(st: &AppState, s: &Sessao, id: Uuid) -> Result<(), Response> {
+    match crate::web::historia_da_familia(st, s.familia_id, id).await {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(StatusCode::NOT_FOUND.into_response()),
+        Err(e) => Err(erro_interno(e.into())),
     }
-    if em_andamento(&st, id).await.is_some() {
+}
+
+fn pedido_pagina(historia: Uuid, alvo: &'static str, chave: Option<String>, prompt: String, refs: Vec<Uuid>) -> PedidoFila {
+    PedidoFila { alvo, historia: Some(historia), chave, variante: None, prompt, refs, pasta: format!("historias/{historia}/midia"), recortar: false }
+}
+
+/// Páginas que a fila ainda vai preencher ou acabou de preencher: o salvar do editor (que pode estar
+/// desatualizado) não troca a imagem delas.
+pub async fn chaves_protegidas(st: &AppState, historia: Uuid) -> Vec<String> {
+    sqlx::query_scalar(
+        "SELECT DISTINCT chave FROM jobs.imagens WHERE historia_id = $1 AND alvo = 'pagina' AND chave IS NOT NULL
+            AND (estado IN ('pendente', 'rodando') OR (estado = 'feito' AND atualizado_em > now() - interval '2 minutes'))",
+    )
+    .bind(historia)
+    .fetch_all(&st.db)
+    .await
+    .unwrap_or_default()
+}
+
+/// POST /historias/{id}/imagens: "Gerar todas" — uma imagem por página, todas na fila.
+pub async fn pedir(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>, Json(p): Json<Pedido>) -> Response {
+    if let Err(r) = da_familia(&st, &s, id).await {
+        return r;
+    }
+    if fila_imagens::da_historia(&st, s.familia_id, id).await.iter().any(|i| i.ativo() && i.lote.is_some()) {
         return erro_json("As imagens desta história já estão sendo geradas.");
     }
-    let paginas: Vec<PedidoPagina> = p.paginas.into_iter().filter(|x| !x.chave.trim().is_empty() && !x.prompt.trim().is_empty()).collect();
-    if paginas.is_empty() {
+    let pedidos: Vec<PedidoFila> = p
+        .paginas
+        .into_iter()
+        .filter(|x| !x.chave.trim().is_empty() && !x.prompt.trim().is_empty())
+        .map(|x| pedido_pagina(id, "pagina", Some(x.chave), x.prompt, x.refs))
+        .collect();
+    if pedidos.is_empty() {
         return erro_json("Nenhuma página para gerar.");
     }
-    let payload = json!({
-        "historia_id": id, "familia_slug": s.familia_slug, "paginas": paginas,
-        "feitas": [], "falhas": [], "parar": false,
-    });
-    match jobs::enfileirar(&st, TIPO, s.familia_id, payload).await {
+    match fila_imagens::pedir(&st, s.familia_id, &s.familia_slug, pedidos, LOTE).await {
         Ok(_) => Json(json!({ "ok": true })).into_response(),
-        Err(e) => erro_interno(e),
+        Err(e) => erro_json(format!("{e:#}")),
     }
 }
 
-/// POST /historias/{id}/imagens/parar: termina depois da imagem atual.
-pub async fn parar(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) -> Response {
-    match crate::web::historia_da_familia(&st, s.familia_id, id).await {
-        Ok(true) => {}
-        Ok(false) => return StatusCode::NOT_FOUND.into_response(),
-        Err(e) => return erro_interno(e.into()),
+#[derive(Deserialize)]
+pub struct PedidoUma {
+    prompt: String,
+    #[serde(default)]
+    refs: Vec<Uuid>,
+    /// Página que recebe a imagem; sem chave e com `capa`, vai para a capa.
+    #[serde(default)]
+    chave: Option<String>,
+    #[serde(default)]
+    capa: bool,
+}
+
+/// POST /historias/{id}/imagem-ia: ✨ Gerar de uma página ou da capa (passa na frente dos lotes).
+pub async fn pedir_uma(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>, Json(p): Json<PedidoUma>) -> Response {
+    if let Err(r) = da_familia(&st, &s, id).await {
+        return r;
     }
-    // Pendente ainda não começou: sai da fila na hora.
+    let chave = p.chave.filter(|c| !c.trim().is_empty());
+    let alvo = match (&chave, p.capa) {
+        (_, true) => "capa",
+        (Some(_), false) => "pagina",
+        (None, false) => return erro_json("Salve a história antes de gerar a imagem."),
+    };
+    let ja = fila_imagens::da_historia(&st, s.familia_id, id)
+        .await
+        .into_iter()
+        .any(|i| i.ativo() && i.alvo == alvo && (alvo == "capa" || i.chave == chave));
+    if ja {
+        return erro_json("Esta imagem já está na fila.");
+    }
+    let chave = if alvo == "capa" { None } else { chave };
+    match fila_imagens::pedir(&st, s.familia_id, &s.familia_slug, vec![pedido_pagina(id, alvo, chave, p.prompt, p.refs)], AVULSO).await {
+        Ok(ids) => Json(json!({ "id": ids.first() })).into_response(),
+        Err(e) => erro_json(format!("{e:#}")),
+    }
+}
+
+/// POST /historias/{id}/imagens/parar: tira da fila as páginas do lote que ainda não começaram.
+pub async fn parar(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) -> Response {
+    if let Err(r) = da_familia(&st, &s, id).await {
+        return r;
+    }
     let _ = sqlx::query(
-        "UPDATE jobs.fila SET estado = CASE WHEN estado = 'pendente' THEN 'feito' ELSE estado END,
-                payload = payload || '{\"parar\": true}', atualizado_em = now()
-          WHERE tipo = $1 AND payload->>'historia_id' = $2 AND estado IN ('pendente', 'rodando')",
+        "UPDATE jobs.imagens SET estado = 'cancelado', atualizado_em = now()
+          WHERE historia_id = $1 AND familia_id = $2 AND lote IS NOT NULL AND estado = 'pendente'",
     )
-    .bind(TIPO)
-    .bind(id.to_string())
+    .bind(id)
+    .bind(s.familia_id)
     .execute(&st.db)
     .await;
     Json(json!({ "ok": true })).into_response()
 }
 
-/// GET /historias/{id}/imagens: progresso do último pedido e as imagens das páginas já feitas.
+/// GET /historias/{id}/imagens: itens na fila (e os que terminaram há pouco) e a fonte da história.
 pub async fn estado(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) -> Response {
-    let linha: Option<(String, Value, Option<String>, Value)> = sqlx::query_as(
-        "SELECT j.estado, j.payload, j.erro, h.conteudo FROM jobs.fila j JOIN conteudo.historias h ON h.id = $2
-          WHERE j.tipo = $1 AND j.payload->>'historia_id' = $3 AND h.familia_id = $4 ORDER BY j.id DESC LIMIT 1",
-    )
-    .bind(TIPO)
-    .bind(id)
-    .bind(id.to_string())
-    .bind(s.familia_id)
-    .fetch_optional(&st.db)
-    .await
-    .unwrap_or(None);
-    let Some((estado, payload, erro, conteudo)) = linha else {
-        return Json(json!({ "job": null })).into_response();
-    };
-    let feitas: Vec<String> = payload["feitas"].as_array().into_iter().flatten().filter_map(|x| x.as_str().map(String::from)).collect();
-    let imagens: Vec<Value> = conteudo["paginas"]
-        .as_array()
-        .into_iter()
+    if let Err(r) = da_familia(&st, &s, id).await {
+        return r;
+    }
+    let itens = fila_imagens::da_historia(&st, s.familia_id, id).await;
+    let fonte: Option<String> = sqlx::query_scalar("SELECT fonte_imagem FROM conteudo.historias WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&st.db)
+        .await
+        .ok()
         .flatten()
-        .filter(|p| p["chave"].as_str().is_some_and(|c| feitas.iter().any(|f| f == c)))
-        .map(|p| json!({ "chave": p["chave"], "midia": p["midia"] }))
-        .collect();
+        .flatten();
+    let filas = crate::imagem::filas(&st, s.familia_id).await.unwrap_or_default();
     Json(json!({
-        "job": estado,
-        "total": payload["paginas"].as_array().map_or(0, Vec::len),
-        "feitas": feitas.len(),
-        "falhas": payload["falhas"],
-        "parando": payload["parar"] == true,
-        "erro": erro,
-        "imagens": imagens,
+        "fonte": fonte.filter(|f| filas.contains(f)),
+        "filas": filas.iter().map(|f| json!({ "id": f, "nome": crate::imagem::nome_fila(f) })).collect::<Vec<_>>(),
+        "itens": itens.iter().map(fila_imagens::Situacao::json).collect::<Vec<_>>(),
     }))
     .into_response()
 }
 
-/// Põe a imagem na página (pela chave), sem mexer no resto da história.
-async fn colocar(st: &AppState, historia: Uuid, chave: &str, midia: Uuid, tipo: &str) -> anyhow::Result<bool> {
-    let mut tx = st.db.begin().await?;
-    let mut conteudo: Value = sqlx::query_scalar("SELECT conteudo FROM conteudo.historias WHERE id = $1 FOR UPDATE")
-        .bind(historia)
-        .fetch_one(&mut *tx)
-        .await?;
-    let Some(pag) = conteudo["paginas"].as_array_mut().and_then(|ps| ps.iter_mut().find(|p| p["chave"] == chave)) else {
-        return Ok(false); // a página foi apagada
-    };
-    pag["midia"] = json!({ "id": midia, "tipo": tipo });
-    sqlx::query("UPDATE conteudo.historias SET conteudo = $2, atualizado_em = now() WHERE id = $1")
-        .bind(historia)
-        .bind(&conteudo)
-        .execute(&mut *tx)
-        .await?;
-    tx.commit().await?;
-    Ok(true)
+#[derive(Deserialize)]
+pub struct Fonte {
+    fonte: Option<String>,
 }
 
-/// Executa o job: uma imagem por vez; anota o progresso no payload (sobrevive a reinício do app).
-pub async fn executar(st: &AppState, job_id: i64, familia: Uuid, payload: &Value) -> anyhow::Result<Value> {
-    let historia: Uuid = payload["historia_id"].as_str().unwrap_or_default().parse()?;
-    let familia_slug = payload["familia_slug"].as_str().unwrap_or_default().to_string();
-    let paginas: Vec<PedidoPagina> = serde_json::from_value(payload["paginas"].clone())?;
-    let pasta = format!("historias/{historia}/midia");
-    for pag in &paginas {
-        let atual: Value = sqlx::query_scalar("SELECT payload FROM jobs.fila WHERE id = $1").bind(job_id).fetch_one(&st.db).await?;
-        if atual["parar"] == true {
-            break;
-        }
-        let ja = |k: &str| atual[k].as_array().is_some_and(|a| a.iter().any(|x| x == pag.chave.as_str() || x["chave"] == pag.chave.as_str()));
-        if ja("feitas") || ja("falhas") {
-            continue; // reinício do app: já tentada
-        }
-        let refs = crate::imagem::carregar_refs(st, familia, &pag.refs).await;
-        let r = match crate::imagem::gerar(st, familia, &familia_slug, &pasta, &pag.prompt, &refs).await {
-            Ok((mid, tipo)) => colocar(st, historia, &pag.chave, mid, &tipo).await.map(|_| ()),
-            Err(e) => Err(e),
-        };
-        let campo = if r.is_ok() { "feitas" } else { "falhas" };
-        let item = match &r {
-            Ok(()) => json!(pag.chave),
-            Err(e) => json!({ "chave": pag.chave, "erro": format!("{e:#}") }),
-        };
-        sqlx::query(&format!(
-            "UPDATE jobs.fila SET payload = jsonb_set(payload, '{{{campo}}}', COALESCE(payload->'{campo}', '[]') || jsonb_build_array($2::jsonb)),
-                    atualizado_em = now() WHERE id = $1"
-        ))
-        .bind(job_id)
-        .bind(&item)
-        .execute(&st.db)
-        .await?;
+/// POST /historias/{id}/fonte-imagem: troca quem desenha esta história (vale para os próximos pedidos).
+pub async fn definir_fonte(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>, Json(f): Json<Fonte>) -> Response {
+    if let Err(r) = da_familia(&st, &s, id).await {
+        return r;
     }
-    Ok(json!({ "ok": true }))
+    let filas = crate::imagem::filas(&st, s.familia_id).await.unwrap_or_default();
+    let fonte = f.fonte.filter(|x| filas.contains(x));
+    match sqlx::query("UPDATE conteudo.historias SET fonte_imagem = $2 WHERE id = $1").bind(id).bind(&fonte).execute(&st.db).await {
+        Ok(_) => Json(json!({ "ok": true, "fonte": fonte })).into_response(),
+        Err(e) => erro_interno(e.into()),
+    }
 }

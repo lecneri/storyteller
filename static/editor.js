@@ -319,87 +319,142 @@
       aviso('Não enviou: ' + e.message);
     }
   }
+  // ───────────── Fila de imagens ─────────────
+  // Todo pedido de imagem (página, capa, "gerar todas") vai para a fila do servidor e volta na hora.
+  // O editor acompanha: mostra "⏳ Na fila (2º)" / "🎨 Desenhando…" e põe cada imagem no lugar quando fica pronta.
+  // Pode fechar a aba: o servidor põe a imagem na página (ou na capa) do mesmo jeito.
+  const filaImg = { itens: [], filas: [], fonte: null, carregado: false };
+  const acompanhados = new Set(); // ids que o editor viu na fila (só esses são aplicados quando terminam)
+  let timerFila = null;
+  const ativo = (i) => i.estado === 'pendente' || i.estado === 'rodando';
+  const itemDaPagina = (pag) => pag.chave ? filaImg.itens.find((i) => ativo(i) && i.alvo === 'pagina' && i.chave === pag.chave) : null;
+  const itemDaCapa = () => filaImg.itens.find((i) => ativo(i) && i.alvo === 'capa');
+  // Último lote ("gerar todas"): { total, feitas, falhas, ativos, pendentes }.
+  function loteAtual() {
+    const comLote = filaImg.itens.filter((i) => i.lote);
+    if (!comLote.length) return null;
+    const lote = comLote[comLote.length - 1].lote;
+    const its = comLote.filter((i) => i.lote === lote);
+    return { total: its.filter((i) => i.estado !== 'cancelado').length, feitas: its.filter((i) => i.estado === 'feito').length,
+      falhas: its.filter((i) => i.estado === 'erro'), ativos: its.filter(ativo).length,
+      pendentes: its.filter((i) => i.estado === 'pendente').length, lote };
+  }
+  const novaChave = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+  async function pedirImagem(corpo) {
+    const r = await fetch(location.pathname + '/imagem-ia', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(corpo) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.erro || 'erro ' + r.status);
+    if (j.id) acompanhados.add(j.id);
+    acompanharImagens();
+  }
   async function gerarPelaApi(pag, botao) {
     const refs = referencias(pag).filter((r) => r.ref).map((r) => r.ref);
-    botao.disabled = true; botao.textContent = '⏳ Gerando (até 1 min)…';
+    botao.disabled = true; botao.textContent = '⏳ Pondo na fila…';
     try {
-      const r = await fetch(location.pathname + '/imagem-ia', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: promptImagem(pag), refs }) });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.erro || 'erro ' + r.status);
-      pag.midia = { id: j.id, tipo: j.tipo };
-      mudou(); desenhar(); await salvar();
-      aviso('Imagem gerada e salva ✓');
+      if (!pag.chave) { pag.chave = novaChave(); mudou(); }
+      botao.dataset.imgChave = pag.chave;
+      if (sujo) { await salvar(); if (sujo) throw new Error('a história não salvou'); }
+      await pedirImagem({ prompt: promptImagem(pag), refs, chave: pag.chave });
+      aviso('Imagem na fila: ela aparece aqui quando ficar pronta (pode fechar a página).', 4000);
     } catch (e) {
-      aviso('Não gerou: ' + e.message);
+      aviso('Não pediu: ' + e.message, 6000);
       botao.disabled = false; botao.textContent = '✨ Gerar imagem com IA';
     }
   }
-  // Gera pela API, uma de cada vez, as imagens das páginas (só as sem imagem, ou todas se o usuário quiser).
-  let gerandoTodas = null; // { parar: bool }
-  // "Gerar todas as imagens": vai para a fila do servidor (pode fechar a aba). O editor acompanha e
-  // coloca cada imagem na página assim que fica pronta. Cada página ganha uma "chave" que não muda.
-  const novaChave = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+  // "Gerar todas as imagens": uma por página, todas na fila. Cada página ganha uma "chave" que não muda.
   async function gerarTodas(botao) {
-    if (gerandoTodas) {
+    const l = loteAtual();
+    if (l && l.ativos) {
       botao.textContent = '⏳ Parando após a imagem atual…';
       await fetch(location.pathname + '/imagens/parar', { method: 'POST' }).catch(() => {});
+      acompanharImagens();
       return;
     }
-    let alvo = estado.paginas.filter((p) => !p.midia);
+    let alvo = estado.paginas.filter((p) => !p.midia && !itemDaPagina(p));
     if (!alvo.length) {
       if (!confirm('Todas as páginas já têm imagem. Gerar de novo todas? (as atuais saem das páginas)')) return;
-      alvo = estado.paginas.slice();
-    } else if (!confirm('Gerar pela API as imagens de ' + alvo.length + ' página(s) sem imagem? Cada uma leva até 1 minuto. Roda no servidor: pode fechar a página e voltar depois.')) {
+      alvo = estado.paginas.filter((p) => !itemDaPagina(p));
+    } else if (!confirm('Gerar com IA as imagens de ' + alvo.length + ' página(s) sem imagem? Cada uma leva até 1 minuto. Roda no servidor: pode fechar a página e voltar depois.')) {
       return;
     }
-    alvo.forEach((p) => { if (!p.chave) p.chave = novaChave(); });
-    mudou(); await salvar();
+    alvo.forEach((p) => { if (!p.chave) { p.chave = novaChave(); mudou(); } });
     try {
+      if (sujo) { await salvar(); if (sujo) throw new Error('a história não salvou'); }
       const r = await fetch(location.pathname + '/imagens', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ paginas: alvo.map((pag) => ({ chave: pag.chave, prompt: promptImagem(pag),
           refs: referencias(pag).filter((x) => x.ref).map((x) => x.ref) })) }) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.erro || 'erro ' + r.status);
-      gerandoTodas = { feitas: 0, total: alvo.length, visto: true };
-      desenharMantendo(botao).textContent = '⏳ Na fila…';
-      setTimeout(acompanharImagens, 2000);
+      botao.textContent = '⏳ Na fila…';
+      acompanharImagens();
     } catch (e) { aviso('Não pediu as imagens: ' + e.message, 6000); }
   }
-  // Acompanha o lote no servidor (também ao abrir a história com um lote rodando).
-  async function acompanharImagens() {
-    let j;
-    try { j = await (await fetch(location.pathname + '/imagens')).json(); } catch (_) { setTimeout(acompanharImagens, 8000); return; }
-    const rodando = j.job === 'pendente' || j.job === 'rodando';
-    let chegou = false;
-    for (const im of j.imagens || []) {
-      const pag = estado.paginas.find((p) => p.chave === im.chave);
-      if (pag && im.midia && (!pag.midia || pag.midia.id !== im.midia.id)) { pag.midia = im.midia; chegou = true; }
-    }
-    const visto = gerandoTodas && gerandoTodas.visto;
-    if (rodando) {
-      gerandoTodas = { feitas: j.feitas, total: j.total, parando: j.parando, visto: true };
-      let botao = raiz.querySelector('[data-gerar-todas]');
-      if (chegou) botao = desenharMantendo(botao || document.createElement('button'));
-      if (botao) botao.textContent = j.parando ? '⏳ Parando após a imagem atual…'
-        : j.job === 'pendente' ? '⏳ Na fila… (⏹ parar)' : '⏹ Parar (' + j.feitas + '/' + j.total + ' prontas)';
-      setTimeout(acompanharImagens, 4000);
-      return;
-    }
-    gerandoTodas = null;
-    if (chegou || visto) desenhar();
-    if (visto) {
-      const falhas = (j.falhas || []).map((f) => f.erro || f).filter(Boolean);
-      aviso(j.feitas + ' imagem(ns) gerada(s)' + (falhas.length ? '. Falharam ' + falhas.length + ': ' + falhas.join('; ') : ' ✓'), falhas.length ? 10000 : 3000);
-    }
+  async function trocarFonte(fonte) {
+    try {
+      const r = await fetch(location.pathname + '/fonte-imagem', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fonte }) });
+      if (!r.ok) throw new Error('erro ' + r.status);
+      filaImg.fonte = fonte;
+      aviso('As próximas imagens desta história saem por ' + ((filaImg.filas.find((f) => f.id === fonte) || {}).nome || fonte) + '.', 3000);
+    } catch (e) { aviso('Não trocou: ' + e.message); }
   }
-  // Redesenha e devolve o botão novo de "gerar todas" (o antigo some no redesenho).
-  function desenharMantendo(botao) {
-    const texto = botao.textContent;
-    desenhar();
-    const novo = raiz.querySelector('[data-gerar-todas]') || botao;
-    novo.textContent = texto;
-    return novo;
+  function fonteUI() {
+    if (!dados.imagem_api || filaImg.filas.length < 2) return null;
+    const atual = filaImg.fonte || filaImg.filas[0].id;
+    return el('label', { class: 'fonte-imagem', title: 'Quem desenha as imagens desta história (a mesma para o livro ficar com um traço só)' },
+      el('small', { class: 'suave' }, '🖼️ Desenha com '),
+      el('select', { onchange: (e) => trocarFonte(e.target.value) },
+        filaImg.filas.map((f) => el('option', { value: f.id, selected: f.id === atual }, f.nome))));
+  }
+  function rotuloTodas() {
+    const l = loteAtual();
+    if (!l || !l.ativos) return '🖼️ Gerar todas as imagens com IA';
+    return l.pendentes === l.ativos && !l.feitas ? '⏳ Na fila… (⏹ parar)' : '⏹ Parar (' + l.feitas + '/' + l.total + ' prontas)';
+  }
+  // Rótulos dos botões sem redesenhar a página (não tira a pessoa do lugar).
+  function atualizarBotoesFila() {
+    raiz.querySelectorAll('[data-img-chave]').forEach((b) => {
+      const pag = estado.paginas.find((p) => p.chave && p.chave === b.dataset.imgChave);
+      const it = pag && itemDaPagina(pag);
+      b.disabled = !!it;
+      b.textContent = it ? it.rotulo : '✨ Gerar imagem com IA';
+    });
+    const bc = raiz.querySelector('[data-img-capa]');
+    if (bc) { const it = itemDaCapa(); bc.disabled = !!it; bc.textContent = it ? it.rotulo : '✨ Gerar capa com IA'; }
+    const bt = raiz.querySelector('[data-gerar-todas]');
+    if (bt) bt.textContent = rotuloTodas();
+  }
+  async function acompanharImagens() {
+    clearTimeout(timerFila);
+    let j;
+    try { j = await (await fetch(location.pathname + '/imagens')).json(); } catch (_) { timerFila = setTimeout(acompanharImagens, 8000); return; }
+    const antesLote = loteAtual();
+    const primeiraVez = !filaImg.carregado;
+    const filasMudaram = JSON.stringify(j.filas || []) !== JSON.stringify(filaImg.filas);
+    Object.assign(filaImg, { itens: j.itens || [], filas: j.filas || [], fonte: j.fonte || null, carregado: true });
+    let chegou = false;
+    const erros = [];
+    for (const it of filaImg.itens) {
+      if (ativo(it)) { acompanhados.add(it.id); continue; }
+      if (!acompanhados.has(it.id)) continue;
+      acompanhados.delete(it.id);
+      if (it.estado === 'feito' && it.midia) {
+        if (it.alvo === 'capa') { capa = it.midia.id; chegou = true; }
+        const pag = it.alvo === 'pagina' && estado.paginas.find((p) => p.chave === it.chave);
+        if (pag && (!pag.midia || pag.midia.id !== it.midia.id)) { pag.midia = it.midia; chegou = true; }
+        if (!it.lote) aviso(it.alvo === 'capa' ? 'Capa nova pronta ✓' : 'Imagem pronta ✓', 3000);
+      } else if (it.estado === 'erro' && !it.lote) erros.push(it.erro);
+    }
+    if (erros.length) aviso('A imagem não saiu: ' + erros.join('; '), 10000);
+    const l = loteAtual();
+    if (antesLote && antesLote.ativos && l && l.lote === antesLote.lote && !l.ativos) {
+      const f = l.falhas.map((x) => x.erro).filter(Boolean);
+      aviso(l.feitas + ' imagem(ns) gerada(s)' + (f.length ? '. Falharam ' + f.length + ': ' + f.join('; ') : ' ✓'), f.length ? 10000 : 3000);
+    }
+    if (chegou || (filasMudaram && primeiraVez) || (primeiraVez && filaImg.itens.some(ativo))) desenhar();
+    else atualizarBotoesFila();
+    if (filaImg.itens.some(ativo)) timerFila = setTimeout(acompanharImagens, 3500);
   }
   function previaMidia(pag) {
     if (!pag.midia) return null;
@@ -510,7 +565,9 @@
         el('a', { href: 'https://gemini.google.com/app', target: '_blank', rel: 'noopener' }, 'Abrir Gemini ↗'),
         el('a', { href: 'https://labs.google/fx/tools/flow', target: '_blank', rel: 'noopener' }, 'Abrir Flow ↗')),
       previaMidia(pag),
-      dados.imagem_api ? el('button', { type: 'button', onclick: (e) => gerarPelaApi(pag, e.currentTarget) }, '✨ Gerar imagem com IA') : null,
+      dados.imagem_api ? (() => { const it = itemDaPagina(pag);
+        return el('button', { type: 'button', 'data-img-chave': pag.chave || '', disabled: !!it, onclick: (e) => gerarPelaApi(pag, e.currentTarget) },
+          it ? it.rotulo : '✨ Gerar imagem com IA'); })() : null,
       areaEnvio(pag),
       pag.midia && pag.midia.tipo.startsWith('image/') ? el('div', { class: 'linha-kit' },
         el('span', {}, '🎬 Animar esta imagem'),
@@ -874,7 +931,7 @@
   // ───────────── Capa ─────────────
   // Sem capa escolhida, vale a primeira imagem do livro (como sempre foi).
   let capa = dados.capa || null;
-  const capaUi = { aberto: false, ocupado: false };
+  const capaUi = { aberto: false };
   async function definirCapa(midia, msg) {
     const r = await fetch(location.pathname + '/capa', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ midia }) });
@@ -912,17 +969,13 @@
     } });
     const gerar = async (botao) => {
       const refs = referencias(pagCapa).filter((r) => r.ref).map((r) => r.ref);
-      capaUi.ocupado = true; botao.disabled = true; botao.textContent = '⏳ Gerando (até 1 min)…';
+      botao.disabled = true; botao.textContent = '⏳ Pondo na fila…';
       try {
-        const r = await fetch(location.pathname + '/imagem-ia', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt, refs }) });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(j.erro || 'erro ' + r.status);
-        capaUi.ocupado = false;
-        await definirCapa(j.id, 'Capa gerada e salva ✓');
+        await pedirImagem({ prompt, refs, capa: true });
+        aviso('Capa na fila: ela aparece aqui quando ficar pronta (pode fechar a página).', 4000);
       } catch (err) {
-        capaUi.ocupado = false; botao.disabled = false; botao.textContent = '✨ Gerar capa com IA';
-        aviso('Não gerou: ' + err.message);
+        botao.disabled = false; botao.textContent = '✨ Gerar capa com IA';
+        aviso('Não pediu: ' + err.message, 6000);
       }
     };
     const det = el('details', { class: 'memoria capa-ed', open: capaUi.aberto },
@@ -934,8 +987,9 @@
             : 'Sem capa própria, a capa é a primeira imagem do livro. Escolha outra se quiser:'),
           el('div', { class: 'linha' },
             el('button', { type: 'button', class: 'pequeno secundario', onclick: () => enviar.click() }, '📤 Enviar imagem'), enviar,
-            dados.imagem_api ? el('button', { type: 'button', class: 'pequeno', disabled: capaUi.ocupado, onclick: (e) => gerar(e.currentTarget) },
-              capaUi.ocupado ? '⏳ Gerando (até 1 min)…' : '✨ Gerar capa com IA') : null),
+            dados.imagem_api ? (() => { const it = itemDaCapa();
+              return el('button', { type: 'button', class: 'pequeno', 'data-img-capa': true, disabled: !!it, onclick: (e) => gerar(e.currentTarget) },
+                it ? it.rotulo : '✨ Gerar capa com IA'); })() : null),
           comImagem.length > 1 ? el('select', { onchange: (e) => {
             const i = +e.target.value; if (Number.isNaN(i) || e.target.value === '') return;
             definirCapa(estado.paginas[i].midia.id, 'Capa: imagem da página ' + (i + 1) + ' ✓').catch((err) => aviso('Não salvou: ' + err.message));
@@ -1051,11 +1105,8 @@
       dados.briefing ? el('p', { class: 'suave' }, el('em', {}, 'Briefing: '), dados.briefing) : null,
       (dados.continua || []).length ? el('p', { class: 'suave' }, '📚 Continua de: ',
         dados.continua.map((c, i) => [i ? ', ' : '', el('a', { href: '/historias/' + c.id }, c.titulo)])) : null,
-      capaUI(),
-      musicaUI(),
-      memoriaUI(),
-      ajudaUI(),
-      secundariosUI(),
+      // Painéis lado a lado (fechados viram "botões"); o aberto ocupa a linha inteira.
+      el('div', { class: 'paineis' }, [capaUI(), musicaUI(), memoriaUI(), ajudaUI(), secundariosUI()].filter(Boolean)),
       modo === 'carrossel' && estado.paginas.length
         ? (atual = Math.min(atual, estado.paginas.length - 1),
            [navCarrossel(), inserirPaginaUI(atual), paginaUI(estado.paginas[atual], atual), inserirPaginaUI(atual + 1), navCarrossel()])
@@ -1067,9 +1118,10 @@
           onsubmit: (e) => { if (!confirm('Apagar esta história? As imagens e áudios dela também serão apagados (cópias em outras famílias continuam).')) e.preventDefault(); else sujo = false; } },
           el('button', { type: 'submit', class: 'link perigo' }, '🗑 Apagar')),
         statusNarracao,
+        fonteUI(),
         dados.imagem_api && estado.paginas.length ? el('button', { type: 'button', class: 'secundario', 'data-gerar-todas': true,
-          title: 'Gera pela API a imagem de cada página sem imagem, uma por vez, no servidor (pode fechar a aba)',
-          onclick: (e) => gerarTodas(e.currentTarget) }, gerandoTodas ? '⏹ Parar (' + gerandoTodas.feitas + '/' + gerandoTodas.total + ' prontas)' : '🖼️ Gerar todas as imagens com IA') : null,
+          title: 'Gera com IA a imagem de cada página sem imagem, na fila do servidor (pode fechar a aba)',
+          onclick: (e) => gerarTodas(e.currentTarget) }, rotuloTodas()) : null,
         el('button', { type: 'button', class: 'secundario', onclick: gerarNarracao }, '🎙️ Gerar narração'),
         status, el('button', { type: 'button', onclick: salvar }, '💾 Salvar')),
     ].flat(Infinity).filter(Boolean));

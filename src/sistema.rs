@@ -70,6 +70,8 @@ struct PaginaSistema {
     cripto_ok: bool,
     aviso: Option<String>,
     clis: Vec<(String, String)>,
+    /// Fila de imagens: (fonte, esperando, desenhando).
+    fila_imagens: Vec<(String, i64, i64)>,
 }
 
 impl PaginaSistema {
@@ -179,8 +181,10 @@ async fn pagina(st: &AppState, s: Sessao, c: Consulta, aviso: Option<String>) ->
         };
     }
     let clis = if aba == "assinaturas" { crate::cli_login::situacao().await } else { Vec::new() };
+    let fila_imagens = if aba == "assinaturas" { crate::fila_imagens::resumo(st).await } else { Vec::new() };
     render(PaginaSistema {
         clis,
+        fila_imagens,
         s,
         aba,
         abas: ABAS.to_vec(),

@@ -84,9 +84,11 @@
         </div>
         {% if !v.arquivada %}
         <div class="acoes-variante">
+          {% for item in self.na_fila(v) %}<p class="na-fila" data-fila-imagem="{{ item.id }}">{{ item.rotulo() }}</p>{% endfor %}
+          {% if let Some(f) = self.falha(v) %}{% if self.na_fila(v).is_empty() %}<p class="erro">{{ f }}</p>{% endif %}{% endif %}
           {% if imagem_api %}
           <form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/gerar-ref" class="linha"
-                onsubmit="const b = this.querySelector('button'); b.disabled = true; b.textContent = '⏳ Gerando (até 1 min)…'">
+                onsubmit="const b = this.querySelector('button'); b.disabled = true; b.textContent = '⏳ Pondo na fila…'">
             <button type="submit" class="pequeno" title="{% if v.referencias.is_empty() %}Desenha pela ficha e pela descrição{% else %}Mais um desenho, a partir das imagens desta variante{% endif %}">✨ Gerar com IA</button>
             {% if !self.fotos().is_empty() %}<label class="check"><input type="checkbox" name="foto" value="1" checked> <small>com a foto de referência</small></label>{% endif %}
           </form>
@@ -182,4 +184,5 @@
 <script src="/descrever.js?v={{ crate::web::versao() }}" defer></script>
 <script src="/briefing.js?v={{ crate::web::versao() }}" defer></script>
 <script src="/vozes-extras.js?v={{ crate::web::versao() }}" defer></script>
+<script src="/fila-imagens.js?v={{ crate::web::versao() }}" defer></script>
 {% endblock %}

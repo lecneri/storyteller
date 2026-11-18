@@ -234,7 +234,7 @@ body.crianca { background:linear-gradient(180deg,#ffe9c7,#fff8ef 40%); min-heigh
 @media (prefers-reduced-motion: reduce) { .livro-erro * { animation:none !important; } }
 
 /* Editor: capa */
-.capa-ed { width:100%; }
+.capa-ed[open] { width:100%; }
 .capa-corpo { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-start; margin-top:8px; }
 .capa-previa { width:120px; aspect-ratio:3/4; object-fit:cover; border-radius:10px; border:1px solid var(--borda); display:grid; place-items:center; font-size:2rem; }
 .capa-acoes { flex:1; min-width:200px; display:grid; gap:8px; }
@@ -302,3 +302,12 @@ a.linha-familia:hover { border-color:var(--cor); }
 .ref-foto:focus { outline:2px dashed var(--cor); outline-offset:4px; }
 .grupo-personagens { display:grid; gap:8px; margin-top:8px; }
 .grupo-personagens h3 { margin:6px 0 0; }
+.na-fila { margin:0; font-size:.9rem; color:var(--suave, #666); }
+.fonte-imagem { display:flex; align-items:center; gap:4px; } .fonte-imagem select { width:auto; padding:4px 6px; }
+/* Editor: Capa, Música, Memória, Ajuda e Personagens lado a lado; o painel aberto ocupa a linha toda. */
+.paineis { display:flex; flex-wrap:wrap; gap:8px; margin:8px 0 16px; align-items:flex-start; }
+.paineis > details.memoria { margin:0; flex:0 1 auto; border:1px solid var(--borda); border-radius:10px; padding:6px 12px; background:var(--cartao); }
+.paineis > details.memoria > summary { cursor:pointer; white-space:nowrap; list-style:none; }
+.paineis > details.memoria > summary::-webkit-details-marker { display:none; }
+.paineis > details.memoria[open] { flex-basis:100%; order:1; padding:10px 14px; }
+.paineis > details.memoria[open] > summary { white-space:normal; margin-bottom:6px; font-weight:600; }

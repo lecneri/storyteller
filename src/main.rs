@@ -12,6 +12,7 @@ mod exportar;
 mod familia;
 mod historias;
 mod imprimir;
+mod fila_imagens;
 mod imagem;
 mod ia;
 mod jobs;
@@ -79,8 +80,11 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!("não carreguei as configurações do sistema: {e:#}");
     }
     jobs::recuperar(&state).await;
-    tokio::spawn(jobs::worker(state.clone(), false));
-    tokio::spawn(jobs::worker(state.clone(), true));
+    tokio::spawn(jobs::worker(state.clone()));
+    fila_imagens::recuperar(&state).await;
+    for fila in imagem::todas_filas() {
+        tokio::spawn(fila_imagens::trabalhador(state.clone(), fila));
+    }
     tokio::spawn(limpeza::agendar(state.clone()));
     let app = Router::new()
         .route("/saude", get(saude))
@@ -140,7 +144,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/historias/{id}/imagens/parar", post(historias::imagens::parar))
         .route("/historias/{id}/midia", post(historias::enviar_midia))
         .route("/historias/{id}/capa", post(historias::definir_capa))
-        .route("/historias/{id}/imagem-ia", post(historias::gerar_imagem))
+        .route("/historias/{id}/imagem-ia", post(historias::imagens::pedir_uma))
+        .route("/historias/{id}/fonte-imagem", post(historias::imagens::definir_fonte))
+        .route("/imagens/fila", get(fila_imagens::estado))
         .route("/historias/{id}/bloco-audio", post(narracao::audio_bloco))
         .route("/historias/{id}/narrar", post(narracao::narrar))
         .route("/historias/{id}/gravacao", post(narracao::gravar))

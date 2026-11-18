@@ -103,11 +103,11 @@ pub async fn criar_variante(
             return erro_interno(e.into());
         }
     }
-    // ✨ Criar e gerar: já desenha (aparência da ficha + estilo + o que muda; com a foto real se marcada).
+    // ✨ Criar e gerar: já pede o desenho à fila (aparência da ficha + estilo + o que muda; com a foto real se marcada).
     let vslug = util::slug(&nome);
     if campos.get("gerar").is_some() && crate::imagem::disponivel(&st, s.familia_id).await {
         if let Err(msg) = super::com_ia::gerar_desenho_variante(&st, &s, &slug, &vslug, campos.contains_key("foto")).await {
-            return detalhe_com(&st, s, &slug, Some(format!("A variante foi criada, mas o desenho não saiu: {msg}"))).await;
+            return detalhe_com(&st, s, &slug, Some(format!("A variante foi criada, mas o desenho não entrou na fila: {msg}"))).await;
         }
     }
     ir_para(&slug, &vslug)

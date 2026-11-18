@@ -16,6 +16,7 @@ struct HistoriaGerar {
     narracao: String,
     padroes: Option<Value>,
     conteudo: Value,
+    paginas_pedidas: Option<i32>,
 }
 
 /// Tudo o que a geração precisa antes de chamar a IA (e para gravar a resposta depois).
@@ -32,7 +33,7 @@ pub struct Preparo {
 /// Monta o pedido à IA a partir do briefing, da estante, dos personagens e das histórias citadas.
 pub async fn preparar(st: &AppState, id: Uuid) -> anyhow::Result<Preparo> {
     let h = sqlx::query_as::<_, HistoriaGerar>(
-        "SELECT h.familia_id, h.briefing, h.faixa, h.narracao, e.padroes, h.conteudo
+        "SELECT h.familia_id, h.briefing, h.faixa, h.narracao, e.padroes, h.conteudo, h.paginas_pedidas
            FROM conteudo.historias h
            LEFT JOIN conteudo.estantes e ON e.id = h.estante_principal
           WHERE h.id = $1",
@@ -42,7 +43,13 @@ pub async fn preparar(st: &AppState, id: Uuid) -> anyhow::Result<Preparo> {
     .await?;
 
     let todos = personagens_da_familia(st, h.familia_id).await?;
-    let briefing = h.briefing.unwrap_or_default();
+    let mut briefing = h.briefing.unwrap_or_default();
+    // Número de páginas escolhido no formulário (só na primeira geração): vale mais que a regra da faixa.
+    if let Some(n) = h.paginas_pedidas.filter(|_| h.conteudo["paginas"].as_array().is_none_or(Vec::is_empty)) {
+        briefing.push_str(&format!(
+            "\n\n(Tamanho pedido: a história deve ter exatamente {n} páginas; isto vale mais que a quantidade de páginas da faixa etária. As palavras por página seguem a faixa.)"
+        ));
+    }
     let mut citados = detectar(&briefing, &todos);
     // Padrões da estante: seus personagens entram sempre, com a variante da estante
     // (a menos que o briefing peça outra com @slug:variante).

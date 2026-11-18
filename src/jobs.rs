@@ -21,7 +21,6 @@ pub async fn enfileirar(st: &AppState, tipo: &str, familia_id: Uuid, payload: Va
 struct Job {
     id: i64,
     tipo: String,
-    familia_id: Option<Uuid>,
     payload: Value,
 }
 
@@ -35,11 +34,10 @@ pub async fn recuperar(st: &AppState) {
     }
 }
 
-/// Loop do worker: pega um job pendente por vez. `imagens`: este worker só faz os lotes de imagens
-/// (que demoram minutos) e o outro faz o resto, para um não segurar o outro.
-pub async fn worker(st: AppState, imagens: bool) {
+/// Loop do worker: pega um job pendente por vez (as imagens têm a fila delas, em crate::fila_imagens).
+pub async fn worker(st: AppState) {
     loop {
-        match proximo(&st, imagens).await {
+        match proximo(&st).await {
             Ok(Some(job)) => executar(&st, job).await,
             Ok(None) => tokio::time::sleep(Duration::from_secs(2)).await,
             Err(e) => {
@@ -50,16 +48,14 @@ pub async fn worker(st: AppState, imagens: bool) {
     }
 }
 
-async fn proximo(st: &AppState, imagens: bool) -> Result<Option<Job>, sqlx::Error> {
+async fn proximo(st: &AppState) -> Result<Option<Job>, sqlx::Error> {
     sqlx::query_as::<_, Job>(
         "UPDATE jobs.fila SET estado = 'rodando', tentativas = tentativas + 1, atualizado_em = now()
           WHERE id = (SELECT id FROM jobs.fila
-                       WHERE estado = 'pendente' AND agendado_para <= now() AND (tipo = $1) = $2
+                       WHERE estado = 'pendente' AND agendado_para <= now()
                        ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1)
-          RETURNING id, tipo, familia_id, payload",
+          RETURNING id, tipo, payload",
     )
-    .bind(crate::historias::imagens::TIPO)
-    .bind(imagens)
     .fetch_optional(&st.db)
     .await
 }
@@ -71,10 +67,6 @@ async fn executar(st: &AppState, job: Job) {
         "editar_historia" => crate::historias::executar_ajuda(st, &job.payload).await.map(Some),
         "gerar_narracao" => crate::narracao::executar_narracao(st, &job.payload).await.map(|_| None),
         "narrar_publico" => crate::narracao::executar_narracao_publica(st, &job.payload).await.map(|_| None),
-        "gerar_imagens" => match job.familia_id {
-            Some(f) => crate::historias::imagens::executar(st, job.id, f, &job.payload).await.map(Some),
-            None => Err(anyhow::anyhow!("job sem família")),
-        },
         outro => Err(anyhow::anyhow!("tipo de job desconhecido: {outro}")),
     };
     let r = match resultado {

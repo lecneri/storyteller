@@ -105,6 +105,14 @@ pub struct FormNova {
     estante: String,
     #[serde(default)]
     visibilidade: String,
+    /// Número de páginas (4 a 30); vazio = a IA escolhe pela idade.
+    #[serde(default)]
+    paginas: String,
+}
+
+/// Páginas pedidas no formulário, dentro do limite (4 a 30); vazio ou inválido = automático.
+fn paginas_pedidas(t: &str) -> Option<i32> {
+    t.trim().parse::<i32>().ok().map(|n| n.clamp(4, 30))
 }
 
 pub async fn criar(State(st): State<AppState>, s: Sessao, Form(f): Form<FormNova>) -> Response {
@@ -133,8 +141,9 @@ pub async fn criar(State(st): State<AppState>, s: Sessao, Form(f): Form<FormNova
         json!({ "paginas": [] })
     };
     let r = sqlx::query(
-        "INSERT INTO conteudo.historias (id, familia_id, slug, titulo, faixa, narracao, briefing, estado, conteudo, criado_por, visibilidade)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+        "INSERT INTO conteudo.historias (id, familia_id, slug, titulo, faixa, narracao, briefing, estado, conteudo, criado_por, visibilidade,
+                                         paginas_pedidas)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
     )
     .bind(id)
     .bind(s.familia_id)
@@ -147,6 +156,7 @@ pub async fn criar(State(st): State<AppState>, s: Sessao, Form(f): Form<FormNova
     .bind(conteudo)
     .bind(s.usuario_id)
     .bind(if ["privado", "compartilhado", "publico"].contains(&f.visibilidade.as_str()) { f.visibilidade.as_str() } else { "herdar" })
+    .bind(paginas_pedidas(&f.paginas))
     .execute(&st.db)
     .await;
     if let Err(e) = r {
@@ -339,7 +349,7 @@ pub async fn salvar(
         return erro_json("Dê um título para a história.");
     }
     let narracao = if c.narracao == "narrador" { "narrador" } else { "por-personagem" };
-    // Imagens sendo geradas na fila: o editor pode estar com a página ainda sem imagem; não apaga a que o job já pôs.
+    // Imagens sendo geradas na fila: o editor pode estar desatualizado; não apaga nem troca a que a fila pôs.
     let protegidas = super::imagens::chaves_protegidas(&st, id).await;
     if !protegidas.is_empty() {
         let no_banco: serde_json::Value = sqlx::query_scalar("SELECT conteudo FROM conteudo.historias WHERE id = $1 AND familia_id = $2")
@@ -350,9 +360,12 @@ pub async fn salvar(
             .ok()
             .flatten()
             .unwrap_or_default();
-        for pag in c.conteudo.paginas.iter_mut().filter(|p| p.midia.is_none() && protegidas.contains(&p.chave)) {
+        // Nessas páginas vale a imagem que a fila pôs (o editor pode não ter recebido ainda).
+        for pag in c.conteudo.paginas.iter_mut().filter(|p| protegidas.contains(&p.chave)) {
             let atual = no_banco["paginas"].as_array().into_iter().flatten().find(|x| x["chave"] == pag.chave.as_str());
-            pag.midia = atual.and_then(|x| serde_json::from_value(x["midia"].clone()).ok());
+            if let Some(m) = atual.and_then(|x| serde_json::from_value(x["midia"].clone()).ok()) {
+                pag.midia = Some(m);
+            }
         }
     }
     let valor = match serde_json::to_value(&c.conteudo) {
@@ -528,31 +541,6 @@ pub async fn mencoes(State(st): State<AppState>, s: Sessao) -> Response {
     }
 }
 
-#[derive(Deserialize)]
-pub struct PedidoImagem {
-    prompt: String,
-    #[serde(default)]
-    refs: Vec<Uuid>,
-}
-
-/// POST /historias/{id}/imagem-ia: gera a imagem da página pela API (o editor coloca na página e salva).
-pub async fn gerar_imagem(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>, Json(p): Json<PedidoImagem>) -> Response {
-    let dona: Option<Uuid> = sqlx::query_scalar("SELECT familia_id FROM conteudo.historias WHERE id = $1")
-        .bind(id)
-        .fetch_optional(&st.db)
-        .await
-        .unwrap_or(None);
-    if dona != Some(s.familia_id) {
-        return StatusCode::NOT_FOUND.into_response();
-    }
-    let refs = crate::imagem::carregar_refs(&st, s.familia_id, &p.refs).await;
-    let pasta = format!("historias/{id}/midia");
-    match crate::imagem::gerar(&st, s.familia_id, &s.familia_slug, &pasta, &p.prompt, &refs).await {
-        Ok((mid, tipo)) => Json(json!({ "id": mid, "tipo": tipo })).into_response(),
-        Err(e) => erro_json(format!("{e:#}")),
-    }
-}
-
 /// POST /historias/{id}/apagar: apaga a história (admin da família ou quem criou). As mídias que ficarem
 /// sem uso são apagadas pela limpeza (cópias em outras famílias continuam com os arquivos).
 pub async fn apagar(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) -> Response {
@@ -627,5 +615,17 @@ pub async fn definir_capa(State(st): State<AppState>, s: Sessao, Path(id): Path<
         Ok(r) if r.rows_affected() == 1 => Json(json!({ "ok": true })).into_response(),
         Ok(_) => StatusCode::NOT_FOUND.into_response(),
         Err(e) => erro_interno(e.into()),
+    }
+}
+
+#[cfg(test)]
+mod testes_paginas {
+    #[test]
+    fn paginas_pedidas_ficam_no_limite() {
+        assert_eq!(super::paginas_pedidas(""), None);
+        assert_eq!(super::paginas_pedidas("abc"), None);
+        assert_eq!(super::paginas_pedidas("12"), Some(12));
+        assert_eq!(super::paginas_pedidas("200"), Some(30));
+        assert_eq!(super::paginas_pedidas("1"), Some(4));
     }
 }
