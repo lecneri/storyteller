@@ -11,7 +11,7 @@ use anyhow::{anyhow, bail};
 use serde_json::Value;
 
 pub use api::{base_kimi, por_api};
-pub use cli::{claude_cli, codex_cli, testar_agy};
+pub use cli::{claude_cli, codex_cli, gerar_imagem as gerar_imagem_cli, testar_agy, CLIS_IMAGEM};
 use api::gemini_api;
 use cli::agy_cli;
 
@@ -75,6 +75,19 @@ async fn registrar_uso(st: &crate::AppState, familia: uuid::Uuid, via: &str, pro
         .await;
 }
 
+/// Fontes de IA na ordem da família, sem repetir e sem nomes estranhos; as que faltam vão no fim.
+pub fn ordem_fontes(fontes: &[String]) -> Vec<&'static str> {
+    let mut v: Vec<&'static str> = Vec::new();
+    for f in fontes.iter().map(String::as_str).chain(["cli", "familia", "sistema"]) {
+        if let Some(x) = ["cli", "familia", "sistema"].into_iter().find(|x| *x == f) {
+            if !v.contains(&x) {
+                v.push(x);
+            }
+        }
+    }
+    v
+}
+
 /// Em que ordem tentar as CLIs da família: "ordem" = como estão; "rodizio" = começa por uma diferente a cada
 /// pedido (pelo número de usos) e depois as outras; "fixo" = só a primeira.
 fn ordem_clis(clis: &[String], modo: &str, vezes: i64) -> Vec<String> {
@@ -95,8 +108,9 @@ fn ordem_clis(clis: &[String], modo: &str, vezes: i64) -> Vec<String> {
 /// CLIs liberados para a família (na ordem dela) → chave da família → chave do sistema → chave gratuita do Gemini (GEMINI_CHAVE_GRATIS).
 /// O limite semanal vale para o que o admin paga (CLI e chave do sistema).
 pub async fn gerar_texto(st: &crate::AppState, familia: uuid::Uuid, p: &PedidoTexto) -> anyhow::Result<Value> {
-    let (clis, modo, sistema, limites): (Vec<String>, String, bool, Value) = sqlx::query_as(
-        "SELECT COALESCE(c.clis, '{}'), COALESCE(c.modo_cli, 'ordem'), COALESCE(c.usar_chave_sistema, false), COALESCE(c.limites, '{}')
+    let (clis, modo, sistema, limites, fontes): (Vec<String>, String, bool, Value, Vec<String>) = sqlx::query_as(
+        "SELECT COALESCE(c.clis, '{}'), COALESCE(c.modo_cli, 'ordem'), COALESCE(c.usar_chave_sistema, false), COALESCE(c.limites, '{}'),
+                COALESCE(c.ordem_fontes, '{cli,familia,sistema}')
            FROM acesso.familias f LEFT JOIN ia.config_familia c ON c.familia_id = f.id WHERE f.id = $1",
     )
     .bind(familia)
@@ -111,52 +125,63 @@ pub async fn gerar_texto(st: &crate::AppState, familia: uuid::Uuid, p: &PedidoTe
     let dentro_do_limite = limites["historias_semana"].as_i64().is_none_or(|l| usado < l);
     let mut erros: Vec<String> = Vec::new();
 
-    // As assinaturas liberadas para a família, na ordem dela; se uma falhar, tenta a próxima.
-    if dentro_do_limite {
-        let vezes = if modo == "rodizio" {
-            sqlx::query_scalar::<_, i64>("SELECT count(*) FROM ia.uso WHERE familia_id = $1 AND via = 'cli'")
-                .bind(familia)
-                .fetch_one(&st.db)
-                .await
-                .unwrap_or(0)
-        } else {
-            0
-        };
-        for nome in &ordem_clis(&clis, &modo, vezes) {
-            let r = match nome.as_str() {
-                // O agy não aceita imagens anexadas: pula para a próxima.
-                "agy" if !p.imagens.is_empty() => continue,
-                "agy" => agy_cli(p).await,
-                "codex" => codex_cli(p).await,
-                "claude" => claude_cli(p).await,
-                _ => continue,
-            };
-            match r {
-                Ok(v) => {
-                    registrar_uso(st, familia, "cli", nome).await;
-                    return Ok(v);
+    // Fontes na ordem da família (padrão: assinaturas → chave da família → chave do sistema).
+    for fonte in ordem_fontes(&fontes) {
+        match fonte {
+            "cli" => {
+                // As assinaturas liberadas para a família, na ordem dela; se uma falhar, tenta a próxima.
+                if dentro_do_limite {
+                    let vezes = if modo == "rodizio" {
+                        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM ia.uso WHERE familia_id = $1 AND via = 'cli'")
+                            .bind(familia)
+                            .fetch_one(&st.db)
+                            .await
+                            .unwrap_or(0)
+                    } else {
+                        0
+                    };
+                    for nome in &ordem_clis(&clis, &modo, vezes) {
+                        let r = match nome.as_str() {
+                            // O agy não aceita imagens anexadas: pula para a próxima.
+                            "agy" if !p.imagens.is_empty() => continue,
+                            "agy" => agy_cli(p).await,
+                            "codex" => codex_cli(p).await,
+                            "claude" => claude_cli(p).await,
+                            _ => continue,
+                        };
+                        match r {
+                            Ok(v) => {
+                                registrar_uso(st, familia, "cli", nome).await;
+                                return Ok(v);
+                            }
+                            Err(e) => erros.push(format!("CLI {nome}: {e:#}")),
+                        }
+                    }
                 }
-                Err(e) => erros.push(format!("CLI {nome}: {e:#}")),
             }
-        }
-    }
-    for (prov, chave, modelo) in chaves(st, Some(familia)).await? {
-        match por_api(&prov, &chave, modelo.as_deref(), p).await {
-            Ok(v) => {
-                registrar_uso(st, familia, "chave_familia", &prov).await;
-                return Ok(v);
-            }
-            Err(e) => erros.push(format!("chave da família ({prov}): {e:#}")),
-        }
-    }
-    if sistema && dentro_do_limite {
-        for (prov, chave, modelo) in chaves(st, None).await? {
-            match por_api(&prov, &chave, modelo.as_deref(), p).await {
-                Ok(v) => {
-                    registrar_uso(st, familia, "chave_sistema", &prov).await;
-                    return Ok(v);
+            "familia" => {
+                for (prov, chave, modelo) in chaves(st, Some(familia)).await? {
+                    match por_api(&prov, &chave, modelo.as_deref(), p).await {
+                        Ok(v) => {
+                            registrar_uso(st, familia, "chave_familia", &prov).await;
+                            return Ok(v);
+                        }
+                        Err(e) => erros.push(format!("chave da família ({prov}): {e:#}")),
+                    }
                 }
-                Err(e) => erros.push(format!("chave do sistema ({prov}): {e:#}")),
+            }
+            _ => {
+                if sistema && dentro_do_limite {
+                    for (prov, chave, modelo) in chaves(st, None).await? {
+                        match por_api(&prov, &chave, modelo.as_deref(), p).await {
+                            Ok(v) => {
+                                registrar_uso(st, familia, "chave_sistema", &prov).await;
+                                return Ok(v);
+                            }
+                            Err(e) => erros.push(format!("chave do sistema ({prov}): {e:#}")),
+                        }
+                    }
+                }
             }
         }
     }
@@ -191,6 +216,14 @@ mod testes {
         assert_eq!(extrair_json("Claro! Aqui está: {\"a\": {\"b\": 3}} Espero ter ajudado.").unwrap()["a"]["b"], 3);
         assert!(extrair_json("sem json aqui").is_err());
         assert!(extrair_json("{ quebrado").is_err());
+    }
+
+    #[test]
+    fn ordem_das_fontes() {
+        let f = |v: &[&str]| ordem_fontes(&v.iter().map(|x| x.to_string()).collect::<Vec<_>>());
+        assert_eq!(f(&["familia", "cli"]), vec!["familia", "cli", "sistema"]);
+        assert_eq!(f(&[]), vec!["cli", "familia", "sistema"]);
+        assert_eq!(f(&["x", "sistema", "sistema"]), vec!["sistema", "cli", "familia"]);
     }
 
     #[test]

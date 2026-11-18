@@ -194,6 +194,97 @@ fn ler_resposta_agy(stdout: &str) -> anyhow::Result<Value> {
     Ok(v)
 }
 
+// ───────────── imagens pela assinatura (Codex e agy) ─────────────
+
+/// CLIs que geram imagem.
+pub const CLIS_IMAGEM: [&str; 2] = ["codex", "agy"];
+
+/// Arquivo de imagem mais novo dentro de `raiz` (recursivo) modificado depois de `desde`.
+fn imagem_mais_nova(raiz: &Path, desde: std::time::SystemTime) -> Option<PathBuf> {
+    let mut melhor: Option<(std::time::SystemTime, PathBuf)> = None;
+    let mut pilha = vec![raiz.to_path_buf()];
+    while let Some(dir) = pilha.pop() {
+        let Ok(itens) = std::fs::read_dir(&dir) else { continue };
+        for item in itens.flatten() {
+            let caminho = item.path();
+            let Ok(meta) = item.metadata() else { continue };
+            if meta.is_dir() {
+                pilha.push(caminho);
+                continue;
+            }
+            let ext = caminho.extension().and_then(|e| e.to_str()).unwrap_or_default().to_lowercase();
+            if !["png", "jpg", "jpeg", "webp"].contains(&ext.as_str()) {
+                continue;
+            }
+            let Ok(quando) = meta.modified() else { continue };
+            if quando >= desde && melhor.as_ref().is_none_or(|(m, _)| quando > *m) {
+                melhor = Some((quando, caminho));
+            }
+        }
+    }
+    melhor.map(|(_, c)| c)
+}
+
+/// Gera uma imagem pela assinatura (`codex` ou `agy`). `refs`: (mime, bytes) das referências.
+/// A CLI salva a imagem na pasta dela; pegamos o arquivo novo e apagamos de lá (não acumula disco).
+pub async fn gerar_imagem(nome: &str, prompt: &str, refs: &[(String, Vec<u8>)]) -> anyhow::Result<Vec<u8>> {
+    let pasta = PastaTemp::nova().await?;
+    let dir = pasta.caminho();
+    let mut anexos = Vec::new();
+    for (i, (mime, b)) in refs.iter().enumerate() {
+        let ext = mime.rsplit('/').next().unwrap_or("png");
+        let caminho = dir.join(format!("referencia-{}.{ext}", i + 1));
+        tokio::fs::write(&caminho, b).await?;
+        anexos.push(caminho);
+    }
+    let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/home/app".into()));
+    let pedido = format!(
+        "Gere UMA imagem com a sua ferramenta de geração de imagens. Não rode comandos e não crie nem edite arquivos.\n{}{prompt}",
+        if anexos.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "Imagens de referência (na ordem citada no pedido: Imagem 1, Imagem 2...): {}\n",
+                anexos.iter().map(|a| a.display().to_string()).collect::<Vec<_>>().join(", ")
+            )
+        }
+    );
+    // Um pouco antes, por causa da precisão do relógio dos arquivos.
+    let inicio = std::time::SystemTime::now() - std::time::Duration::from_secs(2);
+    let (raiz, saida) = match nome {
+        "codex" => {
+            let mut cmd = comando_isolado("codex", dir, &AMBIENTE);
+            cmd.args(["exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only", "-c", "approval_policy=\"never\""])
+                .arg("-C")
+                .arg(dir)
+                .args(anexos.iter().map(|a| format!("--image={}", a.display())))
+                .arg(&pedido)
+                .stdin(Stdio::null());
+            (home.join(".codex/generated_images"), tokio::time::timeout(TEMPO_MAXIMO, cmd.output()).await.map_err(estourou)??)
+        }
+        "agy" => {
+            // Pode ver as referências e gerar a imagem; comandos e escrita de arquivos ficam negados.
+            let negar = r#"{"permissions":{"deny":["command(*)","write_file(*)","edit_file(*)"]}}"#;
+            let mut cmd = comando_isolado("agy", dir, &["HOME", "PATH", "LANG", "DBUS_SESSION_BUS_ADDRESS"]);
+            cmd.args(["--print-timeout", "270s", "--settings", negar]).arg("--add-dir").arg(dir).arg("-p").arg(&pedido);
+            if let Some(k) = crate::config::get("GEMINI_API_KEY") {
+                cmd.env("GEMINI_API_KEY", k);
+            }
+            (home.join(".gemini/antigravity-cli/brain"), tokio::time::timeout(TEMPO_MAXIMO, cmd.output()).await.map_err(estourou)??)
+        }
+        outro => bail!("a CLI {outro} não gera imagem"),
+    };
+    let Some(arquivo) = imagem_mais_nova(&raiz, inicio) else {
+        bail!(
+            "{nome} não gerou imagem: {}",
+            resumo(ultima_linha(&String::from_utf8_lossy(&saida.stdout)).or(ultima_linha(&String::from_utf8_lossy(&saida.stderr))).unwrap_or("sem resposta"))
+        );
+    };
+    let bytes = tokio::fs::read(&arquivo).await?;
+    let _ = tokio::fs::remove_file(&arquivo).await;
+    Ok(bytes)
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;

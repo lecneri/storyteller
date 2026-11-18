@@ -32,7 +32,14 @@
     <h2>🤖 IA desta família</h2>
     <form method="post" action="/sistema/familias/{{ f.id }}" class="grade-form">
       <fieldset class="inteiro">
-        <legend>Assinaturas (CLI) que ela pode usar, em ordem de preferência</legend>
+        <legend>Ordem das fontes de IA (texto e imagem)</legend>
+        <p class="suave">Tenta a primeira; se não tiver ou falhar, a próxima. A chave grátis do Gemini (só texto) fica sempre por último.</p>
+        <ol class="ordem-clis">{% for (k, rotulo) in fontes %}
+          <li><input type="hidden" name="fonte" value="{{ k }}"> {{ rotulo }}
+            <span class="linha"><button type="button" class="pequeno secundario" data-mover="-1" title="Subir">↑</button><button type="button" class="pequeno secundario" data-mover="1" title="Descer">↓</button></span></li>{% endfor %}</ol>
+      </fieldset>
+      <fieldset class="inteiro">
+        <legend>📝 Texto pela assinatura (CLI), em ordem de preferência</legend>
         <p class="suave">Só aparecem as conectadas em <a href="/sistema?aba=assinaturas">Assinaturas</a>. Use ↑↓ para mudar a ordem.</p>
         {% if clis.is_empty() %}<p class="suave">Nenhuma assinatura conectada na plataforma.</p>{% endif %}
         <ol class="ordem-clis">{% for c in clis %}
@@ -41,7 +48,16 @@
             <span class="linha"><button type="button" class="pequeno secundario" data-mover="-1" title="Subir">↑</button><button type="button" class="pequeno secundario" data-mover="1" title="Descer">↓</button></span></li>{% endfor %}</ol>
       </fieldset>
       <fieldset class="inteiro">
-        <legend>Como escolher</legend>
+        <legend>🖼️ Imagens pela assinatura</legend>
+        <p class="suave">Só as CLIs que geram imagem (ChatGPT/Codex e Gemini/agy), conectadas na plataforma. Cada imagem leva cerca de 1 minuto. Animação: nenhuma assinatura gera ainda.</p>
+        {% if clis_imagem.is_empty() %}<p class="suave">Nenhuma CLI de imagem conectada.</p>{% endif %}
+        <ol class="ordem-clis">{% for c in clis_imagem %}
+          <li><label class="check"><input type="checkbox" name="cli_imagem" value="{{ c.chave }}"{% if c.marcado %} checked{% endif %}> {{ c.nome }}</label>
+            <small class="suave">{{ c.situacao }}</small>
+            <span class="linha"><button type="button" class="pequeno secundario" data-mover="-1" title="Subir">↑</button><button type="button" class="pequeno secundario" data-mover="1" title="Descer">↓</button></span></li>{% endfor %}</ol>
+      </fieldset>
+      <fieldset class="inteiro">
+        <legend>Como escolher a CLI de texto</legend>
         <label class="check"><input type="radio" name="modo_cli" value="ordem"{% if f.modo_cli == "ordem" %} checked{% endif %}> <strong>Ordem</strong> — usa a primeira; se falhar, a próxima</label>
         <label class="check"><input type="radio" name="modo_cli" value="rodizio"{% if f.modo_cli == "rodizio" %} checked{% endif %}> <strong>Rodízio</strong> — alterna entre as marcadas a cada pedido (se uma falhar, tenta as outras)</label>
         <label class="check"><input type="radio" name="modo_cli" value="fixo"{% if f.modo_cli == "fixo" %} checked{% endif %}> <strong>Fixo</strong> — só a primeira, sem passar para outra</label>

@@ -71,10 +71,17 @@ async fn gemini(chave: &str, modelo: Option<&str>, prompt: &str, refs: &[Referen
     Ok(STANDARD.decode(dado)?)
 }
 
-/// Chaves de imagem disponíveis para a família, na ordem: família → sistema (se liberado e dentro do limite).
-async fn chaves_imagem(st: &AppState, familia: Uuid) -> anyhow::Result<Vec<(String, String, &'static str, Option<String>)>> {
-    let (sistema, limites): (bool, Value) = sqlx::query_as(
-        "SELECT COALESCE(c.usar_chave_sistema, false), COALESCE(c.limites, '{}')
+/// Um jeito de gerar imagem: pela assinatura (CLI) ou por uma chave de API.
+enum Fonte {
+    Cli(String),
+    Chave { provedor: String, chave: String, via: &'static str, modelo: Option<String> },
+}
+
+/// Fontes de imagem da família, na ordem dela (assinaturas, chave da família, chave do sistema se liberada e no limite).
+async fn fontes_imagem(st: &AppState, familia: Uuid) -> anyhow::Result<Vec<Fonte>> {
+    let (sistema, limites, clis, ordem): (bool, Value, Vec<String>, Vec<String>) = sqlx::query_as(
+        "SELECT COALESCE(c.usar_chave_sistema, false), COALESCE(c.limites, '{}'), COALESCE(c.clis_imagem, '{}'),
+                COALESCE(c.ordem_fontes, '{cli,familia,sistema}')
            FROM acesso.familias f LEFT JOIN ia.config_familia c ON c.familia_id = f.id WHERE f.id = $1",
     )
     .bind(familia)
@@ -97,29 +104,57 @@ async fn chaves_imagem(st: &AppState, familia: Uuid) -> anyhow::Result<Vec<(Stri
     .bind(sistema && limite_ok)
     .fetch_all(&st.db)
     .await?;
-    Ok(linhas
+    let mut chaves: Vec<Fonte> = linhas
         .into_iter()
         .filter_map(|(f, p, c, m)| {
-            segredos::decifrar(&c).ok().map(|k| (p, k, if f.is_some() { "chave_familia" } else { "chave_sistema" }, m))
+            segredos::decifrar(&c).ok().map(|k| Fonte::Chave {
+                provedor: p,
+                chave: k,
+                via: if f.is_some() { "chave_familia" } else { "chave_sistema" },
+                modelo: m,
+            })
         })
-        .collect())
+        .collect();
+    let mut v = Vec::new();
+    for fonte in crate::ia::ordem_fontes(&ordem) {
+        match fonte {
+            "cli" => v.extend(clis.iter().filter(|c| crate::ia::CLIS_IMAGEM.contains(&c.as_str())).map(|c| Fonte::Cli(c.clone()))),
+            via => {
+                let alvo = if via == "familia" { "chave_familia" } else { "chave_sistema" };
+                let (essas, resto): (Vec<Fonte>, Vec<Fonte>) =
+                    chaves.into_iter().partition(|f| matches!(f, Fonte::Chave { via, .. } if *via == alvo));
+                v.extend(essas);
+                chaves = resto;
+            }
+        }
+    }
+    Ok(v)
 }
 
 pub async fn disponivel(st: &AppState, familia: Uuid) -> bool {
-    chaves_imagem(st, familia).await.map(|v| !v.is_empty()).unwrap_or(false)
+    fontes_imagem(st, familia).await.map(|v| !v.is_empty()).unwrap_or(false)
 }
 
 /// Gera uma imagem 3:4 e grava como mídia da família. Devolve (id, mime).
 pub async fn gerar(st: &AppState, familia: Uuid, familia_slug: &str, pasta: &str, prompt: &str, refs: &[Referencia]) -> anyhow::Result<(Uuid, String)> {
-    let chaves = chaves_imagem(st, familia).await?;
-    if chaves.is_empty() {
+    let fontes = fontes_imagem(st, familia).await?;
+    if fontes.is_empty() {
         bail!("Sem IA de imagem para esta família: use o modo manual (copie o prompt e as referências).");
     }
     let mut erros = Vec::new();
-    for (prov, chave, via, modelo) in chaves {
-        let r = match prov.as_str() {
-            "openai" => openai(&chave, modelo.as_deref(), prompt, refs).await,
-            _ => gemini(&chave, modelo.as_deref(), prompt, refs).await,
+    for fonte in fontes {
+        let (r, via, prov) = match &fonte {
+            Fonte::Cli(nome) => {
+                let anexos: Vec<(String, Vec<u8>)> = refs.iter().map(|r| (r.mime.clone(), r.bytes.clone())).collect();
+                (crate::ia::gerar_imagem_cli(nome, prompt, &anexos).await, "cli", nome.clone())
+            }
+            Fonte::Chave { provedor, chave, via, modelo } => {
+                let r = match provedor.as_str() {
+                    "openai" => openai(chave, modelo.as_deref(), prompt, refs).await,
+                    _ => gemini(chave, modelo.as_deref(), prompt, refs).await,
+                };
+                (r, *via, provedor.clone())
+            }
         };
         match r {
             Ok(bytes) => {

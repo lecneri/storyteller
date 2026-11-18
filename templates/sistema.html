@@ -22,7 +22,7 @@
         <span><strong>{{ f.nome }}</strong> <small class="suave">@{{ f.slug }}</small><br>
           <small>{% if let Some(a) = f.admins %}👤 {{ a }}{% else %}<span class="suave">sem admin ainda (mande o convite)</span>{% endif %}</small><br>
           <small class="suave">{{ f.membros }} membro(s) · {{ f.historias }} história(s) · uso 7d: {{ f.uso_semana }}{% if let Some(l) = f.limite_semana %}/{{ l }}{% endif %} · 💾 {{ "{:.1}"|format(f.espaco_mb) }} MB
-            · IA: {% if f.clis.is_empty() %}sem CLI{% else %}{% if f.modo_cli == "rodizio" %}🔄 {% endif %}{% for c in f.clis %}{% if !loop.first %}{% if f.modo_cli == "rodizio" %} / {% else %} → {% endif %}{% endif %}{{ self.nome_cli(c) }}{% endfor %}{% endif %}{% if f.usar_chave_sistema %} + chave do sistema{% endif %}</small></span>
+            · IA: {% if f.clis.is_empty() %}sem CLI{% else %}{% if f.modo_cli == "rodizio" %}🔄 {% endif %}{% for c in f.clis %}{% if !loop.first %}{% if f.modo_cli == "rodizio" %} / {% else %} → {% endif %}{% endif %}{{ self.nome_cli(c) }}{% endfor %}{% endif %}{% if !f.clis_imagem.is_empty() %} · 🖼️ {% for c in f.clis_imagem %}{% if !loop.first %} → {% endif %}{{ self.nome_cli(c) }}{% endfor %}{% endif %}{% if f.usar_chave_sistema %} + chave do sistema{% endif %}</small></span>
         <span class="seta">›</span>
       </a>
     {% endfor %}
@@ -49,7 +49,8 @@
     <div class="cli-linha" data-cli="{{ nome }}">
       <div class="linha" style="justify-content:space-between">
         <span><strong>{% if nome == "claude" %}Claude{% else %}{% if nome == "codex" %}ChatGPT (Codex){% else %}Gemini (agy){% endif %}{% endif %}</strong>
-          <span class="suave">· {{ situ }}</span></span>
+          <span class="suave">· {{ situ }}</span>
+          <small class="suave">· faz: {% if nome == "claude" %}texto{% else %}texto e imagem{% endif %}</small></span>
         <span class="linha">
           <button type="button" class="pequeno" data-acao="iniciar">🔌 Conectar</button>
           <button type="button" class="pequeno secundario" data-acao="testar">🧪 Testar</button>

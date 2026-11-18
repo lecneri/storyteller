@@ -26,6 +26,8 @@ struct LinhaFamilia {
     historias: i64,
     clis: Vec<String>,
     modo_cli: String,
+    clis_imagem: Vec<String>,
+    ordem_fontes: Vec<String>,
     usar_chave_sistema: bool,
     limite_semana: Option<i64>,
     uso_semana: i64,
@@ -124,6 +126,7 @@ const SELECT_FAMILIA: &str = "SELECT f.id, f.nome, f.slug,
         (SELECT count(*) FROM acesso.membros m WHERE m.familia_id = f.id) AS membros,
         (SELECT count(*) FROM conteudo.historias h WHERE h.familia_id = f.id) AS historias,
         COALESCE(c.clis, '{}') AS clis, COALESCE(c.modo_cli, 'ordem') AS modo_cli,
+        COALESCE(c.clis_imagem, '{}') AS clis_imagem, COALESCE(c.ordem_fontes, '{cli,familia,sistema}') AS ordem_fontes,
         COALESCE(c.usar_chave_sistema, false) AS usar_chave_sistema,
         (c.limites->>'historias_semana')::bigint AS limite_semana,
         (SELECT count(*) FROM ia.uso u WHERE u.familia_id = f.id AND u.criado_em > now() - interval '7 days'
@@ -230,6 +233,10 @@ struct PaginaFamiliaSistema {
     membros: Vec<(String, String, String)>,
     uso: Vec<(String, String, i64)>,
     clis: Vec<OpcaoCli>,
+    /// CLIs que geram imagem (codex, agy), na ordem da família.
+    clis_imagem: Vec<OpcaoCli>,
+    /// Fontes de IA na ordem da família: (chave, rótulo).
+    fontes: Vec<(&'static str, &'static str)>,
     novo_link: Option<String>,
     aviso: Option<String>,
 }
@@ -277,8 +284,19 @@ async fn pagina_familia(st: &AppState, s: Sessao, id: Uuid, novo_link: Option<St
     .fetch_all(&st.db)
     .await
     .unwrap_or_default();
-    let clis = opcoes_cli(&f.clis, &crate::cli_login::situacao().await);
-    render(PaginaFamiliaSistema { s, f, membros, uso, clis, novo_link, aviso })
+    let situacao = crate::cli_login::situacao().await;
+    let clis = opcoes_cli(&f.clis, &situacao);
+    let so_imagem: Vec<(String, String)> = situacao.iter().filter(|(c, _)| crate::ia::CLIS_IMAGEM.contains(&c.as_str())).cloned().collect();
+    let clis_imagem = opcoes_cli(&f.clis_imagem, &so_imagem).into_iter().filter(|o| crate::ia::CLIS_IMAGEM.contains(&o.chave.as_str())).collect();
+    let fontes = crate::ia::ordem_fontes(&f.ordem_fontes)
+        .into_iter()
+        .map(|x| (x, match x {
+            "cli" => "🤖 Assinaturas (CLI)",
+            "familia" => "🔑 Chave de API da própria família",
+            _ => "🏢 Chave de API do sistema (se liberada abaixo)",
+        }))
+        .collect();
+    render(PaginaFamiliaSistema { s, f, membros, uso, clis, clis_imagem, fontes, novo_link, aviso })
 }
 
 /// GET /sistema/familias/{id}
@@ -324,6 +342,18 @@ pub async fn salvar_familia(State(st): State<AppState>, s: Sessao, Path(id): Pat
             clis.push(v.clone());
         }
     }
+    let mut clis_imagem: Vec<String> = Vec::new();
+    for (k, v) in &form {
+        if k == "cli_imagem" && crate::ia::CLIS_IMAGEM.contains(&v.as_str()) && !clis_imagem.contains(v) {
+            clis_imagem.push(v.clone());
+        }
+    }
+    let fontes: Vec<String> = crate::ia::ordem_fontes(
+        &form.iter().filter(|(k, _)| k == "fonte").map(|(_, v)| v.clone()).collect::<Vec<_>>(),
+    )
+    .into_iter()
+    .map(String::from)
+    .collect();
     let modo = Some(campo(&form, "modo_cli")).filter(|m| ["ordem", "rodizio", "fixo"].contains(&m.as_str())).unwrap_or_else(|| "ordem".into());
     let chave = form.iter().any(|(k, _)| k == "chave_sistema");
     let limite: Option<i64> = campo(&form, "limite").parse().ok().filter(|n: &i64| *n > 0);
@@ -332,8 +362,10 @@ pub async fn salvar_familia(State(st): State<AppState>, s: Sessao, Path(id): Pat
         None => serde_json::json!({}),
     };
     let r = sqlx::query(
-        "INSERT INTO ia.config_familia (familia_id, cli_habilitado, clis, usar_chave_sistema, limites, modo_cli) VALUES ($1, $2, $3, $4, $5, $6)
-         ON CONFLICT (familia_id) DO UPDATE SET cli_habilitado = $2, clis = $3, usar_chave_sistema = $4, limites = $5, modo_cli = $6",
+        "INSERT INTO ia.config_familia (familia_id, cli_habilitado, clis, usar_chave_sistema, limites, modo_cli, clis_imagem, ordem_fontes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (familia_id) DO UPDATE SET cli_habilitado = $2, clis = $3, usar_chave_sistema = $4, limites = $5, modo_cli = $6,
+                                                clis_imagem = $7, ordem_fontes = $8",
     )
     .bind(id)
     .bind(!clis.is_empty())
@@ -341,6 +373,8 @@ pub async fn salvar_familia(State(st): State<AppState>, s: Sessao, Path(id): Pat
     .bind(chave)
     .bind(limites)
     .bind(&modo)
+    .bind(&clis_imagem)
+    .bind(&fontes)
     .execute(&st.db)
     .await;
     match r {
