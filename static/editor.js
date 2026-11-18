@@ -626,7 +626,7 @@
     const total = estado.paginas.length;
     const ir = (i) => {
       atual = Math.max(0, Math.min(total - 1, i));
-      if (modo === 'carrossel') { desenhar(); if (soltarAncora) soltarAncora(); window.scrollTo({ top: raiz.offsetTop, behavior: 'smooth' }); return; }
+      if (modo === 'carrossel') { desenhar(); fixarPagina(atual); return; }
       if (soltarAncora) soltarAncora();
       const alvo = document.getElementById('pagina-' + (atual + 1));
       if (alvo) window.scrollTo({ top: alvo.getBoundingClientRect().top + window.scrollY - 80, behavior: 'smooth' });
@@ -640,6 +640,17 @@
       el('button', { type: 'button', class: 'secundario', disabled: atual === 0, onclick: () => ir(atual - 1) }, '◀'),
       el('div', { class: 'tiras' }, tiras),
       el('button', { type: 'button', class: 'secundario', disabled: atual >= total - 1, onclick: () => ir(atual + 1) }, '▶'));
+  }
+
+  // Carrossel: deixa a página escolhida logo abaixo da barra de miniaturas (que fica presa no topo),
+  // com a divisória "+ Página aqui" à vista, e a mantém ali enquanto as imagens carregam.
+  function fixarPagina(i) {
+    const p = document.getElementById('pagina-' + (i + 1));
+    const nav = raiz.querySelector('.carrossel-nav');
+    if (!p || !nav) return;
+    const antes = p.previousElementSibling;
+    const folga = antes ? p.getBoundingClientRect().top - antes.getBoundingClientRect().top : 0;
+    manterAncora({ id: p.id, topo: nav.offsetHeight + 8 + folga }, window.scrollY);
   }
 
   // Divisória "+ Página" antes da primeira, entre as páginas e depois da última.
