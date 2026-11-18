@@ -6,6 +6,7 @@
   const estado = {
     titulo: dados.titulo,
     narracao: dados.narracao,
+    faixa: dados.faixa,
     paginas: (dados.conteudo && dados.conteudo.paginas) || [],
     // Personagens só desta história: [{nome, descricao}] (aparência fixa para os prompts de imagem).
     secundarios: (dados.conteudo && dados.conteudo.secundarios) || [],
@@ -36,7 +37,7 @@
   const miniatura = (slug, variante) => L.miniatura(personagens, slug, variante);
   const referencias = (pag) => L.referencias(personagens, pag);
   const ctxImagem = () => ({ personagens, secundarios: estado.secundarios, lugares: lugaresFamilia, lugaresHistoria: estado.lugares,
-    estilo: dados.estilo, faixa: dados.faixa });
+    estilo: dados.estilo, faixa: estado.faixa });
   const promptImagem = (pag) => L.promptImagem(pag, ctxImagem());
   // Imagens que vão no pedido: as dos personagens e a do lugar.
   const refsImagem = (pag) => L.refsDaPagina(pag, ctxImagem());
@@ -954,7 +955,7 @@
       const r = await fetch(location.pathname + '/conteudo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ titulo: estado.titulo, narracao: estado.narracao, conteudo: { paginas: estado.paginas, secundarios: estado.secundarios, lugares: estado.lugares } }),
+        body: JSON.stringify({ titulo: estado.titulo, narracao: estado.narracao, faixa: estado.faixa, conteudo: { paginas: estado.paginas, secundarios: estado.secundarios, lugares: estado.lugares } }),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.erro || 'erro ' + r.status);
@@ -1177,7 +1178,9 @@
       el('div', { class: 'ed-topo' },
         el('label', {}, 'Título', titulo),
         el('label', {}, 'Narração', narr),
-        el('span', { class: 'suave' }, 'Faixa ' + dados.faixa + ' anos'),
+        el('label', { title: 'Idade de quem vai ler: vale para as imagens e para a ajuda da IA (o texto já escrito não muda sozinho)' }, 'Faixa',
+          el('select', { onchange: (e) => { estado.faixa = e.target.value; mudou(); desenhar(); } },
+            ['2-3', '4-6', '7-9', '10-12'].map((f) => el('option', { value: f, selected: f === estado.faixa }, f + ' anos')))),
         el('div', { class: 'modo-vista' },
           ['lista', 'carrossel'].map((m) => el('button', { type: 'button', class: modo === m ? '' : 'secundario',
             onclick: () => { modo = m; try { localStorage.setItem('editor-modo', m); } catch (_) { /* */ } desenhar(); } },

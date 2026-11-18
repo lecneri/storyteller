@@ -336,6 +336,9 @@ pub struct SalvarConteudo {
     titulo: String,
     narracao: String,
     conteudo: Conteudo,
+    /// Faixa etária escolhida no editor (vazio = não muda).
+    #[serde(default)]
+    faixa: String,
 }
 
 pub async fn salvar(
@@ -380,7 +383,8 @@ pub async fn salvar(
     let r = async {
         let mut tx = st.db.begin().await?;
         let n = sqlx::query(
-            "UPDATE conteudo.historias SET titulo = $3, slug = $4, narracao = $5, conteudo = $6, atualizado_em = now()
+            "UPDATE conteudo.historias SET titulo = $3, slug = $4, narracao = $5, conteudo = $6, faixa = COALESCE($7, faixa),
+                    atualizado_em = now()
               WHERE id = $1 AND familia_id = $2",
         )
         .bind(id)
@@ -389,6 +393,7 @@ pub async fn salvar(
         .bind(&slug)
         .bind(narracao)
         .bind(&valor)
+        .bind(Some(c.faixa.as_str()).filter(|f| FAIXAS.contains(f)))
         .execute(&mut *tx)
         .await?
         .rows_affected();
