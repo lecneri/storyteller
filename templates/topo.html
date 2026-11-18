@@ -1,13 +1,19 @@
 <header class="topo">
   <nav>
-    <strong>📚 {{ s.familia_nome }}</strong>
-    <a href="/">Estantes</a>
-    <a href="/historias">Histórias</a>
-    <a href="/personagens">Personagens</a>
-    <a href="/lugares">Lugares</a>
-    <a href="/leitores">Leitores</a>
-    <a href="/familia">Família</a>
-    {% if s.admin_sistema %}<a href="/sistema">⚙️ Sistema</a>{% endif %}
+    <strong class="topo-familia">📚 {{ s.familia_nome }}</strong>
+    <span class="topo-grupo" aria-label="Livros">
+      <a href="/">🗂️ Estantes</a>
+      <a href="/historias">📖 Histórias</a>
+    </span>
+    <span class="topo-grupo" aria-label="Elenco e cenários">
+      <a href="/personagens">🎭 Personagens</a>
+      <a href="/lugares">📍 Lugares</a>
+    </span>
+    <span class="topo-grupo" aria-label="Casa">
+      <a href="/leitores">🧒 Leitores</a>
+      <a href="/familia">👨‍👩‍👧 Família</a>
+    </span>
+    {% if s.admin_sistema %}<span class="topo-grupo"><a href="/sistema">⚙️ Sistema</a></span>{% endif %}
   </nav>
   <span class="linha">
     {% if s.familias.len() > 1 %}

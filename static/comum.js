@@ -141,3 +141,13 @@
 
   raiz.St = { el, aviso, postJson, seletorVoz, zonaColar };
 })(window);
+
+// Menu superior: destaca a seção atual (Estantes só na página inicial e nas estantes).
+(function () {
+  const caminho = location.pathname;
+  for (const a of document.querySelectorAll('.topo-grupo a')) {
+    const h = a.getAttribute('href');
+    const ativo = h === '/' ? caminho === '/' || caminho.startsWith('/estantes') : caminho === h || caminho.startsWith(h + '/');
+    if (ativo) { a.classList.add('ativo'); a.setAttribute('aria-current', 'page'); }
+  }
+})();

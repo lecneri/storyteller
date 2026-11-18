@@ -22,7 +22,13 @@ button.link { background:none; color:var(--cor); padding:0 0 0 8px; }
 h1, h2 { margin:0; }
 .largo { width:100%; max-width:900px; }
 .conteudo .cartao.largo { max-width:900px; }
-.topo nav { display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+.topo nav { display:flex; gap:0; align-items:center; flex-wrap:wrap; row-gap:6px; }
+.topo-familia { margin-right:14px; }
+.topo-grupo { display:flex; gap:4px; align-items:center; padding:0 10px; border-left:1px solid var(--borda); }
+.topo-grupo a { padding:4px 8px; border-radius:8px; white-space:nowrap; }
+.topo-grupo a:hover { background:var(--fundo); }
+.topo-grupo a.ativo { background:var(--cor); color:#fff; }
+@media (max-width: 720px) { .topo-grupo { border-left:0; padding:0; } .topo-familia { width:100%; } }
 .topo a, a { color:var(--cor); text-decoration:none; }
 textarea { font:inherit; padding:10px 12px; border-radius:10px; border:1px solid var(--borda); background:var(--fundo); color:var(--texto); resize:vertical; }
 .grade { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:12px; }
