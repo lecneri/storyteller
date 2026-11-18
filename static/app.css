@@ -273,7 +273,6 @@ input[type=file] { max-width:100%; }
 .referencia .ref-foto { display:grid; gap:8px; align-content:start; }
 .referencia .ref-texto { display:grid; gap:8px; align-content:start; }
 .referencia textarea { width:100%; }
-.acoes-variante { display:grid; gap:8px; }
 @media (max-width:560px) { .referencia { grid-template-columns:minmax(0,1fr); } }
 /* Sistema: abas, paginação, lista de membros, ordem das CLIs. */
 .abas { display:flex; flex-wrap:wrap; gap:6px; }
@@ -289,3 +288,13 @@ a.linha-familia:hover { border-color:var(--cor); }
 .ordem-clis { margin:0; padding-left:20px; display:grid; gap:6px; }
 .ordem-clis li { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
 .ordem-clis li .linha { margin-left:auto; }
+/* Variante: imagens à esquerda, texto à direita; ações numa linha só. */
+.corpo-variante { display:flex; gap:14px; align-items:flex-start; }
+.corpo-variante .imgs-variante { flex:0 0 auto; max-width:50%; }
+.corpo-variante .texto-variante { flex:1 1 0; min-width:0; display:grid; gap:6px; }
+.imgs-variante .foto-kit { gap:2px; }
+.acoes-variante { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; }
+.acoes-variante > details { border:1px dashed var(--borda); border-radius:10px; padding:4px 10px; }
+.acoes-variante > details[open] { flex-basis:100%; }
+.acoes-variante > details > summary { cursor:pointer; color:var(--cor); font-weight:600; }
+@media (max-width:560px) { .corpo-variante { flex-direction:column; } .corpo-variante .imgs-variante { max-width:100%; } }

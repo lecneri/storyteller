@@ -108,7 +108,6 @@ async fn main() -> anyhow::Result<()> {
         .route("/personagens/{slug}/variantes/{vslug}/refs", post(personagens::adicionar_refs))
         .route("/personagens/{slug}/variantes/{vslug}/tirar-ref/{ref_id}", post(personagens::tirar_ref))
         .route("/personagens/{slug}/fotos", post(personagens::fotos::enviar_fotos))
-        .route("/personagens/{slug}/fotos/usar/{ref_id}", post(personagens::fotos::usar_da_variante))
         .route("/personagens/{slug}/fotos/{foto}/tirar", post(personagens::fotos::tirar_foto))
         .route("/personagens/{slug}/variantes/{vslug}/arquivar", post(personagens::alternar_arquivo))
         .route("/personagens/{slug}/variantes/{vslug}/editar", post(personagens::editar_variante))

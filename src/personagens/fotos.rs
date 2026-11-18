@@ -89,31 +89,3 @@ pub async fn tirar_foto(State(st): State<AppState>, s: Sessao, Path((slug, foto)
     }
 }
 
-/// POST /personagens/{slug}/fotos/usar/{ref}: a imagem de uma variante deste personagem vira também foto de referência da ficha.
-pub async fn usar_da_variante(State(st): State<AppState>, s: Sessao, Path((slug, ref_id)): Path<(String, Uuid)>) -> Response {
-    let da_variante: bool = sqlx::query_scalar(
-        "SELECT EXISTS (SELECT 1 FROM conteudo.variantes v JOIN conteudo.personagens p ON p.id = v.personagem_id
-                         WHERE p.familia_id = $1 AND p.slug = $2 AND $3 = ANY(v.referencias))",
-    )
-    .bind(s.familia_id)
-    .bind(&slug)
-    .bind(ref_id)
-    .fetch_one(&st.db)
-    .await
-    .unwrap_or(false);
-    if !da_variante {
-        return ir_ficha(&slug);
-    }
-    let r = mudar_ficha(&st, s.familia_id, &slug, |ficha| {
-        let mut lista = fotos(ficha);
-        if !lista.contains(&ref_id) {
-            lista.push(ref_id);
-        }
-        ficha["fotos"] = Value::Array(lista.into_iter().map(|f| json!(f)).collect());
-    })
-    .await;
-    match r {
-        Ok(()) => ir_ficha(&slug),
-        Err(e) => erro_interno(e.into()),
-    }
-}

@@ -62,34 +62,37 @@
               <button class="link">{% if v.arquivada %}♻️ Restaurar{% else %}📦 Arquivar{% endif %}</button></form>
           </span>
         </header>
-        <p class="suave">
-          {% if let Some(e) = v.estilo %}🎨 {{ e }}{% endif %}
-          {% if let Some(f) = v.forma %} · Forma: {{ f }}{% endif %}
-        </p>
-        {% if let Some(d) = v.descricao %}<p>{{ d }}</p>{% endif %}
-        <div class="minis">
-          {% for ref_id in v.referencias %}<div class="foto-kit">{% include "miniatura.html" %}
-            <form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/tirar-ref/{{ ref_id }}"
-                  onsubmit="return confirm('Tirar esta imagem da variante {{ v.nome }}? A IA deixa de usar ela como referência.')">
-              <button type="submit" class="pequeno secundario">🗑 Tirar</button></form>
-            {% if !self.eh_foto(ref_id) %}<form method="post" action="/personagens/{{ p.slug }}/fotos/usar/{{ ref_id }}">
-              <button type="submit" class="pequeno secundario" title="Usar como referência da ficha (aparência, novos desenhos)">📷 Virar foto da ficha</button></form>{% endif %}</div>{% endfor %}
-          {% if v.referencias.is_empty() %}<p class="suave">Sem imagem ainda: nas histórias vai só a descrição.</p>{% endif %}
+        <div class="corpo-variante">
+          {% if !v.referencias.is_empty() %}
+          <div class="minis imgs-variante">
+            {% for ref_id in v.referencias %}<div class="foto-kit">{% include "miniatura.html" %}
+              <form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/tirar-ref/{{ ref_id }}" class="inline"
+                    onsubmit="return confirm('Tirar esta imagem da variante {{ v.nome }}? A IA deixa de usar ela como referência.')">
+                <button type="submit" class="link" title="Tirar esta imagem">🗑 tirar</button></form></div>{% endfor %}
+          </div>
+          {% endif %}
+          <div class="texto-variante">
+            {% if v.estilo.is_some() || v.forma.is_some() %}<p class="suave">{% if let Some(e) = v.estilo %}🎨 {{ e }}{% endif %}{% if let Some(f) = v.forma %} · Forma: {{ f }}{% endif %}</p>{% endif %}
+            {% if let Some(d) = v.descricao %}<p>{{ d }}</p>{% endif %}
+            {% if v.referencias.is_empty() %}<p class="suave">Sem imagem ainda: nas histórias vai só a descrição.</p>{% endif %}
+          </div>
         </div>
         {% if !v.arquivada %}
         <div class="acoes-variante">
-          <form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/refs" enctype="multipart/form-data" class="linha">
-            <input type="file" name="refs" accept="image/png,image/jpeg,image/webp,image/gif" multiple required>
-            <button type="submit">📤 Enviar imagem pronta</button>
-          </form>
           {% if imagem_api %}
           <form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/gerar-ref" class="linha"
                 onsubmit="const b = this.querySelector('button'); b.disabled = true; b.textContent = '⏳ Gerando (até 1 min)…'">
-            <button type="submit" class="secundario">✨ Gerar com IA</button>
-            {% if !self.fotos().is_empty() %}<label class="check"><input type="checkbox" name="foto" value="1" checked> usar a foto de referência</label>{% endif %}
-            {% if !v.referencias.is_empty() %}<small class="suave">Mais um desenho, a partir das imagens desta variante.</small>{% endif %}
+            <button type="submit" class="pequeno" title="{% if v.referencias.is_empty() %}Desenha pela ficha e pela descrição{% else %}Mais um desenho, a partir das imagens desta variante{% endif %}">✨ Gerar com IA</button>
+            {% if !self.fotos().is_empty() %}<label class="check"><input type="checkbox" name="foto" value="1" checked> <small>com a foto de referência</small></label>{% endif %}
           </form>
           {% endif %}
+          <details class="envio-variante">
+            <summary>📤 Enviar imagem pronta</summary>
+            <form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/refs" enctype="multipart/form-data" class="linha">
+              <input type="file" name="refs" accept="image/png,image/jpeg,image/webp,image/gif" multiple required>
+              <button type="submit" class="pequeno">Enviar</button>
+            </form>
+          </details>
           <details class="kit-personagem">
             <summary>📋 Fazer no ChatGPT/Gemini</summary>
             <p class="suave">Copie o prompt{% if !self.fotos().is_empty() || !v.referencias.is_empty() %} e as imagens abaixo (clique na imagem para copiar){% endif %}, cole na IA e envie o desenho que sair em "📤 Enviar imagem pronta".</p>

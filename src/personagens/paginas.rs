@@ -246,9 +246,6 @@ impl PaginaPersonagem {
     fn fotos(&self) -> Vec<String> {
         super::fotos::fotos(&self.p.ficha).iter().map(Uuid::to_string).collect()
     }
-    fn eh_foto(&self, r: &Uuid) -> bool {
-        super::fotos::fotos(&self.p.ficha).contains(r)
-    }
     fn fotos_urls(&self) -> String {
         self.fotos().iter().map(|f| format!("/midia/{f}")).collect::<Vec<_>>().join(" ")
     }
