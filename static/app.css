@@ -279,6 +279,7 @@ input[type=file] { max-width:100%; }
 @media (max-width:560px) { .referencia { grid-template-columns:minmax(0,1fr); } }
 /* Sistema: abas, paginação, lista de membros, ordem das CLIs. */
 .abas { display:flex; flex-wrap:wrap; gap:6px; }
+.grupo-aba { display:grid; gap:16px; justify-items:center; }
 .abas a { padding:6px 12px; border:1px solid var(--borda); border-radius:999px; text-decoration:none; background:var(--cartao); }
 .abas a.ativa { border-color:var(--cor); color:var(--cor); font-weight:700; }
 a.linha-familia { text-decoration:none; color:inherit; }

@@ -5,8 +5,11 @@
 <main class="conteudo">
   <p class="largo linha" style="justify-content:space-between"><a href="/personagens">← Personagens</a> <a href="/compartilhar/personagem/{{ p.id }}">🔗 Compartilhar</a></p>
   {% if let Some(e) = erro %}<p class="erro largo">{{ e }}</p>{% endif %}
+  <nav class="abas largo" data-abas>
+    <a href="#ficha">📋 Ficha</a><a href="#variantes">🎭 Variantes</a><a href="#vozes">🎙️ Vozes</a>{% if !outros.is_empty() %}<a href="#juntar">🔀 Juntar</a>{% endif %}
+  </nav>
 
-  <section class="cartao largo" id="ficha">
+  <section class="cartao largo" id="ficha" data-aba="ficha">
     <h2>Ficha de {{ p.nome }}</h2>
     <form id="form-foto" method="post" action="/personagens/{{ p.slug }}/fotos" enctype="multipart/form-data" hidden></form>
     <form method="post" action="/personagens/{{ p.slug }}" class="grade-form">
@@ -49,6 +52,7 @@
     </form>
   </section>
 
+  <div data-aba="variantes" class="largo grupo-aba">
   <section class="cartao largo" id="variantes" data-personagem="{{ p.slug }}">
     <h2>Variantes de {{ p.nome }}</h2>
     {% if variantes.is_empty() %}<p class="suave">Nenhuma variante ainda. Crie a primeira abaixo (ex.: "Normal", "Caçador Pokémon").</p>{% endif %}
@@ -152,7 +156,9 @@
       {% if !self.fotos().is_empty() %}<p class="inteiro suave">Para fazer no ChatGPT/Gemini, copie também a foto de referência: <span class="minis">{% for ref_id in self.fotos() %}{% include "miniatura.html" %}{% endfor %}</span></p>{% endif %}
     </form>
   </section>
+  </div>
 
+  <div data-aba="vozes" id="vozes" class="largo grupo-aba">
   <section class="cartao largo">
     <h2>🎙️ Voz de {{ p.nome }}</h2>
     <p class="suave">Sem voz salva, usa a voz padrão do tipo de personagem.</p>
@@ -164,9 +170,10 @@
     <p class="suave">Vozes extras, por exemplo {{ p.nome }} falando inglês. Na hora de criar a história, ao citar <code>@{{ p.slug }}</code>, você escolhe qual voz ele usa.</p>
     <div data-vozes-extras="/personagens/{{ p.slug }}/vozes-extras" data-nome="{{ p.nome }}"><p class="suave">Carregando…</p></div>
   </section>
+  </div>
 
   {% if !outros.is_empty() %}
-  <section class="cartao largo">
+  <section class="cartao largo" data-aba="juntar">
     <h2>🔀 Virar variante de outro personagem</h2>
     <p class="suave">Ex.: “Pedro Pirata” salvo de uma história pode virar uma variante do Pedro. As variantes e imagens de {{ p.nome }} passam para o escolhido,
       as histórias e estantes passam a usar o escolhido (com a variante certa), e {{ p.nome }} deixa de existir como personagem separado.

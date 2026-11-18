@@ -3,10 +3,13 @@
 {% block corpo %}
 {% include "topo.html" %}
 <main class="conteudo">
-  <section class="cartao largo">
+  <nav class="abas largo" data-abas{% if erro.is_some() %} data-inicial="mao"{% endif %}>
+    <a href="#lista">👥 Personagens</a><a href="#ia">✨ Criar com IA</a><a href="#mao">✍️ Criar à mão</a><a href="#narrador">🎙️ Narrador</a>
+  </nav>
+  <section class="cartao largo" data-aba="lista">
     <h2>Personagens</h2>
     {% if itens.is_empty() %}
-      <p class="suave">Nenhum personagem ainda. Crie o primeiro abaixo.</p>
+      <p class="suave">Nenhum personagem ainda. Crie o primeiro em <a href="#ia">✨ Criar com IA</a> ou <a href="#mao">✍️ Criar à mão</a>.</p>
     {% else %}
       <form class="linha busca" data-busca="#lista-personagens" role="search">
         <input type="search" name="q" placeholder="🔎 Nome, @, apelido, grupo, variante ou estilo" style="flex:1" autocomplete="off">
@@ -32,11 +35,11 @@
       </div>
     {% endif %}
   </section>
-  <section class="cartao largo">
+  <section class="cartao largo" data-aba="narrador">
     <h2>🎙️ Narrador da família</h2>
     <div data-voz data-quem="narrador" data-salvar="/familia/narrador" data-exemplo="Era uma vez, num lugar muito distante, uma aventura incrível."><p class="suave">Carregando vozes…</p></div>
   </section>
-  <section class="cartao largo">
+  <section class="cartao largo" data-aba="ia">
     <h2>✨ Criar personagem com IA</h2>
     <p class="suave">Descreva e/ou envie fotos: a IA olha as fotos, descreve a aparência, cria a ficha e, se houver IA de imagem, o desenho de referência — senão, o kit fica pronto para você gerar no ChatGPT/Gemini.</p>
     <form method="post" action="/personagens/ia" enctype="multipart/form-data" class="grade-form"
@@ -52,8 +55,8 @@
       <button type="submit">✨ Criar com IA</button>
     </form>
   </section>
-  <section class="cartao largo">
-    <h2>Novo personagem (à mão)</h2>
+  <section class="cartao largo" data-aba="mao">
+    <h2>✍️ Novo personagem (à mão)</h2>
     {% if let Some(e) = erro %}<p class="erro">{{ e }}</p>{% endif %}
     <form method="post" action="/personagens" enctype="multipart/form-data" class="grade-form">
       <label>Nome <input name="nome" required placeholder="Léo"></label>

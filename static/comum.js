@@ -151,3 +151,37 @@
     if (ativo) { a.classList.add('ativo'); a.setAttribute('aria-current', 'page'); }
   }
 })();
+
+// Abas na própria página (personagens): <nav class="abas" data-abas> com links #id e seções com data-aba="id".
+// Mostra uma seção por vez; o endereço (#id ou âncora dentro da seção, ex. #v-normal) escolhe a aba.
+(function () {
+  const nav = document.querySelector('nav[data-abas]');
+  if (!nav) return;
+  const secoes = [...document.querySelectorAll('[data-aba]')];
+  const links = [...nav.querySelectorAll('a[href^="#"]')];
+  const existe = (id) => secoes.some((s) => s.dataset.aba === id);
+  function abaDoEndereco() {
+    const id = decodeURIComponent(location.hash.slice(1));
+    if (!id) return null;
+    if (existe(id)) return id;
+    const alvo = document.getElementById(id);
+    const sec = alvo && alvo.closest('[data-aba]');
+    return sec ? sec.dataset.aba : null;
+  }
+  function mostrar(id, rolar) {
+    if (!existe(id)) id = secoes[0].dataset.aba;
+    for (const s of secoes) s.hidden = s.dataset.aba !== id;
+    for (const a of links) a.classList.toggle('ativa', a.getAttribute('href') === '#' + id);
+    // Âncora dentro da seção (ex.: uma variante): rola até ela depois de aparecer.
+    const alvo = location.hash && document.getElementById(decodeURIComponent(location.hash.slice(1)));
+    if (rolar && alvo && !existe(alvo.id)) alvo.scrollIntoView();
+  }
+  for (const a of links) a.addEventListener('click', (e) => {
+    e.preventDefault();
+    const id = a.getAttribute('href').slice(1);
+    history.replaceState(null, '', '#' + id);
+    mostrar(id, false);
+  });
+  window.addEventListener('hashchange', () => mostrar(abaDoEndereco() || nav.dataset.inicial, true));
+  mostrar(abaDoEndereco() || nav.dataset.inicial, true);
+})();
