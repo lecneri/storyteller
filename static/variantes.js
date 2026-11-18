@@ -1,6 +1,18 @@
 // Página do personagem: variantes em lista (todas) ou carrossel (uma por vez, com miniaturas),
 // como no editor de história. Lembra o modo e, no carrossel, a variante aberta (salvar recarrega a página).
 (function () {
+  // 📋 Copiar prompt da variante nova: o modelo vem pronto do servidor; troca o nome, o estilo e o que muda.
+  document.querySelectorAll('[data-prompt-modelo]').forEach((b) => b.addEventListener('click', async () => {
+    const f = b.form;
+    const v = (n) => (f.querySelector('[name=' + n + ']')?.value || '').trim();
+    let t = b.dataset.promptModelo.replaceAll('§NOME§', v('nome') || 'nova versão');
+    t = v('estilo') ? t.replaceAll('§ESTILO§', v('estilo')) : t.replaceAll('§ESTILO§, ', '');
+    t = v('descricao') ? t.replaceAll('§MUDA§', v('descricao')) : t.split('\n').filter((l) => !l.includes('§MUDA§')).join('\n');
+    const antes = b.textContent;
+    try { await navigator.clipboard.writeText(t); b.textContent = '✅ Copiado'; } catch (_) { prompt('Copie o prompt:', t); }
+    setTimeout(() => { b.textContent = antes; }, 1500);
+  }));
+
   const secao = document.getElementById('variantes');
   if (!secao) return;
   const artigos = [...secao.querySelectorAll('article.variante')];
@@ -10,7 +22,7 @@
   const ler = (k) => { try { return localStorage.getItem(k); } catch (_) { return null; } };
   const guardar = (k, v) => { try { localStorage.setItem(k, v); } catch (_) { /* */ } };
 
-  let modo = ler('variantes-modo') === 'carrossel' ? 'carrossel' : 'lista';
+  let modo = ler('variantes-modo') === 'lista' ? 'lista' : 'carrossel';
   // Âncora #v-slug (volta de salvar/adicionar imagem): abre essa variante; senão, a última aberta.
   const daAncora = location.hash.startsWith('#v-') ? decodeURIComponent(location.hash.slice(3)) : null;
   let atual = Math.max(0, artigos.findIndex((a) => a.dataset.variante === (daAncora || ler(chave))));

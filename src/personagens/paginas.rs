@@ -45,10 +45,10 @@ struct PaginaLista {
 }
 
 pub(super) async fn lista_com(st: &AppState, s: Sessao, erro: Option<String>) -> Response {
-    // Miniatura: primeira referência da variante atual (senão o estilo principal da ficha, ou de qualquer variante).
+    // Miniatura: primeira referência da variante atual (senão a de qualquer variante). Nunca a foto real.
     let itens = sqlx::query_as::<_, ItemLista>(
         "SELECT p.slug, p.nome, p.tipo, va.nome AS variante,
-                COALESCE(va.referencias[1], (p.ficha->'estilos'->0->>'imagem')::uuid,
+                COALESCE(va.referencias[1],
                          (SELECT v.referencias[1] FROM conteudo.variantes v
                            WHERE v.personagem_id = p.id AND cardinality(v.referencias) > 0
                            ORDER BY v.criado_em LIMIT 1)) AS miniatura
@@ -108,7 +108,7 @@ impl FormFicha {
     }
 }
 
-/// POST /personagens (multipart): ficha + imagem opcional do personagem (vira a variante "Normal").
+/// POST /personagens (multipart): ficha + foto real opcional (privada, fica na ficha só como referência).
 pub async fn criar(State(st): State<AppState>, s: Sessao, mp: axum::extract::Multipart) -> Response {
     let (campos, arquivos) = match super::variantes::ler_multipart(mp).await {
         Ok(x) => x,
@@ -143,7 +143,7 @@ pub async fn criar(State(st): State<AppState>, s: Sessao, mp: axum::extract::Mul
     match r {
         Ok(_) => {
             if !arquivos.is_empty() {
-                if let Err(msg) = super::estilos::criar(&st, &s, &slug, "Base", &arquivos).await {
+                if let Err(msg) = super::fotos::guardar(&st, &s, &slug, &arquivos).await {
                     return detalhe_com(&st, s, &slug, Some(msg)).await;
                 }
             }
@@ -242,48 +242,26 @@ struct PaginaPersonagem {
 }
 
 impl PaginaPersonagem {
+    /// Fotos reais da ficha (privadas).
     fn fotos(&self) -> Vec<String> {
-        self.p.ficha["fotos"].as_array().into_iter().flatten().filter_map(|v| v.as_str().map(String::from)).collect()
+        super::fotos::fotos(&self.p.ficha).iter().map(Uuid::to_string).collect()
     }
+    fn eh_foto(&self, r: &Uuid) -> bool {
+        super::fotos::fotos(&self.p.ficha).contains(r)
+    }
+    fn fotos_urls(&self) -> String {
+        self.fotos().iter().map(|f| format!("/midia/{f}")).collect::<Vec<_>>().join(" ")
+    }
+    /// Prompt para fazer o desenho da variante no ChatGPT/Gemini.
     fn prompt_kit(&self, v: &Variante) -> String {
         let aparencia = super::com_ia::aparencia_variante(&self.p.campo("aparencia"), &v.nome, v.descricao.as_deref());
-        prompt_model_sheet(&self.p.nome, &aparencia, v.estilo.as_deref(), !self.fotos().is_empty() || !v.referencias.is_empty())
+        prompt_model_sheet(&self.p.nome, &aparencia, v.estilo.as_deref(), false)
+            + &super::com_ia::nota_referencias(!v.referencias.is_empty(), !self.fotos().is_empty())
     }
-    /// Kit da ficha: o desenho principal do personagem só pela aparência da ficha (e pelas fotos), sem variante.
-    fn prompt_kit_ficha(&self) -> String {
-        prompt_model_sheet(&self.p.nome, &self.p.campo("aparencia"), None, !self.fotos().is_empty())
-    }
-    fn sem_imagem(&self) -> bool {
-        self.estilos().is_empty() && self.variantes.iter().all(|v| v.referencias.is_empty())
-    }
-    fn estilos(&self) -> Vec<super::estilos::Estilo> {
-        super::estilos::estilos(&self.p.ficha)
-    }
-    fn sugestoes_estilo(&self) -> Vec<&'static str> {
-        let tem = self.estilos();
-        super::estilos::SUGESTOES.iter().copied().filter(|s| !tem.iter().any(|e| e.slug == util::slug(s))).collect()
-    }
-    fn eh_estilo(&self, r: &Uuid) -> bool {
-        self.estilos().iter().any(|e| e.imagem == *r)
-    }
-    fn estilo_sel(&self, v: &Variante, e: &super::estilos::Estilo) -> bool {
-        v.estilo.as_deref().map(util::slug).as_deref() == Some(e.slug.as_str())
-    }
-    /// Estilo antigo da variante (texto livre) que não é um estilo da ficha: aparece na lista para não se perder.
-    fn estilo_solto(&self, v: &Variante) -> Option<String> {
-        let e = v.estilo.as_deref().map(str::trim).filter(|e| !e.is_empty())?;
-        (!self.estilos().iter().any(|x| x.slug == util::slug(e))).then(|| e.to_string())
-    }
-    /// Imagem do estilo da ficha que a variante usa (para copiar no kit).
-    fn estilo_img(&self, v: &Variante) -> Option<String> {
-        super::estilos::imagem_do_estilo(&self.p.ficha, v.estilo.as_deref()).map(|(i, _)| i.to_string())
-    }
-    /// Estilo da ficha que a variante usa (pelo nome), se a ficha tiver estilos.
-    fn estilo_da_variante(&self, v: &Variante) -> Option<String> {
-        super::estilos::imagem_do_estilo(&self.p.ficha, v.estilo.as_deref()).map(|(_, n)| n)
-    }
-    fn foto_na_variante(&self, v: &Variante, foto: &str) -> bool {
-        v.referencias.iter().any(|r| r.to_string() == foto)
+    /// Modelo do prompt da variante nova: o navegador troca §NOME§, §ESTILO§ e §MUDA§ pelo que foi digitado.
+    fn prompt_modelo(&self) -> String {
+        let aparencia = super::com_ia::aparencia_variante(&self.p.campo("aparencia"), "§NOME§", Some("§MUDA§"));
+        prompt_model_sheet(&self.p.nome, &aparencia, Some("§ESTILO§"), false) + &super::com_ia::nota_referencias(false, !self.fotos().is_empty())
     }
     fn eh_atual(&self, v: &Variante) -> bool {
         self.p.variante_atual == Some(v.id)

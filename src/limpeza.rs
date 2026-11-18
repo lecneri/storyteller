@@ -80,7 +80,6 @@ pub async fn limpar(st: &AppState) -> anyhow::Result<(u64, i64)> {
             UNION SELECT capa FROM conteudo.estantes WHERE capa IS NOT NULL
             UNION SELECT unnest(referencias) FROM conteudo.variantes
             UNION SELECT (f)::uuid FROM conteudo.personagens p, jsonb_array_elements_text(COALESCE(p.ficha->'fotos', '[]')) f
-            UNION SELECT (e->>'imagem')::uuid FROM conteudo.personagens p, jsonb_array_elements(COALESCE(p.ficha->'estilos', '[]')) e
             UNION SELECT arquivo FROM midia.audios
          )
          SELECT a.id, a.caminho, a.bytes FROM midia.arquivos a

@@ -268,3 +268,10 @@ article.variante { scroll-margin-top:16px; }
 .linha > .envio { flex:1 1 100%; }
 input[type=file] { max-width:100%; }
 @media (max-width:560px) { .cartao { padding:16px; } .conteudo { padding:12px; } }
+/* Ficha: foto de referência ao lado da aparência. */
+.referencia { display:grid; grid-template-columns:minmax(0,180px) minmax(0,1fr); gap:16px; border:1px dashed var(--borda); border-radius:12px; padding:12px; }
+.referencia .ref-foto { display:grid; gap:8px; align-content:start; }
+.referencia .ref-texto { display:grid; gap:8px; align-content:start; }
+.referencia textarea { width:100%; }
+.acoes-variante { display:grid; gap:8px; }
+@media (max-width:560px) { .referencia { grid-template-columns:minmax(0,1fr); } }

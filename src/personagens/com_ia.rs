@@ -35,8 +35,7 @@ pub fn aparencia_variante(base: &str, variante: &str, descricao: Option<&str>) -
 
 /// Prompt do "model sheet" (folha de referência) de uma variante.
 pub fn prompt_model_sheet(nome: &str, aparencia: &str, estilo: Option<&str>, com_fotos: bool) -> String {
-    // "Base" (a imagem base da ficha) não é um estilo de traço: o traço vem da imagem anexada.
-    let estilo = estilo.filter(|e| !e.trim().is_empty() && crate::util::slug(e) != "base").map(|e| format!("{e}, ")).unwrap_or_default();
+    let estilo = estilo.map(str::trim).filter(|e| !e.is_empty()).map(|e| format!("{e}, ")).unwrap_or_default();
     let fotos = if com_fotos {
         "\nUse as imagens anexadas só como referência de traços (rosto, cabelo, cores, roupa) e transforme em desenho; não faça foto realista."
     } else {
@@ -169,8 +168,6 @@ pub async fn criar_com_ia(State(st): State<AppState>, s: Sessao, mp: Multipart) 
                     .bind(img)
                     .execute(&st.db)
                     .await;
-                // O primeiro desenho também vira a imagem base da ficha.
-                let _ = super::estilos::definir(&st, s.familia_id, &slug, "Base", img).await;
             }
             Err(e) => {
                 tracing::warn!("model sheet pela API falhou: {e:#}");
@@ -181,16 +178,29 @@ pub async fn criar_com_ia(State(st): State<AppState>, s: Sessao, mp: Multipart) 
     Redirect::to(&destino).into_response()
 }
 
-/// POST /personagens/{slug}/variantes/{vslug}/gerar-ref: gera mais um desenho de referência pela API.
-pub async fn gerar_ref(State(st): State<AppState>, s: Sessao, Path((slug, vslug)): Path<(String, String)>) -> Response {
-    match gerar_desenho_variante(&st, &s, &slug, &vslug).await {
+#[derive(serde::Deserialize)]
+pub struct FormGerar {
+    /// "1": manda as fotos reais da ficha como referência de rosto e idade.
+    #[serde(default)]
+    foto: Option<String>,
+}
+
+/// POST /personagens/{slug}/variantes/{vslug}/gerar-ref: gera mais um desenho da variante pela API.
+pub async fn gerar_ref(
+    State(st): State<AppState>,
+    s: Sessao,
+    Path((slug, vslug)): Path<(String, String)>,
+    axum::extract::Form(f): axum::extract::Form<FormGerar>,
+) -> Response {
+    match gerar_desenho_variante(&st, &s, &slug, &vslug, f.foto.is_some()).await {
         Ok(()) => super::variantes::ir_para(&slug, &vslug),
         Err(msg) => detalhe_com(&st, s, &slug, Some(msg)).await,
     }
 }
 
-/// Gera mais um desenho de referência da variante pela API (usado pelo ✨ Gerar e ao criar a variante sem imagem).
-pub(super) async fn gerar_desenho_variante(st: &AppState, s: &Sessao, slug: &str, vslug: &str) -> Result<(), String> {
+/// Gera um desenho da variante pela API (✨ Gerar e ao criar a variante): aparência da ficha + estilo + o que muda.
+/// Vão como referência as imagens que a variante já tem e, se `usar_foto`, as fotos reais da ficha.
+pub(super) async fn gerar_desenho_variante(st: &AppState, s: &Sessao, slug: &str, vslug: &str, usar_foto: bool) -> Result<(), String> {
     let linha: Option<(Uuid, String, serde_json::Value, Option<String>, Option<String>, Vec<Uuid>, String)> = sqlx::query_as(
         "SELECT v.id, p.nome, p.ficha, v.descricao, v.estilo, v.referencias, v.nome
            FROM conteudo.variantes v JOIN conteudo.personagens p ON p.id = v.personagem_id
@@ -205,43 +215,13 @@ pub(super) async fn gerar_desenho_variante(st: &AppState, s: &Sessao, slug: &str
     let Some((vid, nome, ficha, descricao, estilo, refs_atuais, vnome)) = linha else {
         return Err("Variante não encontrada.".into());
     };
-    let fotos: Vec<Uuid> = ficha["fotos"].as_array().into_iter().flatten().filter_map(|v| v.as_str()?.parse().ok()).collect();
-    // A imagem do estilo da ficha que a variante usa (sem estilo na ficha, a da variante atual) vai sempre na frente,
-    // como referência de rosto, idade e proporções: assim toda variante nova continua sendo o mesmo personagem.
-    let principal: Option<Uuid> = match super::estilos::imagem_do_estilo(&ficha, estilo.as_deref()).map(|(i, _)| i).filter(|b| !refs_atuais.contains(b)) {
-        Some(b) => Some(b),
-        None => sqlx::query_scalar(
-        "SELECT v.referencias[1] FROM conteudo.variantes v JOIN conteudo.personagens p ON p.id = v.personagem_id
-          WHERE p.familia_id = $1 AND p.slug = $2 AND v.id <> $3 AND cardinality(v.referencias) > 0 AND NOT v.arquivada
-          ORDER BY (v.id = p.variante_atual) DESC, v.criado_em LIMIT 1",
-    )
-    .bind(s.familia_id)
-    .bind(&slug)
-    .bind(vid)
-    .fetch_optional(&st.db)
-    .await
-    .unwrap_or(None)
-    .flatten(),
-    };
-    let emprestou = principal.is_some();
-    let mut ids: Vec<Uuid> = principal.into_iter().collect();
-    ids.extend(refs_atuais.iter().copied());
-    // Fotos só quando a ficha não tem estilo (o estilo já é o rosto certo, no traço certo).
-    if super::estilos::estilos(&ficha).is_empty() {
-        ids.extend(fotos);
-    }
+    let fotos = if usar_foto { super::fotos::fotos(&ficha) } else { Vec::new() };
+    let mut ids = refs_atuais.clone();
+    ids.extend(fotos.iter().copied());
     let refs = crate::imagem::carregar_refs(&st, s.familia_id, &ids).await;
     let aparencia = aparencia_variante(ficha["aparencia"].as_str().unwrap_or_default(), &vnome, descricao.as_deref());
-    let mut prompt = prompt_model_sheet(&nome, &aparencia, estilo.as_deref(), !refs.is_empty());
-    if emprestou {
-        prompt.push_str(
-            "\nA primeira imagem anexada é o mesmo personagem, já no traço certo: copie dela o rosto, o cabelo, a idade, as proporções do corpo e o traço. \
-             A roupa e a forma são as descritas acima, não as dessa imagem.",
-        );
-        if !refs_atuais.is_empty() {
-            prompt.push_str("\nAs outras imagens anexadas são desta versão: use para a roupa e os acessórios, mas a idade e o rosto vêm da primeira.");
-        }
-    }
+    let mut prompt = prompt_model_sheet(&nome, &aparencia, estilo.as_deref(), false);
+    prompt.push_str(&nota_referencias(!refs_atuais.is_empty(), !fotos.is_empty()));
     match crate::imagem::gerar(&st, s.familia_id, &s.familia_slug, &format!("personagens/{slug}/refs"), &prompt, &refs).await {
         Ok((img, _)) => {
             let _ = sqlx::query("UPDATE conteudo.variantes SET referencias = array_append(referencias, $2) WHERE id = $1")
@@ -253,6 +233,21 @@ pub(super) async fn gerar_desenho_variante(st: &AppState, s: &Sessao, slug: &str
         }
         Err(e) => Err(format!("{e:#}")),
     }
+}
+
+/// O que dizer à IA sobre as imagens anexadas: primeiro as desta variante, depois as fotos reais.
+pub fn nota_referencias(com_variante: bool, com_fotos: bool) -> String {
+    let mut t = String::new();
+    if com_variante {
+        t.push_str("\nAs primeiras imagens anexadas já são esta versão do personagem: mantenha o rosto, a roupa e o traço delas.");
+    }
+    if com_fotos {
+        t.push_str(
+            "\nA última imagem anexada é a referência do personagem (foto real ou desenho): use só para o rosto, o cabelo, a pele, \
+             a idade e as proporções, e desenhe no estilo pedido. Não copie a roupa nem o fundo dela; se for foto, não faça foto realista.",
+        );
+    }
+    t
 }
 
 /// POST /personagens/descrever-foto (multipart: fotos, nome, estilo, personagem): a IA olha as fotos e devolve
@@ -298,6 +293,12 @@ pub async fn descrever_foto(State(st): State<AppState>, s: Sessao, mp: Multipart
             if nome.is_empty() { String::new() } else { format!(" (\"{nome}\")") },
             b.trim(),
             if estilo.is_empty() { String::new() } else { format!(" Estilo desejado: {estilo}.") },
+        ),
+        None if !texto("ficha").is_empty() => format!(
+            "Olhe as imagens anexadas{} e descreva só a aparência que não muda, para um ilustrador desenhar o personagem igual \
+             em qualquer roupa: idade aparente, rosto, cabelo, olhos, pele, corpo e traços marcantes. Não descreva roupa, acessórios nem fundo. \
+             Um parágrafo curto e objetivo (até 60 palavras), sem citar que é uma foto e sem nomes de pessoas reais.",
+            if nome.is_empty() { String::new() } else { format!(" (personagem \"{nome}\")") },
         ),
         None => format!(
             "Olhe as imagens anexadas{} e descreva a aparência para um ilustrador manter o personagem igual em todas as páginas: \

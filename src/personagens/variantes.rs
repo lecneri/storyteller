@@ -103,10 +103,10 @@ pub async fn criar_variante(
             return erro_interno(e.into());
         }
     }
-    // Sem imagem e com IA de imagem: já gera o desenho (rosto e traço do estilo escolhido na ficha).
+    // ✨ Criar e gerar: já desenha (aparência da ficha + estilo + o que muda; com a foto real se marcada).
     let vslug = util::slug(&nome);
-    if refs.is_empty() && campos.get("gerar").is_some() && crate::imagem::disponivel(&st, s.familia_id).await {
-        if let Err(msg) = super::com_ia::gerar_desenho_variante(&st, &s, &slug, &vslug).await {
+    if campos.get("gerar").is_some() && crate::imagem::disponivel(&st, s.familia_id).await {
+        if let Err(msg) = super::com_ia::gerar_desenho_variante(&st, &s, &slug, &vslug, campos.contains_key("foto")).await {
             return detalhe_com(&st, s, &slug, Some(format!("A variante foi criada, mas o desenho não saiu: {msg}"))).await;
         }
     }
@@ -166,31 +166,6 @@ pub async fn adicionar_refs(
     .bind(&slug)
     .bind(&vslug)
     .bind(&refs)
-    .execute(&st.db)
-    .await;
-    match r {
-        Ok(_) => ir_para(&slug, &vslug),
-        Err(e) => erro_interno(e.into()),
-    }
-}
-
-/// POST /personagens/{slug}/variantes/{vslug}/usar-foto/{foto}: a foto enviada na criação (ex.: já é um desenho)
-/// passa a ser também imagem de referência da variante. Só fotos deste personagem.
-pub async fn usar_foto(
-    State(st): State<AppState>,
-    s: Sessao,
-    Path((slug, vslug, foto)): Path<(String, String, Uuid)>,
-) -> Response {
-    let r = sqlx::query(
-        "UPDATE conteudo.variantes v SET referencias = array_append(v.referencias, $4)
-           FROM conteudo.personagens p
-          WHERE v.personagem_id = p.id AND p.familia_id = $1 AND p.slug = $2 AND v.slug = $3
-            AND COALESCE(p.ficha->'fotos', '[]') ? $4::text AND NOT ($4 = ANY(v.referencias))",
-    )
-    .bind(s.familia_id)
-    .bind(&slug)
-    .bind(&vslug)
-    .bind(foto)
     .execute(&st.db)
     .await;
     match r {

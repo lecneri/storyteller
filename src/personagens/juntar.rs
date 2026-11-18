@@ -162,20 +162,10 @@ fn juntar_vozes_extras(destino: &Value, origem: &Value) -> Value {
 }
 
 /// Ficha do destino com as fotos da origem somadas (as fotos só ficam no servidor).
-/// Os estilos da origem entram no destino (os de nome repetido ficam com a imagem do destino).
 fn juntar_fotos(ficha_destino: &Value, ficha_origem: &Value) -> Value {
     let mut ficha = ficha_destino.clone();
     let mut fotos: Vec<Value> = ficha["fotos"].as_array().cloned().unwrap_or_default();
     fotos.extend(ficha_origem["fotos"].as_array().cloned().unwrap_or_default());
-    let mut estilos: Vec<Value> = ficha["estilos"].as_array().cloned().unwrap_or_default();
-    for e in ficha_origem["estilos"].as_array().into_iter().flatten() {
-        if !estilos.iter().any(|x| x["slug"] == e["slug"]) {
-            estilos.push(e.clone());
-        }
-    }
-    if !estilos.is_empty() {
-        ficha["estilos"] = Value::Array(estilos);
-    }
     if !fotos.is_empty() {
         ficha["fotos"] = Value::Array(fotos);
     }
@@ -352,9 +342,5 @@ mod testes {
         assert_eq!(f, json!({ "aparencia": "x", "fotos": ["a", "b"] }));
         // Sem fotos dos dois lados: a ficha fica igual (sem "fotos": []).
         assert_eq!(juntar_fotos(&json!({ "aparencia": "x" }), &json!({})), json!({ "aparencia": "x" }));
-        // Estilos: somam; nome repetido fica com o do destino.
-        let f = juntar_fotos(&json!({ "estilos": [{ "slug": "pixar", "imagem": "d" }] }),
-                             &json!({ "estilos": [{ "slug": "pixar", "imagem": "o" }, { "slug": "anime", "imagem": "a" }] }));
-        assert_eq!(f["estilos"], json!([{ "slug": "pixar", "imagem": "d" }, { "slug": "anime", "imagem": "a" }]));
     }
 }

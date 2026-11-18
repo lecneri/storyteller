@@ -48,8 +48,8 @@
         <select name="tipo">{% for (k, v) in tipos %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
       </label>
       <label class="inteiro">Apelidos <small class="suave">(separados por vírgula)</small> <input name="apelidos" placeholder="Leozinho, Super Léo"></label>
-      <label class="inteiro">Imagem do personagem <small class="suave">(opcional: o desenho dele, vira a imagem base da ficha)</small>
-        <input type="file" id="imagem-nova" name="refs" accept="image/png,image/jpeg,image/webp,image/gif" multiple></label>
+      <label class="inteiro">Foto de referência <small class="suave">(opcional e privada: nunca aparece nas histórias; serve para descrever a aparência e desenhar as variantes)</small>
+        <input type="file" id="imagem-nova" name="refs" accept="image/png,image/jpeg,image/webp" multiple></label>
       <label class="inteiro">Aparência <textarea id="aparencia-nova" name="aparencia" rows="2" placeholder="Menino de 4 anos, cabelo castanho..."></textarea></label>
       <span class="inteiro" data-descrever data-alvo="aparencia-nova" data-fonte="imagem-nova"></span>
       <label class="inteiro">Personalidade <textarea name="personalidade" rows="2"></textarea></label>

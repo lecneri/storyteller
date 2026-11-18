@@ -7,57 +7,8 @@
   {% if let Some(e) = erro %}<p class="erro largo">{{ e }}</p>{% endif %}
 
   <section class="cartao largo" id="ficha">
-    <h2>Ficha</h2>
-    <div class="estilos-ficha">
-      <h3>🖼️ Imagem base e estilos de {{ p.nome }}</h3>
-      <p class="suave">A <strong>base</strong> é {{ p.nome }} "de verdade" (foto ou desenho): tudo nasce dela. Os <strong>estilos</strong> são o mesmo {{ p.nome }}
-        em outros traços (Pixar, anime, anos 90…). Cada variante escolhe um: o desenho dela copia o rosto e o traço e só muda a roupa.</p>
-      <div class="minis">
-      {% for e in self.estilos() %}{% let ref_id = e.imagem %}
-        <div class="foto-kit estilo-card">{% include "miniatura.html" %}
-          <strong>{% if loop.first %}🖼️ {% endif %}{{ e.nome }}</strong>
-          {% if loop.first %}<small class="suave">imagem base</small>{% endif %}
-          <span class="linha">
-          {% if !loop.first %}<form method="post" action="/personagens/{{ p.slug }}/estilos/{{ e.slug }}/principal" class="inline"><button class="link" title="Usar como imagem base">🖼️</button></form>{% endif %}
-          {% if imagem_api %}<form method="post" action="/personagens/{{ p.slug }}/estilos/{{ e.slug }}/gerar" class="inline"
-                onsubmit="this.querySelector('button').textContent='⏳'"><button class="link" title="Refazer com IA">✨</button></form>{% endif %}
-          <form method="post" action="/personagens/{{ p.slug }}/estilos/{{ e.slug }}/tirar" class="inline"
-                onsubmit="return confirm('Tirar {{ e.nome }}?')"><button class="link" title="Tirar">🗑</button></form>
-          </span>
-        </div>
-      {% endfor %}
-      </div>
-      <details class="novo-estilo"{% if self.estilos().is_empty() %} open{% endif %}>
-        <summary>{% if self.estilos().is_empty() %}+ Imagem base{% else %}+ Estilo{% endif %}</summary>
-        <form method="post" action="/personagens/{{ p.slug }}/estilos" enctype="multipart/form-data" class="grade-form"
-              onsubmit="const b = event.submitter; if (b) { setTimeout(() => { b.disabled = true; }, 0); b.textContent = b.value === 'gerar' ? '⏳ Gerando (até 1 min)…' : 'Enviando…'; }">
-          {% if self.estilos().is_empty() %}<input type="hidden" name="nome" value="Base">
-          <label class="inteiro">Foto ou desenho de {{ p.nome }} <input type="file" name="imagem" accept="image/png,image/jpeg,image/webp"></label>
-          {% else %}
-          <label>Nome do estilo <input name="nome" required list="sugestoes-estilo" placeholder="Pixar, Anime, Desenho anos 90..."></label>
-          <datalist id="sugestoes-estilo">{% for sg in self.sugestoes_estilo() %}<option value="{{ sg }}">{% endfor %}</datalist>
-          <label class="inteiro">Imagem <small class="suave">(se já tiver o desenho pronto{% if !imagem_api %}: gere no ChatGPT/Gemini com o kit abaixo e a imagem base{% endif %})</small>
-            <input type="file" name="imagem" accept="image/png,image/jpeg,image/webp"></label>
-          {% endif %}
-          <div class="linha inteiro">
-            <button type="submit" name="acao" value="enviar">📤 Enviar imagem</button>
-            {% if imagem_api %}<button type="submit" name="acao" value="gerar" class="secundario" formnovalidate>✨ Gerar {% if self.estilos().is_empty() %}imagem base{% else %}estilo{% endif %} com IA</button>{% endif %}
-          </div>
-        </form>
-      </details>
-    </div>
-    {% if !self.fotos().is_empty() %}
-    <details class="fotos-ficha">
-      <summary>📷 Fotos antigas de {{ p.nome }} ({{ self.fotos().len() }})</summary>
-      <p class="suave">Enviadas ao criar com IA. Só são usadas quando a ficha não tem imagem base. Se uma delas for a base, use 🖼️; se não servem mais, tire.</p>
-      <div class="minis">{% for ref_id in self.fotos() %}
-        <div class="foto-kit">{% include "miniatura.html" %}
-          <span class="linha">
-          <form method="post" action="/personagens/{{ p.slug }}/estilos/usar/{{ ref_id }}" class="inline"><button class="link" title="Usar como imagem base">🖼️</button></form>
-          <form method="post" action="/personagens/{{ p.slug }}/fotos/{{ ref_id }}/tirar" class="inline" onsubmit="return confirm('Tirar esta foto?')">
-            <button class="link" title="Tirar">🗑</button></form></span></div>{% endfor %}</div>
-    </details>
-    {% endif %}
+    <h2>Ficha de {{ p.nome }}</h2>
+    <form id="form-foto" method="post" action="/personagens/{{ p.slug }}/fotos" enctype="multipart/form-data" hidden></form>
     <form method="post" action="/personagens/{{ p.slug }}" class="grade-form">
       <label>Nome <input name="nome" value="{{ p.nome }}" required></label>
       <label>@ para citar <small class="suave">(no briefing: @{{ p.slug }})</small>
@@ -65,35 +16,39 @@
       <label>Tipo
         <select name="tipo">{% for (k, v) in tipos %}<option value="{{ k }}"{% if p.tipo == k.to_string() %} selected{% endif %}>{{ v }}</option>{% endfor %}</select>
       </label>
-      <label class="inteiro">Apelidos <input name="apelidos" value="{{ p.apelidos() }}"></label>
-      <label class="inteiro">Aparência <textarea id="aparencia-ficha" name="aparencia" rows="2">{{ p.campo("aparencia") }}</textarea></label>
-      <span class="inteiro" data-descrever data-alvo="aparencia-ficha"></span>
+      <label>Apelidos <input name="apelidos" value="{{ p.apelidos() }}"></label>
+
+      <div class="referencia inteiro">
+        <div class="ref-foto">
+          <strong>📷 Foto de referência</strong>
+          {% for ref_id in self.fotos() %}
+          <div class="foto-kit">{% include "miniatura.html" %}
+            <button type="submit" class="pequeno secundario" formaction="/personagens/{{ p.slug }}/fotos/{{ ref_id }}/tirar" formnovalidate
+                    onclick="return confirm('Tirar esta foto?')">🗑 Tirar</button></div>
+          {% endfor %}
+          <input type="file" name="fotos" form="form-foto" accept="image/png,image/jpeg,image/webp" multiple
+                 onchange="if (this.files.length) this.form.submit()">
+          <small class="suave">Opcional: a foto real (privada, nunca aparece nas histórias) ou o desenho de uma variante. Serve para descrever a aparência e, se você marcar, de referência ao desenhar variantes.</small>
+        </div>
+        <div class="ref-texto">
+          <label>Aparência <small class="suave">(o que não muda: rosto, cabelo, pele, idade)</small>
+            <textarea id="aparencia-ficha" name="aparencia" rows="5">{{ p.campo("aparencia") }}</textarea></label>
+          {% if !self.fotos().is_empty() %}<span data-descrever data-alvo="aparencia-ficha" data-fotos="{{ self.fotos_urls() }}"></span>{% endif %}
+        </div>
+      </div>
+
       <label class="inteiro">Personalidade <textarea name="personalidade" rows="2">{{ p.campo("personalidade") }}</textarea></label>
       <label class="inteiro">Jeito de falar <textarea name="jeito_falar" rows="2">{{ p.campo("jeito_falar") }}</textarea></label>
       <label class="inteiro">Relações <small class="suave">(texto livre, vai para a IA; digite @ para citar outro personagem)</small>
         <textarea name="relacoes" rows="2" data-mencoes="simples" data-proprio="{{ p.slug }}" placeholder="Irmão mais velho do @pedro, filho do @papai-dudu...">{{ p.campo("relacoes") }}</textarea></label>
       <p class="inteiro suave">Trocar o @ atualiza as histórias, briefings e estantes que citam {{ p.nome }}. A voz e a narração já gerada continuam.</p>
-      <button type="submit">Salvar ficha</button>
+      <button type="submit">💾 Salvar ficha</button>
     </form>
-    <details class="kit-personagem"{% if self.sem_imagem() %} open{% endif %}>
-      <summary>🎨 Kit do desenho de referência de {{ p.nome }}</summary>
-      <p class="suave">Para criar um estilo à mão: copie o prompt (troque o estilo se quiser), cole no ChatGPT/Gemini junto com as fotos e envie o desenho em "+ Estilo". Cada variante tem o kit dela, com a roupa que muda.</p>
-      {% if !self.fotos().is_empty() %}
-      <div class="minis">{% for ref_id in self.fotos() %}{% include "miniatura.html" %}{% endfor %}</div>
-      {% endif %}
-      <div class="linha-kit"><span>Prompt</span>
-        <button type="button" class="pequeno" data-copiar-texto="prompt-ficha">📋 Copiar prompt</button></div>
-      <textarea id="prompt-ficha" class="prompt" readonly title="Clique para ver o prompt inteiro">{{ self.prompt_kit_ficha() }}</textarea>
-      <div class="linha-kit">
-        <a href="https://chatgpt.com/" target="_blank" rel="noopener">Abrir ChatGPT ↗</a>
-        <a href="https://gemini.google.com/app" target="_blank" rel="noopener">Abrir Gemini ↗</a>
-      </div>
-    </details>
   </section>
 
   <section class="cartao largo" id="variantes" data-personagem="{{ p.slug }}">
     <h2>Variantes de {{ p.nome }}</h2>
-    {% if variantes.is_empty() %}<p class="suave">Nenhuma variante ainda. Crie a primeira abaixo (ex.: "Super Léo · Power Rangers").</p>{% endif %}
+    {% if variantes.is_empty() %}<p class="suave">Nenhuma variante ainda. Crie a primeira abaixo (ex.: "Normal", "Caçador Pokémon").</p>{% endif %}
     {% for v in variantes %}
       <article id="v-{{ v.slug }}" class="variante{% if self.eh_atual(v) %} atual{% endif %}{% if v.arquivada %} arquivada{% endif %}" data-variante="{{ v.slug }}" data-nome="{{ v.nome }}"{% if let Some(r) = v.referencias.first() %} data-mini="/midia/{{ r }}"{% endif %}>
         <header>
@@ -108,107 +63,83 @@
           </span>
         </header>
         <p class="suave">
-          {% if let Some(f) = v.forma %}Forma: {{ f }}{% endif %}
-          {% if let Some(e) = v.estilo %} · Estilo: {{ e }}{% endif %}
-          {% if let Some(fe) = self.estilo_da_variante(v) %} · 🎨 rosto do estilo {{ fe }} da ficha{% endif %}
+          {% if let Some(e) = v.estilo %}🎨 {{ e }}{% endif %}
+          {% if let Some(f) = v.forma %} · Forma: {{ f }}{% endif %}
         </p>
         {% if let Some(d) = v.descricao %}<p>{{ d }}</p>{% endif %}
+        <div class="minis">
+          {% for ref_id in v.referencias %}<div class="foto-kit">{% include "miniatura.html" %}
+            <form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/tirar-ref/{{ ref_id }}"
+                  onsubmit="return confirm('Tirar esta imagem da variante {{ v.nome }}? A IA deixa de usar ela como referência.')">
+              <button type="submit" class="pequeno secundario">🗑 Tirar</button></form>
+            {% if !self.eh_foto(ref_id) %}<form method="post" action="/personagens/{{ p.slug }}/fotos/usar/{{ ref_id }}">
+              <button type="submit" class="pequeno secundario" title="Usar como referência da ficha (aparência, novos desenhos)">📷 Virar foto da ficha</button></form>{% endif %}</div>{% endfor %}
+          {% if v.referencias.is_empty() %}<p class="suave">Sem imagem ainda: nas histórias vai só a descrição.</p>{% endif %}
+        </div>
+        {% if !v.arquivada %}
+        <div class="acoes-variante">
+          <form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/refs" enctype="multipart/form-data" class="linha">
+            <input type="file" name="refs" accept="image/png,image/jpeg,image/webp,image/gif" multiple required>
+            <button type="submit">📤 Enviar imagem pronta</button>
+          </form>
+          {% if imagem_api %}
+          <form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/gerar-ref" class="linha"
+                onsubmit="const b = this.querySelector('button'); b.disabled = true; b.textContent = '⏳ Gerando (até 1 min)…'">
+            <button type="submit" class="secundario">✨ Gerar com IA</button>
+            {% if !self.fotos().is_empty() %}<label class="check"><input type="checkbox" name="foto" value="1" checked> usar a foto de referência</label>{% endif %}
+            {% if !v.referencias.is_empty() %}<small class="suave">Mais um desenho, a partir das imagens desta variante.</small>{% endif %}
+          </form>
+          {% endif %}
+          <details class="kit-personagem">
+            <summary>📋 Fazer no ChatGPT/Gemini</summary>
+            <p class="suave">Copie o prompt{% if !self.fotos().is_empty() || !v.referencias.is_empty() %} e as imagens abaixo (clique na imagem para copiar){% endif %}, cole na IA e envie o desenho que sair em "📤 Enviar imagem pronta".</p>
+            {% if !self.fotos().is_empty() %}<div class="minis">{% for ref_id in self.fotos() %}{% include "miniatura.html" %}{% endfor %}</div>{% endif %}
+            <div class="linha-kit"><span>Prompt</span>
+              <button type="button" class="pequeno" data-copiar-texto="prompt-{{ v.slug }}">📋 Copiar prompt</button></div>
+            <textarea id="prompt-{{ v.slug }}" class="prompt" readonly title="Clique para ver o prompt inteiro">{{ self.prompt_kit(v) }}</textarea>
+            <div class="linha-kit">
+              <a href="https://chatgpt.com/" target="_blank" rel="noopener">Abrir ChatGPT ↗</a>
+              <a href="https://gemini.google.com/app" target="_blank" rel="noopener">Abrir Gemini ↗</a>
+            </div>
+          </details>
+        </div>
+        {% endif %}
         <details class="editar-variante">
           <summary>✏️ Editar variante</summary>
           <form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/editar" class="grade-form">
             <label>Nome <input name="nome" value="{{ v.nome }}" required></label>
             <label>@ para citar <small class="suave">(no briefing: @{{ p.slug }}:{{ v.slug }})</small>
               <input name="arroba" value="{{ v.slug }}" pattern="[A-Za-z0-9\- ]+" title="Letras, números e hífen"></label>
+            <label>Estilo <input name="estilo" value="{% if let Some(e) = v.estilo %}{{ e }}{% endif %}" placeholder="anime do Pokémon, traço Naruto, Pixar..."></label>
             <label>Forma <input name="forma" value="{% if let Some(f) = v.forma %}{{ f }}{% endif %}" placeholder="normal, super, gigante..."></label>
-            {% if self.estilos().is_empty() %}
-            <label>Estilo <input name="estilo" value="{% if let Some(e) = v.estilo %}{{ e }}{% endif %}" placeholder="Pixar, Anime..."></label>
-            {% else %}
-            <label>Estilo <small class="suave">(da ficha: o rosto e o traço vêm dele)</small>
-              <select name="estilo">
-                {% for e in self.estilos() %}<option value="{{ e.nome }}"{% if self.estilo_sel(v, e) %} selected{% endif %}>{% if loop.first %}🖼️ {% endif %}{{ e.nome }}</option>{% endfor %}
-                {% if let Some(solto) = self.estilo_solto(v) %}<option value="{{ solto }}" selected>{{ solto }} (usa a imagem base)</option>{% endif %}
-              </select></label>
-            {% endif %}
             <label class="inteiro">O que muda <small class="suave">(o resto vem da ficha)</small> <textarea name="descricao" rows="2">{% if let Some(d) = v.descricao %}{{ d }}{% endif %}</textarea></label>
             <p class="inteiro suave">Trocar o @ atualiza as histórias, briefings e estantes que usam esta variante.</p>
             <button type="submit">💾 Salvar variante</button>
           </form>
         </details>
-        <div class="minis">
-          {% for ref_id in v.referencias %}<div class="foto-kit">{% include "miniatura.html" %}
-            <form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/tirar-ref/{{ ref_id }}"
-                  onsubmit="return confirm('Tirar esta imagem da variante {{ v.nome }}? A IA deixa de usar ela como referência.')">
-              <button type="submit" class="pequeno secundario">🗑 Tirar</button></form>
-            {% if self.eh_estilo(ref_id) %}<small class="suave">🎨 é um estilo da ficha</small>{% else %}
-            <form method="post" action="/personagens/{{ p.slug }}/estilos/usar/{{ ref_id }}">
-              <button type="submit" class="pequeno secundario" title="Guardar como estilo de {{ p.nome }} na ficha (nome: o estilo desta variante)">🎨 Virar estilo da ficha</button></form>{% endif %}</div>{% endfor %}
-          {% if v.referencias.is_empty() %}<p class="suave">Sem imagem: a descrição será usada no prompt.</p>{% endif %}
-        </div>
-        {% if !v.arquivada %}
-        <details class="kit-personagem"{% if v.referencias.is_empty() %} open{% endif %}>
-          <summary>🎨 Kit do desenho de referência</summary>
-          {% if !self.fotos().is_empty() %}
-          <p class="suave">Fotos enviadas (só no servidor; clique para copiar e colar na IA). Se a foto já for o desenho certo, use direto nesta variante:</p>
-          <div class="minis">{% for ref_id in self.fotos() %}
-            <div class="foto-kit">{% include "miniatura.html" %}
-              {% if !self.foto_na_variante(v, ref_id) %}
-              <form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/usar-foto/{{ ref_id }}">
-                <button type="submit" class="pequeno secundario">✅ Usar como imagem desta variante</button></form>
-              {% else %}<small class="suave">✅ já é imagem desta variante</small>{% endif %}
-            </div>{% endfor %}</div>
-          {% endif %}
-          {% if let Some(ref_id) = self.estilo_img(v) %}
-          <p class="suave">1. Copie a imagem {% if let Some(fe) = self.estilo_da_variante(v) %}({{ fe }}){% endif %} e cole na IA — é o rosto e o traço de {{ p.nome }}:</p>
-          <div class="minis">{% include "miniatura.html" %}</div>
-          <p class="suave">2. Copie o prompt e cole junto. 3. Envie o desenho que sair em "Adicionar imagens".</p>
-          {% endif %}
-          <div class="linha-kit"><span>Prompt</span>
-            <button type="button" class="pequeno" data-copiar-texto="prompt-{{ v.slug }}">📋 Copiar prompt</button></div>
-          <textarea id="prompt-{{ v.slug }}" class="prompt" readonly title="Clique para ver o prompt inteiro">{{ self.prompt_kit(v) }}</textarea>
-          <div class="linha-kit">
-            <a href="https://chatgpt.com/" target="_blank" rel="noopener">Abrir ChatGPT ↗</a>
-            <a href="https://gemini.google.com/app" target="_blank" rel="noopener">Abrir Gemini ↗</a>
-          </div>
-        </details>
-        {% endif %}
-        <form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/refs" enctype="multipart/form-data" class="linha">
-          <input type="file" name="refs" accept="image/png,image/jpeg,image/webp,image/gif" multiple required>
-          <button type="submit">Adicionar imagens</button>
-        </form>
-        {% if imagem_api && !v.arquivada %}
-        <form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/gerar-ref" class="linha"
-              onsubmit="const b = this.querySelector('button'); b.disabled = true; b.textContent = '⏳ Gerando (até 1 min)…'">
-          <button type="submit" class="secundario">✨ Gerar imagem com IA</button>
-          <small class="suave">{% if v.referencias.is_empty() %}Desenha pela descrição{% if !self.fotos().is_empty() %} e pelas fotos{% endif %}; se outra variante tiver imagem, usa o rosto dela.{% else %}Mais um desenho, usando as imagens desta variante como referência.{% endif %}</small>
-        </form>
-        {% endif %}
       </article>
     {% endfor %}
   </section>
 
-  <section class="cartao largo">
-    <h2>Nova variante</h2>
+  <section class="cartao largo" id="nova-variante">
+    <h2>+ Nova variante</h2>
     <form method="post" action="/personagens/{{ p.slug }}/variantes" enctype="multipart/form-data" class="grade-form">
-      <label>Nome <input name="nome" required placeholder="Super Léo Rangers"></label>
+      <label>Nome <input name="nome" required placeholder="Caçador Pokémon"></label>
+      <label>Estilo <input name="estilo" placeholder="anime do Pokémon, traço Naruto, Pixar..."></label>
+      <label class="inteiro">O que muda <small class="suave">(só a diferença: rosto, cabelo e idade já vêm da ficha)</small> <textarea id="desc-variante" name="descricao" rows="2" placeholder="Camiseta azul com pokébola, boné vermelho, mochila..."></textarea></label>
       <label>Forma <input name="forma" placeholder="normal, super, gigante..."></label>
-      {% if self.estilos().is_empty() %}
-      <label class="inteiro">Estilo de referência <input name="estilo" placeholder="Pixar, Anime..."></label>
-      {% else %}
-      <label class="inteiro">Estilo <small class="suave">(da ficha: o desenho copia o rosto e o traço dele e só muda a roupa)</small>
-        <select name="estilo">{% for e in self.estilos() %}<option value="{{ e.nome }}">{% if loop.first %}🖼️ {% endif %}{{ e.nome }}</option>{% endfor %}</select></label>
-      {% endif %}
-      <label class="inteiro">O que muda <small class="suave">(só a diferença: o resto vem da ficha de {{ p.nome }} — rosto, cabelo, idade...)</small> <textarea id="desc-variante" name="descricao" rows="2" placeholder="Armadura vermelha com detalhes dourados, capacete com visor..."></textarea></label>
-      <span class="inteiro" data-descrever data-alvo="desc-variante" data-nome="{{ p.nome }}" data-personagem="{{ p.slug }}"></span>
-      <label class="inteiro">Imagem <small class="suave">(opcional: se já tiver o desenho{% if imagem_api %}; sem imagem, ✨ desenha pelo estilo escolhido{% endif %})</small> <input type="file" name="refs" accept="image/png,image/jpeg,image/webp,image/gif" multiple></label>
       <label class="check"><input type="checkbox" name="atual" value="1"> Tornar a variante atual</label>
-      {% if imagem_api %}
+      <label class="inteiro">📤 Imagem pronta <small class="suave">(opcional: se já tiver o desenho)</small> <input type="file" id="refs-variante" name="refs" accept="image/png,image/jpeg,image/webp,image/gif" multiple></label>
+      <span class="inteiro" data-descrever data-alvo="desc-variante" data-nome="{{ p.nome }}" data-personagem="{{ p.slug }}" data-fonte="refs-variante"></span>
       <div class="linha inteiro">
-        <button type="submit" name="gerar" value="1" onclick="if (!this.form.refs.files.length && this.form.reportValidity()) this.textContent = '⏳ Criando e desenhando (até 1 min)…'">✨ Criar e gerar desenho</button>
-        <button type="submit" class="secundario">Criar sem desenho</button>
+        {% if imagem_api %}
+        <button type="submit" name="gerar" value="1" onclick="if (this.form.reportValidity()) this.textContent = '⏳ Criando e desenhando (até 1 min)…'">✨ Criar e gerar com IA</button>
+        {% if !self.fotos().is_empty() %}<label class="check"><input type="checkbox" name="foto" value="1" checked> usar a foto de referência</label>{% endif %}
+        {% endif %}
+        <button type="submit" class="secundario">Criar{% if imagem_api %} sem gerar{% endif %}</button>
+        <button type="button" class="secundario" data-prompt-modelo="{{ self.prompt_modelo() }}">📋 Copiar prompt</button>
       </div>
-      {% else %}
-      <button type="submit">Criar variante</button>
-      {% endif %}
+      {% if !self.fotos().is_empty() %}<p class="inteiro suave">Para fazer no ChatGPT/Gemini, copie também a foto de referência: <span class="minis">{% for ref_id in self.fotos() %}{% include "miniatura.html" %}{% endfor %}</span></p>{% endif %}
     </form>
   </section>
 
