@@ -194,21 +194,40 @@ pub async fn criar(State(st): State<AppState>, s: Sessao, mp: axum::extract::Mul
     if slug.is_empty() || !f.tipo_valido() {
         return lista_com(&st, s, Some("Preencha o nome e o tipo.".into())).await;
     }
-    let r = sqlx::query(
-        "INSERT INTO conteudo.personagens (familia_id, slug, nome, tipo, ficha) VALUES ($1, $2, $3, $4, $5)",
-    )
-    .bind(s.familia_id)
-    .bind(&slug)
-    .bind(&nome)
-    .bind(&f.tipo)
-    .bind(f.ficha())
-    .execute(&st.db)
+    // Personagem + variante Original (a aparência da ficha; a foto enviada vira referência dela).
+    let aparencia = f.aparencia.trim().to_string();
+    let r = async {
+        let mut tx = st.db.begin().await?;
+        let pid: Uuid = sqlx::query_scalar(
+            "INSERT INTO conteudo.personagens (familia_id, slug, nome, tipo, ficha) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+        )
+        .bind(s.familia_id)
+        .bind(&slug)
+        .bind(&nome)
+        .bind(&f.tipo)
+        .bind(f.ficha())
+        .fetch_one(&mut *tx)
+        .await?;
+        let vid = super::variantes::criar_original(&mut tx, pid, None, None, &aparencia, &[]).await?;
+        tx.commit().await?;
+        Ok::<_, sqlx::Error>(vid)
+    }
     .await;
     match r {
-        Ok(_) => {
+        Ok(vid) => {
             if !arquivos.is_empty() {
-                if let Err(msg) = super::fotos::guardar(&st, &s, &slug, &arquivos).await {
-                    return detalhe_com(&st, s, &slug, Some(msg)).await;
+                match super::fotos::guardar(&st, &s, &slug, &arquivos).await {
+                    Ok(fotos) => {
+                        if let Err(e) = sqlx::query("UPDATE conteudo.variantes SET referencias = referencias || $2 WHERE id = $1")
+                            .bind(vid)
+                            .bind(&fotos)
+                            .execute(&st.db)
+                            .await
+                        {
+                            tracing::error!("foto na variante Original: {e:#}");
+                        }
+                    }
+                    Err(msg) => return detalhe_com(&st, s, &slug, Some(msg)).await,
                 }
             }
             Redirect::to(&format!("/personagens/{slug}")).into_response()

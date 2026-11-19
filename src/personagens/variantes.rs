@@ -333,3 +333,29 @@ pub async fn editar_variante(
 pub(super) fn ir_para(slug: &str, vslug: &str) -> Response {
     Redirect::to(&format!("/personagens/{slug}#v-{vslug}")).into_response()
 }
+
+/// Cria a variante "Original" de um personagem novo (com a aparência da ficha e as fotos enviadas como referência)
+/// e a deixa como atual.
+pub async fn criar_original(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    personagem: Uuid,
+    forma: Option<&str>,
+    estilo: Option<&str>,
+    aparencia: &str,
+    referencias: &[Uuid],
+) -> Result<Uuid, sqlx::Error> {
+    let forma = forma.map(str::trim).filter(|f| !f.is_empty()).unwrap_or("normal");
+    let vid: Uuid = sqlx::query_scalar(
+        "INSERT INTO conteudo.variantes (personagem_id, slug, nome, forma, estilo, descricao, referencias)
+         VALUES ($1, 'original', 'Original', $2, $3, $4, $5) RETURNING id",
+    )
+    .bind(personagem)
+    .bind(forma)
+    .bind(estilo)
+    .bind(Some(aparencia.trim()).filter(|a| !a.is_empty()))
+    .bind(referencias)
+    .fetch_one(&mut **tx)
+    .await?;
+    sqlx::query("UPDATE conteudo.personagens SET variante_atual = $2 WHERE id = $1").bind(personagem).bind(vid).execute(&mut **tx).await?;
+    Ok(vid)
+}

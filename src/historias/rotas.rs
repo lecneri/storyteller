@@ -459,7 +459,7 @@ pub struct PedidoSecundario {
 }
 
 /// POST /personagens/de-secundario: transforma um personagem só da história em personagem da família
-/// (ficha com a aparência, variante "Principal" e voz). Devolve o personagem no formato do editor.
+/// (ficha com a aparência, variante "Original" e voz). Devolve o personagem no formato do editor.
 pub async fn salvar_secundario(State(st): State<AppState>, s: Sessao, Json(p): Json<PedidoSecundario>) -> Response {
     let erro = |m: &str| erro_json(m);
     let nome = p.nome.trim().to_string();
@@ -482,14 +482,7 @@ pub async fn salvar_secundario(State(st): State<AppState>, s: Sessao, Json(p): J
         .bind(&voz)
         .fetch_one(&mut *tx)
         .await?;
-        let vid: Uuid = sqlx::query_scalar(
-            "INSERT INTO conteudo.variantes (personagem_id, slug, nome, forma, descricao) VALUES ($1, 'principal', 'Principal', 'normal', $2) RETURNING id",
-        )
-        .bind(pid)
-        .bind(Some(descricao.as_str()).filter(|d| !d.is_empty()))
-        .fetch_one(&mut *tx)
-        .await?;
-        sqlx::query("UPDATE conteudo.personagens SET variante_atual = $2 WHERE id = $1").bind(pid).bind(vid).execute(&mut *tx).await?;
+        crate::personagens::variantes::criar_original(&mut tx, pid, None, None, &descricao, &[]).await?;
         tx.commit().await
     }
     .await;

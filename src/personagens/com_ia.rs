@@ -87,18 +87,18 @@ pub async fn criar_com_ia(State(st): State<AppState>, s: Sessao, mp: Multipart) 
              Descrição da família: {}\n{}\
              Aparência: descrição visual detalhada e fixa (cores, roupa, traços) para manter consistência nas ilustrações.\n\
              Personalidade e jeito de falar: curtos, adequados para crianças. Apelidos: até 3.\n\
-             nome_variante: nome curto da aparência atual (ex.: \"Super Léo Rangers\"); forma: normal, super, gigante...",
+             Forma: normal, super, gigante...",
             if estilo.is_empty() { "livre" } else { &estilo },
             if descricao.is_empty() { "(sem descrição: a família enviou fotos)" } else { &descricao },
             if arquivos.is_empty() { "" } else { "As fotos anexadas mostram o personagem: descreva a aparência a partir delas (cabelo, olhos, pele, roupa, cores, traços marcantes), coerente com a descrição. Não cite que é uma foto.\n" },
         ),
         schema: serde_json::json!({
             "type": "object", "additionalProperties": false,
-            "required": ["aparencia", "personalidade", "jeito_falar", "apelidos", "nome_variante", "forma"],
+            "required": ["aparencia", "personalidade", "jeito_falar", "apelidos", "forma"],
             "properties": {
                 "aparencia": { "type": "string" }, "personalidade": { "type": "string" },
                 "jeito_falar": { "type": "string" }, "apelidos": { "type": "array", "items": { "type": "string" } },
-                "nome_variante": { "type": "string" }, "forma": { "type": "string" }
+                "forma": { "type": "string" }
             }
         }),
     };
@@ -108,7 +108,7 @@ pub async fn criar_com_ia(State(st): State<AppState>, s: Sessao, mp: Multipart) 
     };
     let aparencia = ficha["aparencia"].as_str().unwrap_or(&descricao).to_string();
 
-    // 2) Fotos: guardadas só no servidor (pasta "fotos"), usadas apenas para gerar o desenho.
+    // 2) Fotos: guardadas na pasta "fotos"; viram referência da variante Original (e do desenho dela).
     let mut fotos = Vec::new();
     for bytes in &arquivos {
         let Some((mime, ext)) = midia::tipo_imagem(bytes) else {
@@ -126,7 +126,6 @@ pub async fn criar_com_ia(State(st): State<AppState>, s: Sessao, mp: Multipart) 
         "personalidade": ficha["personalidade"], "jeito_falar": ficha["jeito_falar"], "fotos": fotos,
         "grupos": super::grupos::do_texto(&texto("grupos")),
     });
-    let nome_var = ficha["nome_variante"].as_str().filter(|v| !v.trim().is_empty()).unwrap_or("Principal").to_string();
     let r = async {
         let mut tx = st.db.begin().await?;
         let pid: Uuid = sqlx::query_scalar(
@@ -139,19 +138,16 @@ pub async fn criar_com_ia(State(st): State<AppState>, s: Sessao, mp: Multipart) 
         .bind(&ficha_json)
         .fetch_one(&mut *tx)
         .await?;
-        let vid: Uuid = sqlx::query_scalar(
-            "INSERT INTO conteudo.variantes (personagem_id, slug, nome, forma, estilo, descricao)
-             VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+        // Variante Original: a aparência da ficha, com as fotos enviadas como referência.
+        let vid = super::variantes::criar_original(
+            &mut tx,
+            pid,
+            ficha["forma"].as_str(),
+            Some(estilo.as_str()).filter(|e| !e.is_empty()),
+            &aparencia,
+            &fotos,
         )
-        .bind(pid)
-        .bind(util::slug(&nome_var))
-        .bind(&nome_var)
-        .bind(ficha["forma"].as_str())
-        .bind(Some(estilo.as_str()).filter(|e| !e.is_empty()))
-        .bind(&aparencia)
-        .fetch_one(&mut *tx)
         .await?;
-        sqlx::query("UPDATE conteudo.personagens SET variante_atual = $2 WHERE id = $1").bind(pid).bind(vid).execute(&mut *tx).await?;
         tx.commit().await?;
         Ok::<_, sqlx::Error>(vid)
     }

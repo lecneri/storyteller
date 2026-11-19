@@ -40,7 +40,7 @@ fn ir_ficha(slug: &str) -> Response {
 }
 
 /// Guarda as fotos na pasta privada do personagem e soma na ficha.
-pub(super) async fn guardar(st: &AppState, s: &Sessao, slug: &str, arquivos: &[Vec<u8>]) -> Result<(), String> {
+pub(super) async fn guardar(st: &AppState, s: &Sessao, slug: &str, arquivos: &[Vec<u8>]) -> Result<Vec<Uuid>, String> {
     let mut novas = Vec::new();
     for bytes in arquivos {
         let (mime, ext) = midia::tipo_imagem(bytes).filter(|(m, _)| *m != "image/gif").ok_or("Só fotos PNG, JPG ou WebP.")?;
@@ -61,7 +61,8 @@ pub(super) async fn guardar(st: &AppState, s: &Sessao, slug: &str, arquivos: &[V
     .map_err(|e| {
         tracing::error!("fotos na ficha: {e:#}");
         "Não consegui guardar a foto na ficha.".to_string()
-    })
+    })?;
+    Ok(novas)
 }
 
 /// POST /personagens/{slug}/fotos (multipart "fotos")
@@ -71,7 +72,7 @@ pub async fn enviar_fotos(State(st): State<AppState>, s: Sessao, Path(slug): Pat
         Err(msg) => return detalhe_com(&st, s, &slug, Some(msg)).await,
     };
     match guardar(&st, &s, &slug, &arquivos).await {
-        Ok(()) => ir_ficha(&slug),
+        Ok(_) => ir_ficha(&slug),
         Err(msg) => detalhe_com(&st, s, &slug, Some(msg)).await,
     }
 }

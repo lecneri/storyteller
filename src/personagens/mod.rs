@@ -6,7 +6,7 @@ pub mod grupos;
 mod juntar;
 mod paginas;
 mod renomear;
-mod variantes;
+pub mod variantes;
 
 pub use com_ia::*;
 pub use juntar::*;
