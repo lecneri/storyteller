@@ -3,7 +3,7 @@
 use serde_json::{json, Value};
 
 use super::deteccao::PersonagemIA;
-use super::{regras_faixa, Bloco, Conteudo, NaCena, Secundario, ANIMACOES, FAIXAS};
+use super::{faixa_texto, regras_faixa, Bloco, Conteudo, NaCena, Secundario, ANIMACOES, FAIXAS};
 
 pub fn schema_historia() -> Value {
     json!({
@@ -30,7 +30,7 @@ pub fn schema_historia() -> Value {
                                     "descricao": { "type": "string" } }
                 }
             },
-            "faixa": { "type": "string", "enum": FAIXAS, "description": "faixa etária escolhida para esta história" },
+            "faixa": { "type": "string", "description": "público / faixa etária desta história (ex.: 4-6, 8-10, 13-17, adulto)" },
             "paginas": {
                 "type": "array",
                 "items": {
@@ -73,10 +73,9 @@ pub fn schema_historia() -> Value {
     })
 }
 
-pub const SISTEMA: &str = "Você é um autor de histórias infantis em português do Brasil. \
-Escreve livros ilustrados: cada página tem uma ilustração e um texto curto. \
-Regras fixas: conteúdo adequado para crianças; nada de violência gráfica, medo excessivo, linguagem imprópria ou temas adultos; \
-vilões são engraçados e atrapalhados, nunca cruéis; lutas são divertidas, sem ferimentos; finais positivos. \
+pub const SISTEMA: &str = "Você é um autor de livros ilustrados em português do Brasil: cada página tem uma ilustração e um texto. \
+Cada livro tem uma faixa etária (o público). Adapte tom, temas, vocabulário, tamanho do texto, vilões, conflitos e finais a essa faixa: \
+o que serve para 3 anos não serve para 15 nem para adultos, e o contrário também. \
 Respeite a ficha de cada personagem (aparência, personalidade, jeito de falar e relações com os outros: quem é irmão, filho, primo de quem). \
 A descrição de uma variante diz só o que muda nela (roupa, forma, poderes); o resto da aparência é o da ficha. \
 Responda apenas com o JSON pedido.";
@@ -84,7 +83,7 @@ Responda apenas com o JSON pedido.";
 #[allow(clippy::too_many_arguments)]
 pub fn montar_prompt(
     briefing: &str,
-    leitores: &[(String, String)],
+    faixa: &str,
     narracao: &str,
     citados: &[NaCena],
     todos: &[PersonagemIA],
@@ -93,19 +92,20 @@ pub fn montar_prompt(
     memorias: &[(String, String)],
     vozes_usadas: &[String],
 ) -> String {
-    // Faixa etária: a IA escolhe pelo briefing, pelas fichas (idade dos personagens) e pelas crianças da família.
+    // Faixa etária: a da história (escolhida pela família) ou, vazia, a IA escolhe pelo briefing e pelas fichas.
     let regras: Vec<String> = FAIXAS
         .iter()
         .map(|f| {
             let (pmin, pmax, wmin, wmax) = regras_faixa(f);
-            format!("  {f} anos: {pmin} a {pmax} páginas, {wmin} a {wmax} palavras por página")
+            format!("  {}: {pmin} a {pmax} páginas, {wmin} a {wmax} palavras por página", faixa_texto(f))
         })
         .collect();
-    let criancas = if leitores.is_empty() {
-        String::new()
+    let faixa = faixa.trim();
+    let regra_faixa = if faixa.is_empty() {
+        "- Faixa etária: escolha em \"faixa\" o público que combina com o briefing (se ele citar idade, série ou para quem é, siga) \
+           e com as fichas (ex.: protagonista \"menino de 4 anos\" → 4-6). Na dúvida, 4-6.".to_string()
     } else {
-        let l: Vec<String> = leitores.iter().map(|(n, f)| format!("{n} ({f} anos)")).collect();
-        format!(" Crianças que leem nesta família: {}.", l.join(", "))
+        format!("- Faixa etária: \"{faixa}\" (escolhida pela família; devolva igual em \"faixa\"). Escreva para esse público.")
     };
     let fichas: Vec<Value> = citados
         .iter()
@@ -123,9 +123,9 @@ pub fn montar_prompt(
             });
             let falas = extra.map(|x| {
                 let (vs, lingua) = (x["slug"].as_str().unwrap_or_default(), x["lingua"].as_str().unwrap_or("Português"));
-                let em = if lingua == "Português" { String::new() } else { format!(", escritas em {lingua} (frases curtas e palavras simples, para uma criança que está aprendendo)") };
+                let em = if lingua == "Português" { String::new() } else { format!(", escritas em {lingua} (frases curtas e palavras simples, para quem está aprendendo)") };
                 if c.misto {
-                    format!("{} MISTURA as línguas: algumas falas curtas usam voz = \"{vs}\"{em}; logo depois, em outro bloco com voz = \"\", ele mesmo repete ou explica em português, para a criança aprender.", p.nome)
+                    format!("{} MISTURA as línguas: algumas falas curtas usam voz = \"{vs}\"{em}; logo depois, em outro bloco com voz = \"\", ele mesmo repete ou explica em português, para o leitor aprender.", p.nome)
                 } else {
                     format!("TODAS as falas de {} usam voz = \"{vs}\"{em}. O narrador pode contar em português o que ele disse.", p.nome)
                 }
@@ -207,9 +207,8 @@ pub fn montar_prompt(
         )
     };
     format!(
-        "Escreva uma história infantil.\n{estilo}\
-         - Faixa etária: escolha em \"faixa\" a que combina com o briefing (se ele citar idade ou série, siga) e com as fichas \
-           (ex.: protagonista \"menino de 4 anos\" → 4-6).{criancas} Na dúvida, 4-6. Siga o tamanho da faixa escolhida:\n{}\n\
+        "Escreva um livro ilustrado.\n{estilo}\
+         {regra_faixa} Tamanho de referência (ajuste à faixa; para outras idades, siga a mais próxima):\n{}\n\
          - {modo}\n\
          - Em cada página: \"cena\" descreve a ilustração (lugar, ação, expressões, enquadramento), sem texto escrito na imagem; \
            \"personagens\" lista quem aparece na ilustração com slug e variante (use a variante_a_usar, salvo se o briefing pedir outra; as variantes em tambem_citadas também foram pedidas: use cada uma nas páginas em que fizer sentido, por exemplo depois de uma transformação, e escreva a cena com a aparência da variante daquela página); \
@@ -482,7 +481,7 @@ mod testes {
         assert!(!t.contains("robo"), "voz extra em português não é de outra língua");
         assert_eq!(falas_livres("Noob", &json!([])), None);
         // No prompt, sem @pedro!ingles: a ficha leva o aviso das vozes.
-        let t = montar_prompt("Pedro aprende inglês", &[], "por-personagem", &[cena("leo")], &[p("leo", "Léo", &[], &[])], "", "", &[], &[]);
+        let t = montar_prompt("Pedro aprende inglês", "", "por-personagem", &[cena("leo")], &[p("leo", "Léo", &[], &[])], "", "", &[], &[]);
         assert!(t.contains("quando a fala for INTEIRA em Inglês"));
     }
 
@@ -490,19 +489,20 @@ mod testes {
     fn prompt_traz_faixas_e_tira_vozes_ja_usadas() {
         let todos = vec![p("leo", "Léo", &[], &[])];
         let usadas = vec!["pt-BR-FranciscaNeural".to_string()];
-        let t = montar_prompt("O @leo na lua", &[("Pedro".into(), "4-6".into())], "por-personagem", &[cena("leo")], &todos, "", "", &[], &usadas);
+        let t = montar_prompt("O @leo na lua", "13-17", "por-personagem", &[cena("leo")], &todos, "", "", &[], &usadas);
         for f in FAIXAS {
-            assert!(t.contains(&format!("{f} anos:")), "falta a regra da faixa {f}");
+            assert!(t.contains(&format!("{}:", faixa_texto(f))), "falta a regra da faixa {f}");
         }
-        assert!(t.contains("Pedro (4-6 anos)"));
+        assert!(t.contains("\"13-17\" (escolhida pela família"));
+        assert!(!t.contains("infantil"));
         assert!(t.contains("voz:en-US-GuyNeural"));
         assert!(!t.contains("voz:pt-BR-FranciscaNeural"), "voz do narrador não pode ir para secundários");
         // Só narrador: sem lista de vozes do sistema.
-        let t = montar_prompt("", &[], "narrador", &[], &todos, "", "", &[], &[]);
+        let t = montar_prompt("", "", "narrador", &[], &todos, "", "", &[], &[]);
         assert!(!t.contains("VOZES DO SISTEMA"));
         assert!(t.contains("sem briefing"));
         assert!(!t.contains("INSTRUÇÕES DESTA COLEÇÃO"));
-        let t = montar_prompt("", &[], "narrador", &[], &todos, "", "Ensine palavras em inglês", &[], &[]);
+        let t = montar_prompt("", "", "narrador", &[], &todos, "", "Ensine palavras em inglês", &[], &[]);
         assert!(t.contains("INSTRUÇÕES DESTA COLEÇÃO (valem para toda história dela; siga junto com o briefing):\nEnsine palavras em inglês"));
     }
 

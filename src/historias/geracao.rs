@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use super::deteccao::{citar_historias, detectar, personagens_da_familia};
 use super::prompt::{montar_prompt, normalizar, schema_historia, SISTEMA};
-use super::{gerar_memoria, Conteudo, NaCena, FAIXAS};
+use super::{faixa_limpa, gerar_memoria, Conteudo, NaCena};
 use crate::{ia, util, AppState};
 
 #[derive(sqlx::FromRow)]
@@ -112,10 +112,6 @@ pub async fn preparar(st: &AppState, id: Uuid) -> anyhow::Result<Preparo> {
         }
     }
 
-    let leitores: Vec<(String, String)> = sqlx::query_as("SELECT nome, faixa FROM acesso.leitores WHERE familia_id = $1 ORDER BY nome")
-        .bind(h.familia_id)
-        .fetch_all(&st.db)
-        .await?;
     let vozes = crate::tts::vozes_da_familia(st, h.familia_id).await?;
     let mut vozes_usadas: Vec<String> = vec![vozes.narrador.id.clone()];
     vozes_usadas.extend(vozes.personagens.iter().chain(vozes.extras.iter()).map(|(_, v)| v.id.clone()));
@@ -129,7 +125,7 @@ pub async fn preparar(st: &AppState, id: Uuid) -> anyhow::Result<Preparo> {
             }
         }
     }
-    let mut prompt = montar_prompt(&briefing, &leitores, &h.narracao, &citados, &todos, estilo, instrucoes, &memorias, &vozes_usadas);
+    let mut prompt = montar_prompt(&briefing, &h.faixa, &h.narracao, &citados, &todos, estilo, instrucoes, &memorias, &vozes_usadas);
     prompt.push_str(&super::prompt::bloco_lugares(&crate::lugares::para_ia(&lugares_familia, &lugares_citados)));
     let pedido = ia::PedidoTexto { sistema: SISTEMA.into(), imagens: Vec::new(), prompt, schema: schema_historia() };
     let lugares = lugares_familia.into_iter().map(|l| l.slug).collect();
@@ -158,7 +154,8 @@ pub fn prompt_para_copiar(p: &ia::PedidoTexto) -> String {
 pub async fn gravar(st: &AppState, id: Uuid, p: &Preparo, resposta: &Value) -> anyhow::Result<()> {
     let (h, citados, todos, continua_de) = (p, &p.citados, &p.todos, &p.continua_de);
     let titulo = resposta["titulo"].as_str().unwrap_or("Nova história").trim().to_string();
-    let faixa = resposta["faixa"].as_str().filter(|f| FAIXAS.contains(f)).unwrap_or(&h.faixa).to_string();
+    // A faixa escolhida pela família vale; vazia, fica a que a IA escolheu.
+    let faixa = if h.faixa.trim().is_empty() { faixa_limpa(resposta["faixa"].as_str().unwrap_or_default()) } else { h.faixa.clone() };
     let conteudo: Conteudo = serde_json::from_value(
         json!({ "paginas": resposta["paginas"], "secundarios": resposta["secundarios"], "lugares": resposta["lugares"] }),
     )?;

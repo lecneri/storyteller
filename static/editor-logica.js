@@ -91,8 +91,8 @@
       (numLugar ? ' (use a imagem só para o formato, os objetos e as cores do lugar; a luz, a hora do dia e o clima seguem a cena)' : '') +
       '. O lugar deve ser reconhecível e igual em todas as páginas.' : null;
     return [
-      'Ilustração de livro infantil, página inteira, formato retrato 3:4.',
-      'Estilo: ' + (estilo ? estilo + ', ' : '') + 'cores vivas, traço limpo e amigável, para crianças de ' + ctx.faixa + ' anos.',
+      'Ilustração de livro, página inteira, formato retrato 3:4.',
+      'Estilo: ' + (estilo ? estilo + ', ' : '') + 'cores vivas, traço limpo, adequado a um livro para ' + faixaTexto(ctx.faixa) + '.',
       '',
       'Cena: ' + (pag.cena || '(descreva a cena)'),
       cenario,
@@ -154,7 +154,14 @@
     return achado ? achado[0] : 'adulto';
   }
 
-  const api = { adivinharTipo, chaveVoz, nomeVoz, miniatura, varianteDe, referencias, promptImagem, promptAnimacao, lugarDaPagina, refsDaPagina,
+  // Faixa para mostrar: "4-6" → "4-6 anos"; "adulto" fica; vazia → "todas as idades" (igual ao servidor).
+  function faixaTexto(f) {
+    f = (f || '').trim();
+    if (!f) return 'todas as idades';
+    return /^[0-9 -]+$/.test(f) ? f + ' anos' : f;
+  }
+
+  const api = { faixaTexto, adivinharTipo, chaveVoz, nomeVoz, miniatura, varianteDe, referencias, promptImagem, promptAnimacao, lugarDaPagina, refsDaPagina,
     vozDoSecundario, secundarioVirouPersonagem, renomearSecundario };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else raiz.EditorLogica = api;

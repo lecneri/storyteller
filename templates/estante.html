@@ -36,6 +36,10 @@
       <label>Narração
         <select name="narracao"><option value="por-personagem">Por personagem</option><option value="narrador">Só narrador</option></select>
       </label>
+      <label>Faixa etária <small class="suave">(para quem é; vazio = a IA escolhe)</small>
+        <input name="faixa" list="faixas-sugestao" maxlength="40" value="{{ ultima_faixa }}" placeholder="Ex.: 4-6, 11 e 13 anos, adulto">
+        <datalist id="faixas-sugestao">{% for f in crate::historias::FAIXAS %}<option value="{{ f }}">{% endfor %}</datalist>
+      </label>
       <label>Páginas <small class="suave">(até 30)</small>
         <input type="number" name="paginas" min="4" max="30" step="1" placeholder="Automático (pela idade)" title="Vazio: a IA escolhe pela idade (6 a 14 páginas)">
       </label>

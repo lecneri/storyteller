@@ -49,9 +49,9 @@ async fn buscar(st: &AppState, familia: Uuid, slug: &str) -> Option<Lugar> {
 /// Prompt do desenho de referência do lugar (sem personagens).
 pub fn prompt_lugar(nome: &str, descricao: &str, com_imagens: bool) -> String {
     let mut p = format!(
-        "Ilustração de livro infantil, formato retrato 3:4: o cenário \"{nome}\", SEM nenhum personagem, pessoa ou animal.\n\
+        "Ilustração de livro, formato retrato 3:4: o cenário \"{nome}\", SEM nenhum personagem, pessoa ou animal.\n\
          Como é o lugar (sempre igual em todas as histórias): {}\n\
-         Estilo: ilustração de livro infantil, cores vivas, traço limpo e amigável. Luz de dia, enquadramento amplo mostrando o lugar inteiro.\n\
+         Estilo: ilustração de livro, cores vivas, traço limpo. Luz de dia, enquadramento amplo mostrando o lugar inteiro.\n\
          Não escreva nenhum texto, letra ou número na imagem.",
         if descricao.trim().is_empty() { "(invente um visual marcante e fácil de reconhecer)" } else { descricao.trim() }
     );

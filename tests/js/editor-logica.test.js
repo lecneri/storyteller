@@ -46,7 +46,8 @@ test('prompt de imagem: referências numeradas, descrições e secundários', ()
   const ctx = { personagens, secundarios: [{ nome: 'Pirata Caveira', descricao: 'esqueleto de chapéu' }], estilo: 'aquarela', faixa: '4-6' };
   const p = L.promptImagem(pag, ctx);
   assert.match(p, /Estilo: aquarela, Power Rangers, cores vivas/);
-  assert.match(p, /crianças de 4-6 anos/);
+  assert.match(p, /livro para 4-6 anos\./);
+  assert.doesNotMatch(p, /infantil|crianças/);
   assert.match(p, /Cena: Na lua/);
   assert.match(p, /- Noob — shih tzu \(sem imagem de referência\)/);
   assert.match(p, /- Imagem 1: Pedro \(Ranger\) — use a imagem só para o rosto/);
@@ -128,4 +129,11 @@ test('lugar da página: cenário no prompt e a imagem depois das dos personagens
   assert.match(cav, /Cenário: Caverna do Zorgo — pedras roxas\. O lugar deve/);
   assert.doesNotMatch(L.promptImagem({ cena: 'x' }, ctx), /Cenário/);
   assert.equal(L.lugarDaPagina({ lugar: 'sumiu' }, ctx), null);
+});
+
+test('faixa livre: números ganham "anos", texto fica como está', () => {
+  assert.equal(L.faixaTexto('4-6'), '4-6 anos');
+  assert.equal(L.faixaTexto('adulto'), 'adulto');
+  assert.equal(L.faixaTexto('11 e 13 anos'), '11 e 13 anos');
+  assert.equal(L.faixaTexto(''), 'todas as idades');
 });

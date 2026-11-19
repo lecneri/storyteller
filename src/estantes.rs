@@ -244,6 +244,7 @@ struct PaginaEstante {
     e: EstanteResumo,
     personagens: Vec<PersonagemOpcao>,
     outras: Vec<SemEstante>,
+    ultima_faixa: String,
 }
 
 impl PaginaEstante {
@@ -277,7 +278,10 @@ pub async fn abrir(State(st): State<AppState>, s: Sessao, Path(slug): Path<Strin
     .fetch_all(&st.db)
     .await;
     match (personagens_opcoes(&st, s.familia_id).await, outras) {
-        (Ok(personagens), Ok(outras)) => render(PaginaEstante { s, e, personagens, outras }),
+        (Ok(personagens), Ok(outras)) => {
+            let ultima_faixa = crate::historias::ultima_faixa(&st, s.familia_id).await;
+            render(PaginaEstante { s, e, personagens, outras, ultima_faixa })
+        }
         (Err(e), _) | (_, Err(e)) => erro_interno(e.into()),
     }
 }

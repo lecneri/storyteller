@@ -7,7 +7,25 @@ pub const ANIMACOES: [&str; 10] = [
     "nenhuma", "estrelas-piscando", "chuva", "neve", "brilhos", "folhas", "bolhas", "tremor", "onomatopeia-pop",
     "explosao",
 ];
-pub const FAIXAS: [&str; 4] = ["2-3", "4-6", "7-9", "10-12"];
+/// Faixas de exemplo (sugestões na tela e referência de tamanho para a IA). A faixa da história é texto livre.
+pub const FAIXAS: [&str; 6] = ["2-3", "4-6", "7-9", "10-12", "13-17", "adulto"];
+
+/// Faixa digitada pela família ou devolvida pela IA: sem espaços sobrando, até 40 letras.
+pub fn faixa_limpa(f: &str) -> String {
+    f.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(40).collect()
+}
+
+/// Faixa para mostrar: "4-6" → "4-6 anos"; "adulto" e "5 anos" ficam como estão; vazia → "idade livre".
+pub fn faixa_texto(f: &str) -> String {
+    let f = f.trim();
+    if f.is_empty() {
+        "idade livre".into()
+    } else if f.chars().all(|c| c.is_ascii_digit() || c == '-' || c == ' ') {
+        format!("{f} anos")
+    } else {
+        f.into()
+    }
+}
 
 // ───────────── modelo do conteúdo (páginas e blocos) ─────────────
 
@@ -137,6 +155,8 @@ pub fn regras_faixa(faixa: &str) -> (u32, u32, u32, u32) {
         "2-3" => (6, 8, 15, 30),
         "7-9" => (10, 12, 60, 110),
         "10-12" => (12, 14, 100, 160),
+        "13-17" => (12, 16, 140, 220),
+        "adulto" => (14, 20, 180, 300),
         _ => (8, 10, 30, 60),
     }
 }
@@ -175,6 +195,15 @@ mod testes {
         let v = serde_json::to_value(&c).unwrap();
         assert!(v.get("secundarios").is_none());
         assert!(v["paginas"][0]["blocos"][0].get("voz").is_none());
+    }
+
+    #[test]
+    fn faixa_livre_limpa_e_mostra() {
+        assert_eq!(faixa_limpa("  11 e   13 anos "), "11 e 13 anos");
+        assert_eq!(faixa_limpa(&"x".repeat(60)).len(), 40);
+        assert_eq!(faixa_texto("4-6"), "4-6 anos");
+        assert_eq!(faixa_texto("adulto"), "adulto");
+        assert_eq!(faixa_texto(""), "idade livre");
     }
 
     #[test]

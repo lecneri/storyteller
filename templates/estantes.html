@@ -26,7 +26,7 @@
           {% if let Some(c) = h.capa %}<img src="/midia/{{ c }}" alt="">{% else %}<div class="capa-vazia">📖</div>{% endif %}
           <strong>{{ h.titulo }}</strong>
         </a>
-        <span class="suave">{{ h.paginas }} pág · {{ h.faixa }} · <a href="/historias/{{ h.id }}">✏️ editar</a></span>
+        <span class="suave">{{ h.paginas }} pág · {{ crate::historias::faixa_texto(h.faixa) }} · <a href="/historias/{{ h.id }}">✏️ editar</a></span>
       </div>
       {% endfor %}
       <a class="livro novo" href="/estantes/{{ e.slug }}#nova"><div class="capa-vazia">＋</div><strong>Nova história</strong></a>

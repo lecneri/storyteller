@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use super::deteccao::personagens_da_familia;
 use super::geracao::slug_livre;
-use super::{Conteudo, ANIMACOES, FAIXAS};
+use super::{faixa_limpa, Conteudo, ANIMACOES};
 use crate::{
     auth::Sessao,
     jobs, midia, util,
@@ -47,6 +47,19 @@ struct PaginaHistorias {
     itens: Vec<ItemHistoria>,
     personagens: Vec<(String, String)>,
     estantes: Vec<(String, String)>,
+    /// Faixa da última história criada (o campo da nova história já vem com ela).
+    ultima_faixa: String,
+}
+
+/// Faixa da última história criada pela família (vazia se nenhuma).
+pub async fn ultima_faixa(st: &AppState, familia: Uuid) -> String {
+    sqlx::query_scalar("SELECT faixa FROM conteudo.historias WHERE familia_id = $1 AND faixa <> '' ORDER BY criado_em DESC LIMIT 1")
+        .bind(familia)
+        .fetch_optional(&st.db)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default()
 }
 
 pub async fn lista(State(st): State<AppState>, s: Sessao) -> Response {
@@ -79,8 +92,10 @@ pub async fn lista(State(st): State<AppState>, s: Sessao) -> Response {
     .bind(s.familia_id)
     .fetch_all(&st.db)
     .await;
+    let ultima_faixa = ultima_faixa(&st, s.familia_id).await;
     match (itens, personagens, estantes) {
         (Ok(itens), Ok(p), Ok(estantes)) => render(PaginaHistorias {
+            ultima_faixa,
             s,
             itens,
             personagens: p.into_iter().map(|p| (p.slug, p.nome)).collect(),
@@ -94,7 +109,7 @@ pub async fn lista(State(st): State<AppState>, s: Sessao) -> Response {
 pub struct FormNova {
     #[serde(default)]
     briefing: String,
-    /// Opcional: sem ela, a IA escolhe (ou vale a criança mais nova da família).
+    /// Opcional, texto livre ("5 anos", "8-10", "adulto"): sem ela, a IA escolhe.
     #[serde(default)]
     faixa: String,
     narracao: String,
@@ -116,21 +131,8 @@ fn paginas_pedidas(t: &str) -> Option<i32> {
 }
 
 pub async fn criar(State(st): State<AppState>, s: Sessao, Form(f): Form<FormNova>) -> Response {
-    let faixa = if FAIXAS.contains(&f.faixa.as_str()) {
-        f.faixa.clone()
-    } else {
-        // Ponto de partida (a IA ajusta): a faixa da criança mais nova da família, ou 4-6.
-        sqlx::query_scalar::<_, String>(
-            "SELECT faixa FROM acesso.leitores WHERE familia_id = $1
-              ORDER BY array_position(ARRAY['2-3','4-6','7-9','10-12'], faixa) LIMIT 1",
-        )
-        .bind(s.familia_id)
-        .fetch_optional(&st.db)
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or_else(|| "4-6".into())
-    };
+    // Faixa escolhida pela família (texto livre); vazia = a IA escolhe ao escrever.
+    let faixa = faixa_limpa(&f.faixa);
     let narracao = if f.narracao == "narrador" { "narrador" } else { "por-personagem" };
     let manual = f.modo == "manual";
     let id = Uuid::new_v4();
@@ -393,7 +395,7 @@ pub async fn salvar(
         .bind(&slug)
         .bind(narracao)
         .bind(&valor)
-        .bind(Some(c.faixa.as_str()).filter(|f| FAIXAS.contains(f)))
+        .bind(Some(faixa_limpa(&c.faixa)).filter(|f| !f.is_empty()))
         .execute(&mut *tx)
         .await?
         .rows_affected();

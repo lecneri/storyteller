@@ -39,9 +39,9 @@ pub fn prompt_model_sheet(nome: &str, aparencia: &str, estilo: Option<&str>, com
     let estilo = match estilo.map(str::trim).filter(|e| !e.is_empty()) {
         Some(e) => format!(
             "ESTILO DE DESENHO: {e}. Desenhe exatamente nesse estilo (traço, formato dos olhos e do rosto, proporções, \
-             cores e sombreamento típicos de {e}), adaptado para livro infantil."
+             cores e sombreamento típicos de {e}), adaptado para livro ilustrado."
         ),
-        None => "Estilo: ilustração de livro infantil, cores vivas, traço limpo e amigável.".to_string(),
+        None => "Estilo: ilustração de livro, cores vivas, traço limpo.".to_string(),
     };
     let fotos = if com_fotos {
         "\nUse as imagens anexadas só como referência de traços (rosto, cabelo, cores, roupa) e transforme em desenho; não faça foto realista."
@@ -49,7 +49,7 @@ pub fn prompt_model_sheet(nome: &str, aparencia: &str, estilo: Option<&str>, com
         ""
     };
     format!(
-        "Folha de personagem (model sheet) para livro infantil: {nome}. {aparencia}\n\
+        "Folha de personagem (model sheet) para livro ilustrado: {nome}. {aparencia}\n\
          {estilo}\n\
          Corpo inteiro, de frente, pose neutra e simpática, fundo branco liso, formato retrato 3:4.\n\
          Não escreva nenhum texto, letra ou número na imagem.{fotos}"
@@ -86,7 +86,7 @@ pub async fn criar_com_ia(State(st): State<AppState>, s: Sessao, mp: Multipart) 
             "Crie a ficha do personagem \"{nome}\" (tipo: {tipo}). Estilo visual de referência: {}.\n\
              Descrição da família: {}\n{}\
              Aparência: descrição visual detalhada e fixa (cores, roupa, traços) para manter consistência nas ilustrações.\n\
-             Personalidade e jeito de falar: curtos, adequados para crianças. Apelidos: até 3.\n\
+             Personalidade e jeito de falar: curtos. Apelidos: até 3.\n\
              Forma: normal, super, gigante...",
             if estilo.is_empty() { "livre" } else { &estilo },
             if descricao.is_empty() { "(sem descrição: a família enviou fotos)" } else { &descricao },
