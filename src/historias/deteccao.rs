@@ -158,6 +158,25 @@ pub enum Citacao {
     Memoria(String),
     /// `#memoria`: a memória de todas as histórias da família.
     TodaMemoria,
+    /// `#estante` (no campo "usar da memória"): a memória das outras histórias da estante.
+    MemoriaEstante,
+}
+
+/// Campo "usar da memória" da nova história: `#estante`, `#todas` (ou `#memoria`) e `#historia` (a memória dela).
+pub fn citar_memoria(texto: &str) -> Vec<Citacao> {
+    let mut v: Vec<Citacao> = Vec::new();
+    for c in citar_historias(texto) {
+        let c = match c {
+            Citacao::Referencia(s) if s == "estante" => Citacao::MemoriaEstante,
+            Citacao::Referencia(s) if s == "todas" => Citacao::TodaMemoria,
+            Citacao::Referencia(s) => Citacao::Memoria(s),
+            outra => outra,
+        };
+        if !v.contains(&c) {
+            v.push(c);
+        }
+    }
+    v
 }
 
 pub fn citar_historias(briefing: &str) -> Vec<Citacao> {
@@ -266,6 +285,10 @@ mod testes {
         assert_eq!(
             citar_historias("Revise #a-lua:memoria, use #memoria e continue #o-mar."),
             vec![Citacao::Memoria("a-lua".into()), Citacao::TodaMemoria, r("o-mar")]
+        );
+        assert_eq!(
+            citar_memoria("#estante #a-lua #todas #o-mar:memoria #memoria"),
+            vec![Citacao::MemoriaEstante, Citacao::Memoria("a-lua".into()), Citacao::TodaMemoria, Citacao::Memoria("o-mar".into())]
         );
         assert!(citar_historias("sem citação # solta").is_empty());
     }

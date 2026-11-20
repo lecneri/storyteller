@@ -1,6 +1,7 @@
 // Briefing: autocompletar de @personagem(:variante)(!voz), @grupo:nome, @lugar:nome e #historia, e chips do que foi detectado.
 // Voz extra: "@pedro!ingles" (só nessa voz/língua) ou "@pedro!misto-ingles" (mistura com português).
 // Caixas com data-mencoes="simples" (ex.: Relações da ficha) só sugerem @personagem, sem variante, voz ou #história.
+// Caixas com data-mencoes="memoria" (usar da memória) só sugerem #estante, #todas e #história.
 (function () {
   const { el } = window.St;
   const caixas = document.querySelectorAll('textarea[name="briefing"], textarea[data-mencoes]');
@@ -26,11 +27,12 @@
     ta.parentNode.insertBefore(chips, lista.nextSibling);
     let opcoes = [], ativa = 0, inicio = -1;
     const simples = ta.dataset.mencoes === 'simples';
+    const memoria = ta.dataset.mencoes === 'memoria';
 
     function sugestoes() {
       const pos = ta.selectionStart;
       const antes = ta.value.slice(0, pos);
-      const m = antes.match(simples ? /(@)([\p{L}\p{N}_-]*)$/u : /([@#])([\p{L}\p{N}_:!-]*)$/u);
+      const m = antes.match(simples ? /(@)([\p{L}\p{N}_-]*)$/u : memoria ? /(#)([\p{L}\p{N}_-]*)$/u : /([@#])([\p{L}\p{N}_:!-]*)$/u);
       if (!m) { fechar(); return; }
       inicio = pos - m[0].length;
       const termo = norm(m[2]);
@@ -73,8 +75,10 @@
           }
         }
       } else {
-        opcoes = dados.historias.filter((h) => norm(h.slug + ' ' + h.titulo).includes(termo))
-          .map((h) => ({ txt: '#' + h.slug, rot: '📖 ' + h.titulo }));
+        opcoes = (memoria ? [{ txt: '#estante', rot: '🧠 Memória da estante' }, { txt: '#todas', rot: '🧠 Memória de todas as histórias' }] : [])
+          .filter((o) => norm(o.txt + ' ' + o.rot).includes(termo))
+          .concat(dados.historias.filter((h) => norm(h.slug + ' ' + h.titulo).includes(termo))
+            .map((h) => ({ txt: '#' + h.slug, rot: '📖 ' + h.titulo })));
       }
       opcoes = opcoes.slice(0, 12);
       if (!opcoes.length) { fechar(); return; }
@@ -111,7 +115,11 @@
       const texto = ta.value;
       const t = '-' + norm(texto) + '-';
       const achados = [];
-      for (const p of dados.personagens) {
+      if (memoria) {
+        if (/#estante(?![a-z0-9-])/i.test(texto)) achados.push({ rot: '🧠 Estante', remover: () => { ta.value = ta.value.replace(/#estante\s?/gi, ''); detectar(); } });
+        if (/#(todas|memoria)(?![a-z0-9-])/i.test(texto)) achados.push({ rot: '🧠 Todas', remover: () => { ta.value = ta.value.replace(/#(todas|memoria)\s?/gi, ''); detectar(); } });
+      }
+      for (const p of memoria ? [] : dados.personagens) {
         // Todas as menções diretas (o mesmo personagem pode vir com variantes diferentes: transformação).
         const re = new RegExp('@' + p.slug + '(?::([a-z0-9-]+))?(?:!([a-z0-9-]+))?(?![a-z0-9-])', 'gi');
         const diretas = [...texto.matchAll(re)];
@@ -137,12 +145,12 @@
           } });
         }
       }
-      for (const g of dados.grupos || []) {
+      for (const g of memoria ? [] : dados.grupos || []) {
         if (!new RegExp('@grupo:' + g.slug + '(?![a-z0-9-])', 'i').test(texto)) continue;
         const nomes = nomesDoGrupo(g, dados);
         achados.push({ rot: '👥 ' + g.nome + ': ' + nomes.join(', '), remover: () => { ta.value = ta.value.replace(new RegExp('@grupo:' + g.slug + '\\s?', 'gi'), ''); detectar(); } });
       }
-      for (const l of dados.lugares || []) {
+      for (const l of memoria ? [] : dados.lugares || []) {
         if (!new RegExp('@lugar:' + l.slug + '(?![a-z0-9-])', 'i').test(texto)) continue;
         achados.push({ rot: '📍 ' + l.nome, remover: () => { ta.value = ta.value.replace(new RegExp('@lugar:' + l.slug + '\\s?', 'gi'), ''); detectar(); } });
       }

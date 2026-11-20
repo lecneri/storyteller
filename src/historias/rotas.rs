@@ -123,9 +123,12 @@ pub struct FormNova {
     /// Número de páginas (4 a 30); vazio = a IA escolhe pela idade.
     #[serde(default)]
     paginas: String,
-    /// "1": a geração recebe a memória das histórias da mesma estante.
+    /// O que a IA deve gravar na memória desta história (ex.: "as palavras em inglês ensinadas").
     #[serde(default)]
-    usar_memoria_estante: Option<String>,
+    memoria_gravar: String,
+    /// Memória a usar: #estante, #historia, #todas.
+    #[serde(default)]
+    memoria_usar: String,
 }
 
 /// Páginas pedidas no formulário, dentro do limite (4 a 30); vazio ou inválido = automático.
@@ -147,8 +150,8 @@ pub async fn criar(State(st): State<AppState>, s: Sessao, Form(f): Form<FormNova
     };
     let r = sqlx::query(
         "INSERT INTO conteudo.historias (id, familia_id, slug, titulo, faixa, narracao, briefing, estado, conteudo, criado_por, visibilidade,
-                                         paginas_pedidas, usar_memoria_estante)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
+                                         paginas_pedidas, memoria_gravar, memoria_usar)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
     )
     .bind(id)
     .bind(s.familia_id)
@@ -162,7 +165,8 @@ pub async fn criar(State(st): State<AppState>, s: Sessao, Form(f): Form<FormNova
     .bind(s.usuario_id)
     .bind(if ["privado", "compartilhado", "publico"].contains(&f.visibilidade.as_str()) { f.visibilidade.as_str() } else { "herdar" })
     .bind(paginas_pedidas(&f.paginas))
-    .bind(f.usar_memoria_estante.is_some())
+    .bind(Some(f.memoria_gravar.trim()).filter(|t| !t.is_empty()))
+    .bind(Some(f.memoria_usar.trim()).filter(|t| !t.is_empty()))
     .execute(&st.db)
     .await;
     if let Err(e) = r {

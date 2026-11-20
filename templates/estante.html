@@ -40,7 +40,7 @@
 
   <section class="cartao largo" id="nova">
     <h2>✨ Nova história nesta estante</h2>
-    <p class="suave">Os personagens, o estilo e as instruções da estante já entram automaticamente. Cite outros com @ se quiser, e histórias com # (<code>#historia</code> para continuar dela, <code>#historia:memoria</code> ou <code>#memoria</code> para usar a memória).</p>
+    <p class="suave">Os personagens, o estilo e as instruções da estante já entram automaticamente. Cite outros com @ se quiser, e histórias com # (<code>#historia</code> para continuar dela; a memória vai nos campos 🧠 abaixo).</p>
     <form method="post" action="/historias" class="grade-form">
       <input type="hidden" name="estante" value="{{ e.slug }}">
       <label class="inteiro">Briefing <small class="suave">(opcional)</small>
@@ -55,8 +55,10 @@
       <label>Páginas <small class="suave">(até 30)</small>
         <input type="number" name="paginas" min="4" max="30" step="1" placeholder="Automático (pela idade)" title="Vazio: a IA escolhe pela idade (6 a 14 páginas)">
       </label>
-      <label class="check inteiro"><input type="checkbox" name="usar_memoria_estante" value="1"> 🧠 Usar a memória da estante
-        <small class="suave">O que já foi gravado na memória das outras histórias da estante (ex.: palavras aprendidas). Para gravar, peça no briefing: "grave na memória as palavras em inglês".</small></label>
+      <label class="inteiro">🧠 Gravar na memória <small class="suave">(opcional: o que a IA deve anotar desta história)</small>
+        <input name="memoria_gravar" maxlength="300" placeholder="Ex.: as palavras em inglês ensinadas"></label>
+      <label class="inteiro">🧠 Usar da memória <small class="suave">(opcional: <code>#estante</code>, <code>#nome-da-historia</code> ou <code>#todas</code>)</small>
+        <textarea name="memoria_usar" rows="1" data-mencoes="memoria" placeholder="Ex.: #estante"></textarea></label>
       <label>Quem pode ver
         <select name="visibilidade">
           <option value="herdar">Padrão (da estante / família)</option>

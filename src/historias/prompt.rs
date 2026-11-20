@@ -221,7 +221,7 @@ pub fn montar_prompt(
          - Personagens SECUNDÁRIOS (sem ficha) que aparecem nas ilustrações: descreva cada um uma vez em \"secundarios\" \
            (nome, tipo — crianca, animal, robo, vilao, adulto ou criatura — e aparência FIXA e detalhada, como uma ficha para o ilustrador: espécie/idade, corpo, rosto, roupa, cores, acessórios), \
            e em cada página liste em \"secundarios\" os nomes dos que aparecem na ilustração. A aparência não muda entre as páginas.\n\
-         - Use SOMENTE os personagens abaixo (pelos slugs). {secundarios}\n         - \"memoria\": só se o briefing ou as instruções pedirem para gravar ou lembrar algo; uma marcação curta por item \
+         - Use SOMENTE os personagens abaixo (pelos slugs). {secundarios}\n         - \"memoria\": só se GRAVAR NA MEMÓRIA, o briefing ou as instruções pedirem para gravar ou lembrar algo; uma marcação curta por item \
            (ex.: cada palavra em inglês ensinada, \"apple (maçã)\"). Senão, lista vazia.\n\n\
          PERSONAGENS:\n{}\n\n\
          {vozes_sistema}\
@@ -245,6 +245,15 @@ pub fn bloco_memoria(memoria: &[(String, Vec<String>)]) -> String {
          e ensinar coisas novas sem repetir tudo):\n{}\n",
         lista.join("\n")
     )
+}
+
+/// Campo "gravar na memória" da nova história: o que a IA deve listar em "memoria".
+pub fn bloco_gravar(gravar: &str) -> String {
+    let g = gravar.trim();
+    if g.is_empty() {
+        return String::new();
+    }
+    format!("\nGRAVAR NA MEMÓRIA (liste em \"memoria\", uma marcação curta por item, só o que aparece nesta história): {g}\n")
 }
 
 pub fn bloco_lugares(da_familia: &[Value]) -> String {
@@ -502,6 +511,12 @@ mod testes {
         // No prompt, sem @pedro!ingles: a ficha leva o aviso das vozes.
         let t = montar_prompt("Pedro aprende inglês", "", "por-personagem", &[cena("leo")], &[p("leo", "Léo", &[], &[])], "", "", &[], &[]);
         assert!(t.contains("quando a fala for INTEIRA em Inglês"));
+    }
+
+    #[test]
+    fn bloco_gravar_so_com_pedido() {
+        assert_eq!(bloco_gravar("  "), "");
+        assert!(bloco_gravar("as cores em inglês").contains("GRAVAR NA MEMÓRIA (liste em \"memoria\""));
     }
 
     #[test]

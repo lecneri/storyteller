@@ -3,7 +3,7 @@
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use super::deteccao::{citar_historias, detectar, personagens_da_familia, Citacao};
+use super::deteccao::{citar_historias, citar_memoria, detectar, personagens_da_familia, Citacao};
 use super::prompt::{montar_prompt, normalizar, schema_historia, SISTEMA};
 use super::{faixa_limpa, gerar_referencia, itens_memoria, Conteudo, NaCena};
 use crate::{ia, util, AppState};
@@ -19,6 +19,8 @@ struct HistoriaGerar {
     paginas_pedidas: Option<i32>,
     usar_memoria_estante: bool,
     estante_principal: Option<Uuid>,
+    memoria_gravar: Option<String>,
+    memoria_usar: Option<String>,
 }
 
 /// Tudo o que a geração precisa antes de chamar a IA (e para gravar a resposta depois).
@@ -37,7 +39,8 @@ pub struct Preparo {
 /// Monta o pedido à IA a partir do briefing, da estante, dos personagens e das histórias citadas.
 pub async fn preparar(st: &AppState, id: Uuid) -> anyhow::Result<Preparo> {
     let h = sqlx::query_as::<_, HistoriaGerar>(
-        "SELECT h.familia_id, h.briefing, h.faixa, h.narracao, e.padroes, h.conteudo, h.paginas_pedidas, h.usar_memoria_estante, h.estante_principal
+        "SELECT h.familia_id, h.briefing, h.faixa, h.narracao, e.padroes, h.conteudo, h.paginas_pedidas, h.usar_memoria_estante, h.estante_principal,
+                h.memoria_gravar, h.memoria_usar
            FROM conteudo.historias h
            LEFT JOIN conteudo.estantes e ON e.id = h.estante_principal
           WHERE h.id = $1",
@@ -102,8 +105,16 @@ pub async fn preparar(st: &AppState, id: Uuid) -> anyhow::Result<Preparo> {
             memoria.push((titulo, itens));
         }
     };
-    for c in citar_historias(&briefing) {
+    // Do briefing (#historia, #historia:memoria, #memoria) e do campo "usar da memória" (#estante, #historia, #todas).
+    let mut citacoes = citar_historias(&briefing);
+    citacoes.extend(citar_memoria(h.memoria_usar.as_deref().unwrap_or_default()));
+    if h.usar_memoria_estante {
+        citacoes.push(Citacao::MemoriaEstante);
+    }
+    let mut com_estante = false;
+    for c in citacoes {
         match c {
+            Citacao::MemoriaEstante => com_estante = true,
             Citacao::Referencia(slug) => {
                 let achada: Option<(Uuid, String, Option<String>)> = sqlx::query_as(
                     "SELECT id, titulo, referencia FROM conteudo.historias WHERE familia_id = $1 AND slug = $2 AND id <> $3",
@@ -150,8 +161,8 @@ pub async fn preparar(st: &AppState, id: Uuid) -> anyhow::Result<Preparo> {
             }
         }
     }
-    // Caixa "usar a memória da estante" marcada: a memória das outras histórias da estante principal.
-    if let Some(estante) = h.estante_principal.filter(|_| h.usar_memoria_estante) {
+    // #estante (ou a antiga caixa "usar a memória da estante"): a memória das outras histórias da estante principal.
+    if let Some(estante) = h.estante_principal.filter(|_| com_estante) {
         let da_estante: Vec<(String, Value)> = sqlx::query_as(
             "SELECT h.titulo, h.memoria FROM conteudo.historias h JOIN conteudo.estante_historias eh ON eh.historia_id = h.id
               WHERE eh.estante_id = $1 AND h.id <> $2 AND jsonb_array_length(h.memoria) > 0 ORDER BY h.criado_em",
@@ -180,6 +191,7 @@ pub async fn preparar(st: &AppState, id: Uuid) -> anyhow::Result<Preparo> {
     }
     let mut prompt = montar_prompt(&briefing, &h.faixa, &h.narracao, &citados, &todos, estilo, instrucoes, &referencias, &vozes_usadas);
     prompt.push_str(&super::prompt::bloco_memoria(&memoria));
+    prompt.push_str(&super::prompt::bloco_gravar(h.memoria_gravar.as_deref().unwrap_or_default()));
     prompt.push_str(&super::prompt::bloco_lugares(&crate::lugares::para_ia(&lugares_familia, &lugares_citados)));
     let pedido = ia::PedidoTexto { sistema: SISTEMA.into(), imagens: Vec::new(), prompt, schema: schema_historia() };
     let lugares = lugares_familia.into_iter().map(|l| l.slug).collect();
