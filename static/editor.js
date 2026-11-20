@@ -842,6 +842,22 @@
     ta.value = itens().join('\n');
     const st = el('small', { class: 'suave' });
     const oque = el('input', { placeholder: 'O que gravar? ex.: as palavras em inglês ensinadas' });
+    // Soma itens ao que está no campo (inclusive o que foi digitado e ainda não salvo), sem repetir.
+    function somar(novos) {
+      const atuais = ta.value.split('\n').map((l) => l.trim()).filter(Boolean);
+      const juntos = atuais.slice();
+      novos.forEach((i) => { if (!juntos.some((x) => x.toLowerCase() === i.toLowerCase())) juntos.push(i); });
+      ta.value = juntos.join('\n');
+      st.textContent = (juntos.length - atuais.length) + ' novo(s). Revise e clique em 💾 Salvar memória.';
+    }
+    // Resposta de outra IA (depois de 📋 Copiar prompt).
+    const resposta = el('textarea', { rows: 3, placeholder: 'Cole aqui a resposta da outra IA (começa com { "itens": ...)' });
+    const colar = el('div', { hidden: '' }, resposta,
+      el('button', { type: 'button', class: 'pequeno', onclick: async () => {
+        const r = await fetch(location.pathname + '/memoria/importar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texto: resposta.value }) });
+        const j = await r.json().catch(() => ({}));
+        if (r.ok) { somar(j.itens); resposta.value = ''; } else st.textContent = 'Erro: ' + (j.erro || r.status);
+      } }, '📥 Importar resposta'));
     return el('details', { class: 'memoria' }, el('summary', {}, '🧠 Memória' + (itens().length ? ' (' + itens().length + ')' : ' (vazia)')),
       ta,
       el('div', { class: 'linha' }, oque,
@@ -851,15 +867,18 @@
           const r = await fetch(location.pathname + '/memoria/gerar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pedido: oque.value }) });
           const j = await r.json().catch(() => ({}));
           e.target.disabled = false;
-          if (r.ok) {
-            // Soma ao que está no campo (inclusive o que foi digitado e ainda não salvo).
-            const atuais = ta.value.split('\n').map((l) => l.trim()).filter(Boolean);
-            const juntos = atuais.slice();
-            j.itens.forEach((i) => { if (!juntos.some((x) => x.toLowerCase() === i.toLowerCase())) juntos.push(i); });
-            ta.value = juntos.join('\n');
-            st.textContent = (juntos.length - atuais.length) + ' novo(s). Revise e clique em 💾 Salvar memória.';
-          } else st.textContent = 'Erro: ' + (j.erro || r.status);
-        } }, '✨ Gravar com IA')),
+          if (r.ok) somar(j.itens); else st.textContent = 'Erro: ' + (j.erro || r.status);
+        } }, '✨ Gravar com IA'),
+        el('button', { type: 'button', class: 'pequeno secundario', title: 'Para usar em outra IA (ChatGPT, Gemini, Claude): leva a história e o pedido', onclick: async () => {
+          if (!oque.value.trim()) { st.textContent = 'Escreva o que gravar.'; oque.focus(); return; }
+          const r = await fetch(location.pathname + '/memoria/prompt', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pedido: oque.value }) });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) { st.textContent = 'Erro: ' + (j.erro || r.status); return; }
+          try { await navigator.clipboard.writeText(j.prompt); st.textContent = '📋 Prompt copiado. Cole na outra IA e traga a resposta abaixo.'; }
+          catch (_) { window.prompt('Copie o prompt:', j.prompt); }
+          colar.hidden = false;
+        } }, '📋 Copiar prompt')),
+      colar,
       el('div', { class: 'linha' },
         el('button', { type: 'button', class: 'pequeno', onclick: async () => {
           const lista = ta.value.split('\n').map((l) => l.trim()).filter(Boolean);

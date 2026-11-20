@@ -113,17 +113,16 @@ pub fn somar_memoria(atuais: &[String], novos: &[String]) -> Vec<String> {
     itens_memoria(&json!(atuais.iter().chain(novos.iter()).collect::<Vec<_>>()))
 }
 
-/// POST /historias/{id}/memoria/gerar {pedido}: a IA lê a história e devolve as marcações pedidas
-/// ("as palavras em inglês ensinadas"), somadas às atuais. Não grava: a família revisa e salva.
-pub async fn gerar_memoria_rota(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>, Json(g): Json<GerarMemoria>) -> Response {
-    let pedido_familia = g.pedido.trim();
+/// Pedido à IA da memória tardia: lê a história e lista o que a família pediu (sem repetir o já gravado).
+async fn pedido_memoria(st: &AppState, s: &Sessao, id: Uuid, pedido_familia: &str) -> Result<(Uuid, Vec<String>, ia::PedidoTexto), Response> {
+    let pedido_familia = pedido_familia.trim();
     if pedido_familia.is_empty() {
-        return crate::web::erro_json("Escreva o que gravar (ex.: as palavras em inglês ensinadas).");
+        return Err(crate::web::erro_json("Escreva o que gravar (ex.: as palavras em inglês ensinadas)."));
     }
-    let (familia, titulo, texto, memoria) = match texto_da_historia(&st, id).await {
+    let (familia, titulo, texto, memoria) = match texto_da_historia(st, id).await {
         Ok(x) if x.0 == s.familia_id => x,
-        Ok(_) => return StatusCode::NOT_FOUND.into_response(),
-        Err(e) => return erro_interno(e),
+        Ok(_) => return Err(StatusCode::NOT_FOUND.into_response()),
+        Err(e) => return Err(erro_interno(e)),
     };
     let atuais = itens_memoria(&memoria);
     let pedido = ia::PedidoTexto {
@@ -138,6 +137,16 @@ pub async fn gerar_memoria_rota(State(st): State<AppState>, s: Sessao, Path(id):
         schema: json!({ "type": "object", "additionalProperties": false, "required": ["itens"],
                         "properties": { "itens": { "type": "array", "items": { "type": "string" } } } }),
     };
+    Ok((familia, atuais, pedido))
+}
+
+/// POST /historias/{id}/memoria/gerar {pedido}: a IA lê a história e devolve as marcações pedidas
+/// ("as palavras em inglês ensinadas"), somadas às atuais. Não grava: a família revisa e salva.
+pub async fn gerar_memoria_rota(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>, Json(g): Json<GerarMemoria>) -> Response {
+    let (familia, atuais, pedido) = match pedido_memoria(&st, &s, id, &g.pedido).await {
+        Ok(x) => x,
+        Err(r) => return r,
+    };
     match ia::gerar_texto(&st, familia, &pedido).await {
         Ok(r) => {
             let novos = itens_memoria(&r["itens"]);
@@ -145,6 +154,28 @@ pub async fn gerar_memoria_rota(State(st): State<AppState>, s: Sessao, Path(id):
             Json(json!({ "itens": itens, "novos": itens.len() - atuais.len() })).into_response()
         }
         Err(e) => crate::web::erro_json(format!("A IA não conseguiu: {e:#}")),
+    }
+}
+
+/// POST /historias/{id}/memoria/prompt {pedido}: o mesmo pedido em texto, para colar em outra IA.
+pub async fn prompt_memoria(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>, Json(g): Json<GerarMemoria>) -> Response {
+    match pedido_memoria(&st, &s, id, &g.pedido).await {
+        Ok((_, _, pedido)) => Json(json!({ "prompt": super::geracao::prompt_para_copiar(&pedido) })).into_response(),
+        Err(r) => r,
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ImportarMemoria {
+    texto: String,
+}
+
+/// POST /historias/{id}/memoria/importar {texto}: lê os itens da resposta colada de outra IA (não grava).
+pub async fn importar_memoria(Path(_id): Path<Uuid>, _s: Sessao, Json(f): Json<ImportarMemoria>) -> Response {
+    match ia::extrair_json(&f.texto) {
+        Ok(v) if v["itens"].is_array() => Json(json!({ "itens": itens_memoria(&v["itens"]) })).into_response(),
+        Ok(_) => crate::web::erro_json("O JSON não tem \"itens\". Copie a resposta inteira da IA."),
+        Err(_) => crate::web::erro_json("Não achei um JSON na resposta. Copie a resposta inteira da IA (de { até })."),
     }
 }
 
