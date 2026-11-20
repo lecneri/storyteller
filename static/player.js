@@ -289,7 +289,8 @@
     narrando = false;
     geracao++;
     if (audio) { audio.pause(); audio = null; }
-    if (musica) musica.calou();
+    // Pausou a narração: a música pausa junto (some aos poucos) e volta de onde parou no ▶.
+    if (musica) musica.parar(0.6);
     botaoPlay.textContent = '▶';
     palco.classList.remove('narrando');
     palco.querySelectorAll('.trecho.ativo').forEach((t) => t.classList.remove('ativo'));
