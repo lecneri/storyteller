@@ -123,6 +123,9 @@ pub struct FormNova {
     /// Número de páginas (4 a 30); vazio = a IA escolhe pela idade.
     #[serde(default)]
     paginas: String,
+    /// "1": a geração recebe a memória das histórias da mesma estante.
+    #[serde(default)]
+    usar_memoria_estante: Option<String>,
 }
 
 /// Páginas pedidas no formulário, dentro do limite (4 a 30); vazio ou inválido = automático.
@@ -144,8 +147,8 @@ pub async fn criar(State(st): State<AppState>, s: Sessao, Form(f): Form<FormNova
     };
     let r = sqlx::query(
         "INSERT INTO conteudo.historias (id, familia_id, slug, titulo, faixa, narracao, briefing, estado, conteudo, criado_por, visibilidade,
-                                         paginas_pedidas)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+                                         paginas_pedidas, usar_memoria_estante)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
     )
     .bind(id)
     .bind(s.familia_id)
@@ -159,6 +162,7 @@ pub async fn criar(State(st): State<AppState>, s: Sessao, Form(f): Form<FormNova
     .bind(s.usuario_id)
     .bind(if ["privado", "compartilhado", "publico"].contains(&f.visibilidade.as_str()) { f.visibilidade.as_str() } else { "herdar" })
     .bind(paginas_pedidas(&f.paginas))
+    .bind(f.usar_memoria_estante.is_some())
     .execute(&st.db)
     .await;
     if let Err(e) = r {
@@ -186,7 +190,8 @@ struct Historia {
     briefing: Option<String>,
     conteudo: Value,
     estilo: Option<String>,
-    memoria: Option<String>,
+    referencia: Option<String>,
+    memoria: Value,
     continua: Option<Value>,
     capa: Option<Uuid>,
     musica: Option<Uuid>,
@@ -220,7 +225,7 @@ struct PaginaEditor {
 
 pub async fn abrir(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) -> Response {
     let h = match sqlx::query_as::<_, Historia>(
-        "SELECT h.id, h.titulo, h.faixa, h.narracao, h.briefing, h.conteudo, e.padroes->>'estilo' AS estilo, h.memoria, h.capa, h.musica, h.musica_volume, h.musica_credito,
+        "SELECT h.id, h.titulo, h.faixa, h.narracao, h.briefing, h.conteudo, e.padroes->>'estilo' AS estilo, h.referencia, h.memoria, h.capa, h.musica, h.musica_volume, h.musica_credito,
                 (SELECT json_agg(json_build_object('id', o.id, 'titulo', o.titulo))::jsonb
                    FROM conteudo.historias o WHERE o.id = ANY(h.continua_de)) AS continua
            FROM conteudo.historias h LEFT JOIN conteudo.estantes e ON e.id = h.estante_principal
@@ -282,7 +287,7 @@ pub async fn abrir(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) 
         "tipos": crate::personagens::TIPOS.iter().map(|(k, n)| json!({ "id": k, "nome": n })).collect::<Vec<_>>(),
         "vozes_sistema": crate::tts::VOZES.iter().map(|(id, n)| json!({ "id": id, "nome": n })).collect::<Vec<_>>(),
         "animacoes": ANIMACOES, "estilo": h.estilo,
-        "memoria": h.memoria, "continua": h.continua, "capa": h.capa,
+        "referencia": h.referencia, "memoria": h.memoria, "continua": h.continua, "capa": h.capa,
         "musica": h.musica.map(|m| json!({ "id": m, "volume": h.musica_volume, "credito": h.musica_credito })),
         "musicas_modelo": crate::musica::modelos(&st).await.unwrap_or_default(),
         "climas": crate::musica::CLIMAS.iter().map(|(id, n)| json!({ "id": id, "nome": n })).collect::<Vec<_>>(),

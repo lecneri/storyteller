@@ -31,6 +31,8 @@
       {% if !personagens.is_empty() %}
       <p class="inteiro suave">Personagens disponíveis: {% for p in personagens %}<code>@{{ p.0 }}</code>{% if !loop.last %}, {% endif %}{% endfor %}</p>
       {% endif %}
+      <label class="check inteiro"><input type="checkbox" name="usar_memoria_estante" value="1"> 🧠 Usar a memória da estante
+        <small class="suave">O que já foi gravado na memória das outras histórias da estante (ex.: palavras aprendidas). Para gravar, peça no briefing: "grave na memória as palavras em inglês".</small></label>
       <label>Quem pode ver
         <select name="visibilidade">
           <option value="herdar">Padrão (da estante / família)</option>

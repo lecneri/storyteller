@@ -245,6 +245,8 @@ struct PaginaEstante {
     personagens: Vec<PersonagemOpcao>,
     outras: Vec<SemEstante>,
     ultima_faixa: String,
+    /// Memória das histórias da estante: (id, título, itens).
+    memoria: Vec<(Uuid, String, Vec<String>)>,
 }
 
 impl PaginaEstante {
@@ -280,10 +282,24 @@ pub async fn abrir(State(st): State<AppState>, s: Sessao, Path(slug): Path<Strin
     match (personagens_opcoes(&st, s.familia_id).await, outras) {
         (Ok(personagens), Ok(outras)) => {
             let ultima_faixa = crate::historias::ultima_faixa(&st, s.familia_id).await;
-            render(PaginaEstante { s, e, personagens, outras, ultima_faixa })
+            let memoria = memoria_da_estante(&st, e.id).await;
+            render(PaginaEstante { s, e, personagens, outras, ultima_faixa, memoria })
         }
         (Err(e), _) | (_, Err(e)) => erro_interno(e.into()),
     }
+}
+
+/// Memória das histórias da estante (só as que têm algo gravado), na ordem da estante.
+async fn memoria_da_estante(st: &AppState, estante: Uuid) -> Vec<(Uuid, String, Vec<String>)> {
+    let linhas: Vec<(Uuid, String, Value)> = sqlx::query_as(
+        "SELECT h.id, h.titulo, h.memoria FROM conteudo.historias h JOIN conteudo.estante_historias eh ON eh.historia_id = h.id
+          WHERE eh.estante_id = $1 AND jsonb_array_length(h.memoria) > 0 ORDER BY eh.ordem",
+    )
+    .bind(estante)
+    .fetch_all(&st.db)
+    .await
+    .unwrap_or_default();
+    linhas.into_iter().map(|(id, t, m)| (id, t, crate::historias::itens_memoria(&m))).collect()
 }
 
 pub async fn salvar(State(st): State<AppState>, s: Sessao, Path(slug): Path<String>, RawForm(corpo): RawForm) -> Response {

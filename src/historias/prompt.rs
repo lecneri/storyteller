@@ -9,9 +9,14 @@ pub fn schema_historia() -> Value {
     json!({
         "type": "object",
                     "additionalProperties": false,
-        "required": ["titulo", "faixa", "secundarios", "lugares", "paginas"],
+        "required": ["titulo", "faixa", "secundarios", "lugares", "paginas", "memoria"],
         "properties": {
             "titulo": { "type": "string" },
+            "memoria": {
+                "type": "array",
+                "description": "marcações curtas para guardar na memória desta história, SÓ se o briefing ou as instruções pedirem para gravar ou lembrar algo (ex.: cada palavra em inglês ensinada, \"apple (maçã)\"); senão, lista vazia",
+                "items": { "type": "string" }
+            },
             "lugares": {
                 "type": "array",
                 "description": "lugares inventados nesta história (não os da lista LUGARES DA FAMÍLIA), com a aparência fixa",
@@ -89,7 +94,7 @@ pub fn montar_prompt(
     todos: &[PersonagemIA],
     estilo: &str,
     instrucoes: &str,
-    memorias: &[(String, String)],
+    referencias: &[(String, String)],
     vozes_usadas: &[String],
 ) -> String {
     // Faixa etária: a da história (escolhida pela família) ou, vazia, a IA escolhe pelo briefing e pelas fichas.
@@ -197,10 +202,10 @@ pub fn montar_prompt(
     } else {
         format!("INSTRUÇÕES DESTA COLEÇÃO (valem para toda história dela; siga junto com o briefing):\n{}\n\n", instrucoes.trim())
     };
-    let anteriores = if memorias.is_empty() {
+    let anteriores = if referencias.is_empty() {
         String::new()
     } else {
-        let lista: Vec<String> = memorias.iter().map(|(t, m)| format!("- \"{t}\": {m}")).collect();
+        let lista: Vec<String> = referencias.iter().map(|(t, m)| format!("- \"{t}\": {m}")).collect();
         format!(
             "HISTÓRIAS ANTERIORES (esta história continua a partir delas; respeite o que aconteceu e pode citar):\n{}\n\n",
             lista.join("\n")
@@ -216,7 +221,8 @@ pub fn montar_prompt(
          - Personagens SECUNDÁRIOS (sem ficha) que aparecem nas ilustrações: descreva cada um uma vez em \"secundarios\" \
            (nome, tipo — crianca, animal, robo, vilao, adulto ou criatura — e aparência FIXA e detalhada, como uma ficha para o ilustrador: espécie/idade, corpo, rosto, roupa, cores, acessórios), \
            e em cada página liste em \"secundarios\" os nomes dos que aparecem na ilustração. A aparência não muda entre as páginas.\n\
-         - Use SOMENTE os personagens abaixo (pelos slugs). {secundarios}\n\n\
+         - Use SOMENTE os personagens abaixo (pelos slugs). {secundarios}\n         - \"memoria\": só se o briefing ou as instruções pedirem para gravar ou lembrar algo; uma marcação curta por item \
+           (ex.: cada palavra em inglês ensinada, \"apple (maçã)\"). Senão, lista vazia.\n\n\
          PERSONAGENS:\n{}\n\n\
          {vozes_sistema}\
          {anteriores}\
@@ -228,6 +234,19 @@ pub fn montar_prompt(
 }
 
 /// Trecho do prompt sobre lugares: os da família citados (com descrição) e como preencher "lugar" e "lugares".
+/// Memória citada (#historia:memoria, #memoria) ou da estante (caixa marcada): marcações de outras histórias.
+pub fn bloco_memoria(memoria: &[(String, Vec<String>)]) -> String {
+    if memoria.is_empty() {
+        return String::new();
+    }
+    let lista: Vec<String> = memoria.iter().map(|(t, itens)| format!("- \"{t}\": {}", itens.join("; "))).collect();
+    format!(
+        "\nMEMÓRIA (marcações gravadas em outras histórias; use como base, por exemplo para revisar o que já foi aprendido \
+         e ensinar coisas novas sem repetir tudo):\n{}\n",
+        lista.join("\n")
+    )
+}
+
 pub fn bloco_lugares(da_familia: &[Value]) -> String {
     let lista = if da_familia.is_empty() {
         String::new()

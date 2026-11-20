@@ -813,24 +813,42 @@
       } }, '＋ Adicionar'));
   }
 
-  // Memória: resumo usado quando outra história cita esta com #.
-  function memoriaUI() {
+  // Referência: resumo usado quando outra história cita esta com #.
+  function referenciaUI() {
     const ta = el('textarea', { rows: 3, placeholder: 'Resumo com os fatos importantes (quem venceu, o que descobriram...). Usado quando outra história citar esta com #.' });
-    ta.value = dados.memoria || '';
+    ta.value = dados.referencia || '';
     const st = el('small', { class: 'suave' });
-    return el('details', { class: 'memoria' }, el('summary', {}, '🧠 Memória da história' + (dados.memoria ? '' : ' (vazia)')),
+    return el('details', { class: 'memoria' }, el('summary', {}, '📌 Referência' + (dados.referencia ? '' : ' (vazia)')),
       ta,
       el('div', { class: 'linha' },
         el('button', { type: 'button', class: 'pequeno secundario', onclick: async (e) => {
           e.target.disabled = true; st.textContent = 'Gerando com IA…';
-          const r = await fetch(location.pathname + '/memoria', { method: 'POST' });
+          const r = await fetch(location.pathname + '/referencia', { method: 'POST' });
           const j = await r.json().catch(() => ({}));
           e.target.disabled = false;
-          if (r.ok) { ta.value = dados.memoria = j.memoria; st.textContent = 'Gerada ✓'; } else st.textContent = 'Erro: ' + (j.erro || r.status);
+          if (r.ok) { ta.value = dados.referencia = j.referencia; st.textContent = 'Gerada ✓'; } else st.textContent = 'Erro: ' + (j.erro || r.status);
         } }, '✨ Gerar com IA'),
         el('button', { type: 'button', class: 'pequeno', onclick: async () => {
-          const r = await fetch(location.pathname + '/memoria/salvar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ memoria: ta.value }) });
-          if (r.ok) { dados.memoria = ta.value; st.textContent = 'Salva ✓'; }
+          const r = await fetch(location.pathname + '/referencia/salvar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ referencia: ta.value }) });
+          if (r.ok) { dados.referencia = ta.value; st.textContent = 'Salva ✓'; }
+        } }, '💾 Salvar referência'), st));
+  }
+
+  // Memória: marcações (uma por linha) gravadas pela IA quando o briefing pede, ou à mão.
+  // Outras histórias usam com #esta-historia:memoria, #memoria ou a caixa "usar a memória da estante".
+  function memoriaUI() {
+    const itens = () => (Array.isArray(dados.memoria) ? dados.memoria : []);
+    const ta = el('textarea', { rows: 4, placeholder: 'Uma marcação por linha, ex.:\napple (maçã)\nred (vermelho)' });
+    ta.value = itens().join('\n');
+    const st = el('small', { class: 'suave' });
+    return el('details', { class: 'memoria' }, el('summary', {}, '🧠 Memória' + (itens().length ? ' (' + itens().length + ')' : ' (vazia)')),
+      ta,
+      el('div', { class: 'linha' },
+        el('button', { type: 'button', class: 'pequeno', onclick: async () => {
+          const lista = ta.value.split('\n').map((l) => l.trim()).filter(Boolean);
+          const r = await fetch(location.pathname + '/memoria/salvar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itens: lista }) });
+          const j = await r.json().catch(() => ({}));
+          if (r.ok) { dados.memoria = j.itens; ta.value = j.itens.join('\n'); st.textContent = 'Salva ✓'; } else st.textContent = 'Erro: ' + (j.erro || r.status);
         } }, '💾 Salvar memória'), st));
   }
 
@@ -1190,7 +1208,7 @@
       (dados.continua || []).length ? el('p', { class: 'suave' }, '📚 Continua de: ',
         dados.continua.map((c, i) => [i ? ', ' : '', el('a', { href: '/historias/' + c.id }, c.titulo)])) : null,
       // Painéis lado a lado (fechados viram "botões"); o aberto ocupa a linha inteira.
-      el('div', { class: 'paineis' }, [capaUI(), musicaUI(), memoriaUI(), ajudaUI(), secundariosUI(), lugaresUI()].filter(Boolean)),
+      el('div', { class: 'paineis' }, [capaUI(), musicaUI(), referenciaUI(), memoriaUI(), ajudaUI(), secundariosUI(), lugaresUI()].filter(Boolean)),
       modo === 'carrossel' && estado.paginas.length
         ? (atual = Math.min(atual, estado.paginas.length - 1),
            [navCarrossel(), inserirPaginaUI(atual), paginaUI(estado.paginas[atual], atual), inserirPaginaUI(atual + 1), navCarrossel()])

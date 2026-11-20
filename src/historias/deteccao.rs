@@ -140,13 +140,34 @@ pub fn lugares_citados(briefing: &str) -> Vec<String> {
 }
 
 /// Slugs citados com `#` no briefing.
-pub fn citar_historias(briefing: &str) -> Vec<String> {
-    let mut v: Vec<String> = Vec::new();
+/// O que o briefing cita com `#`: a referência (resumo) de uma história, a memória dela ou a memória de todas.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Citacao {
+    /// `#historia`: o resumo, para continuar a partir dela.
+    Referencia(String),
+    /// `#historia:memoria`: só as marcações da memória dela.
+    Memoria(String),
+    /// `#memoria`: a memória de todas as histórias da família.
+    TodaMemoria,
+}
+
+pub fn citar_historias(briefing: &str) -> Vec<Citacao> {
+    let mut v: Vec<Citacao> = Vec::new();
     for parte in briefing.split('#').skip(1) {
-        let token: String = parte.chars().take_while(|c| c.is_alphanumeric() || *c == '-' || *c == '_').collect();
-        let s = util::slug(&token);
-        if !s.is_empty() && !v.contains(&s) {
-            v.push(s);
+        let token: String = parte.chars().take_while(|c| c.is_alphanumeric() || *c == '-' || *c == '_' || *c == ':').collect();
+        let (nome, sufixo) = token.split_once(':').unwrap_or((&token, ""));
+        let s = util::slug(nome);
+        let c = if s == "memoria" && sufixo.is_empty() {
+            Citacao::TodaMemoria
+        } else if s.is_empty() {
+            continue;
+        } else if util::slug(sufixo) == "memoria" {
+            Citacao::Memoria(s)
+        } else {
+            Citacao::Referencia(s)
+        };
+        if !v.contains(&c) {
+            v.push(c);
         }
     }
     v
@@ -220,7 +241,12 @@ mod testes {
 
     #[test]
     fn cita_historias_com_hashtag() {
-        assert_eq!(citar_historias("Continua #a-lua e #o-mar, e de novo #a-lua!"), vec!["a-lua", "o-mar"]);
+        let r = |s: &str| Citacao::Referencia(s.into());
+        assert_eq!(citar_historias("Continua #a-lua e #o-mar, e de novo #a-lua!"), vec![r("a-lua"), r("o-mar")]);
+        assert_eq!(
+            citar_historias("Revise #a-lua:memoria, use #memoria e continue #o-mar."),
+            vec![Citacao::Memoria("a-lua".into()), Citacao::TodaMemoria, r("o-mar")]
+        );
         assert!(citar_historias("sem citação # solta").is_empty());
     }
 }

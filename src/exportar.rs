@@ -192,8 +192,8 @@ pub async fn arquivos_familia(st: &AppState, familia_id: Uuid, familia_slug: &st
             .bind(familia_id)
             .fetch_all(&st.db)
             .await?;
-    let historias: Vec<(Uuid, String, String, String, String, Option<String>, Value, Option<String>, Option<Uuid>)> = sqlx::query_as(
-        "SELECT id, slug, titulo, faixa, narracao, briefing, conteudo, memoria, estante_principal
+    let historias: Vec<(Uuid, String, String, String, String, Option<String>, Value, Option<String>, Option<Uuid>, Value)> = sqlx::query_as(
+        "SELECT id, slug, titulo, faixa, narracao, briefing, conteudo, referencia, estante_principal, memoria
            FROM conteudo.historias WHERE familia_id = $1",
     )
     .bind(familia_id)
@@ -206,7 +206,7 @@ pub async fn arquivos_familia(st: &AppState, familia_id: Uuid, familia_slug: &st
             format!("---\nid: {eslug}\nnome: {}\npadroes: {}\nhistorias: [{}]\n---\n", yaml_str(enome), padroes, membros.join(", ")).into_bytes(),
         );
     }
-    for (_, hslug, titulo, faixa, narracao, briefing, conteudo, memoria, principal) in &historias {
+    for (_, hslug, titulo, faixa, narracao, briefing, conteudo, referencia, principal, memoria) in &historias {
         let pasta_estante = principal
             .and_then(|p| estantes.iter().find(|e| e.0 == p))
             .map(|e| e.1.clone())
@@ -227,8 +227,12 @@ pub async fn arquivos_familia(st: &AppState, familia_id: Uuid, familia_slug: &st
             nomes_midia.iter().find(|(m, _)| m == id).map(|(_, n)| n.clone()).unwrap_or_default()
         });
         add(format!("{dir}/historia.md"), md.into_bytes());
-        if let Some(m) = memoria {
-            add(format!("{dir}/memoria.md"), m.clone().into_bytes());
+        if let Some(r) = referencia {
+            add(format!("{dir}/referencia.md"), r.clone().into_bytes());
+        }
+        let itens = crate::historias::itens_memoria(memoria);
+        if !itens.is_empty() {
+            add(format!("{dir}/memoria.md"), itens.iter().map(|i| format!("- {i}\n")).collect::<String>().into_bytes());
         }
     }
 

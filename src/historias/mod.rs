@@ -5,13 +5,13 @@ mod conteudo;
 mod deteccao;
 mod geracao;
 pub mod imagens;
-mod memoria;
+mod referencia;
 mod prompt;
 mod rotas;
 
 pub use ajuda::{executar_ajuda, importar_ajuda, pedir as pedir_ajuda, ver as ver_ajuda};
 pub use conteudo::*;
 pub use geracao::executar_geracao;
-pub use memoria::*;
+pub use referencia::*;
 pub use rotas::*;
 pub use deteccao::grupos as grupos_da_ficha;

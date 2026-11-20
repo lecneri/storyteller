@@ -28,6 +28,13 @@ const CAMPOS_PAGINA: [&str; 6] = ["cena", "personagens", "secundarios", "lugar",
 /// Schema da história com "origem" em cada página (para manter a imagem da página em que ela se baseia).
 pub fn schema_edicao() -> Value {
     let mut s = schema_historia();
+    // A ajuda não mexe na memória (ela é gravada na geração ou editada à mão).
+    if let Some(p) = s["properties"].as_object_mut() {
+        p.remove("memoria");
+    }
+    if let Some(r) = s["required"].as_array_mut() {
+        r.retain(|x| x != "memoria");
+    }
     let itens = &mut s["properties"]["paginas"]["items"];
     itens["properties"]["origem"] = json!({
         "type": "integer",

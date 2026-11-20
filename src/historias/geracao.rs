@@ -3,9 +3,9 @@
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use super::deteccao::{citar_historias, detectar, personagens_da_familia};
+use super::deteccao::{citar_historias, detectar, personagens_da_familia, Citacao};
 use super::prompt::{montar_prompt, normalizar, schema_historia, SISTEMA};
-use super::{faixa_limpa, gerar_memoria, Conteudo, NaCena};
+use super::{faixa_limpa, gerar_referencia, itens_memoria, Conteudo, NaCena};
 use crate::{ia, util, AppState};
 
 #[derive(sqlx::FromRow)]
@@ -17,6 +17,8 @@ struct HistoriaGerar {
     padroes: Option<Value>,
     conteudo: Value,
     paginas_pedidas: Option<i32>,
+    usar_memoria_estante: bool,
+    estante_principal: Option<Uuid>,
 }
 
 /// Tudo o que a geração precisa antes de chamar a IA (e para gravar a resposta depois).
@@ -35,7 +37,7 @@ pub struct Preparo {
 /// Monta o pedido à IA a partir do briefing, da estante, dos personagens e das histórias citadas.
 pub async fn preparar(st: &AppState, id: Uuid) -> anyhow::Result<Preparo> {
     let h = sqlx::query_as::<_, HistoriaGerar>(
-        "SELECT h.familia_id, h.briefing, h.faixa, h.narracao, e.padroes, h.conteudo, h.paginas_pedidas
+        "SELECT h.familia_id, h.briefing, h.faixa, h.narracao, e.padroes, h.conteudo, h.paginas_pedidas, h.usar_memoria_estante, h.estante_principal
            FROM conteudo.historias h
            LEFT JOIN conteudo.estantes e ON e.id = h.estante_principal
           WHERE h.id = $1",
@@ -90,25 +92,76 @@ pub async fn preparar(st: &AppState, id: Uuid) -> anyhow::Result<Preparo> {
     let estilo = padroes["estilo"].as_str().unwrap_or_default();
     let instrucoes = padroes["instrucoes"].as_str().unwrap_or_default();
 
-    // Histórias citadas com #: entram pela memória (resumo), não pelo texto inteiro.
-    let mut memorias = Vec::new();
+    // Histórias citadas com #: entram pela referência (resumo), não pelo texto inteiro;
+    // #historia:memoria e #memoria trazem as marcações da memória.
+    let mut referencias = Vec::new();
     let mut continua_de = Vec::new();
-    for slug in citar_historias(&briefing) {
-        let achada: Option<(Uuid, String, Option<String>)> = sqlx::query_as(
-            "SELECT id, titulo, memoria FROM conteudo.historias WHERE familia_id = $1 AND slug = $2 AND id <> $3",
+    let mut memoria: Vec<(String, Vec<String>)> = Vec::new();
+    let mut somar = |titulo: String, itens: Vec<String>| {
+        if !itens.is_empty() && !memoria.iter().any(|(t, _)| *t == titulo) {
+            memoria.push((titulo, itens));
+        }
+    };
+    for c in citar_historias(&briefing) {
+        match c {
+            Citacao::Referencia(slug) => {
+                let achada: Option<(Uuid, String, Option<String>)> = sqlx::query_as(
+                    "SELECT id, titulo, referencia FROM conteudo.historias WHERE familia_id = $1 AND slug = $2 AND id <> $3",
+                )
+                .bind(h.familia_id)
+                .bind(&slug)
+                .bind(id)
+                .fetch_optional(&st.db)
+                .await?;
+                if let Some((hid, titulo, referencia)) = achada {
+                    let referencia = match referencia.filter(|m| !m.trim().is_empty()) {
+                        Some(m) => m,
+                        None => gerar_referencia(st, hid).await?,
+                    };
+                    referencias.push((titulo, referencia));
+                    continua_de.push(hid);
+                }
+            }
+            Citacao::Memoria(slug) => {
+                let achada: Option<(String, Value)> = sqlx::query_as(
+                    "SELECT titulo, memoria FROM conteudo.historias WHERE familia_id = $1 AND slug = $2 AND id <> $3",
+                )
+                .bind(h.familia_id)
+                .bind(&slug)
+                .bind(id)
+                .fetch_optional(&st.db)
+                .await?;
+                if let Some((titulo, m)) = achada {
+                    somar(titulo, itens_memoria(&m));
+                }
+            }
+            Citacao::TodaMemoria => {
+                let todas: Vec<(String, Value)> = sqlx::query_as(
+                    "SELECT titulo, memoria FROM conteudo.historias
+                      WHERE familia_id = $1 AND id <> $2 AND jsonb_array_length(memoria) > 0 ORDER BY criado_em",
+                )
+                .bind(h.familia_id)
+                .bind(id)
+                .fetch_all(&st.db)
+                .await?;
+                for (titulo, m) in todas {
+                    somar(titulo, itens_memoria(&m));
+                }
+            }
+        }
+    }
+    // Caixa "usar a memória da estante" marcada: a memória das outras histórias da estante principal.
+    if let Some(estante) = h.estante_principal.filter(|_| h.usar_memoria_estante) {
+        let da_estante: Vec<(String, Value)> = sqlx::query_as(
+            "SELECT h.titulo, h.memoria FROM conteudo.historias h JOIN conteudo.estante_historias eh ON eh.historia_id = h.id
+              WHERE eh.estante_id = $1 AND h.id <> $2 AND jsonb_array_length(h.memoria) > 0 ORDER BY h.criado_em",
         )
-        .bind(h.familia_id)
-        .bind(&slug)
+        .bind(estante)
         .bind(id)
-        .fetch_optional(&st.db)
+        .fetch_all(&st.db)
         .await?;
-        if let Some((hid, titulo, memoria)) = achada {
-            let memoria = match memoria.filter(|m| !m.trim().is_empty()) {
-                Some(m) => m,
-                None => gerar_memoria(st, hid).await?,
-            };
-            memorias.push((titulo, memoria));
-            continua_de.push(hid);
+        for (titulo, m) in da_estante {
+            somar(titulo, itens_memoria(&m));
         }
     }
 
@@ -125,7 +178,8 @@ pub async fn preparar(st: &AppState, id: Uuid) -> anyhow::Result<Preparo> {
             }
         }
     }
-    let mut prompt = montar_prompt(&briefing, &h.faixa, &h.narracao, &citados, &todos, estilo, instrucoes, &memorias, &vozes_usadas);
+    let mut prompt = montar_prompt(&briefing, &h.faixa, &h.narracao, &citados, &todos, estilo, instrucoes, &referencias, &vozes_usadas);
+    prompt.push_str(&super::prompt::bloco_memoria(&memoria));
     prompt.push_str(&super::prompt::bloco_lugares(&crate::lugares::para_ia(&lugares_familia, &lugares_citados)));
     let pedido = ia::PedidoTexto { sistema: SISTEMA.into(), imagens: Vec::new(), prompt, schema: schema_historia() };
     let lugares = lugares_familia.into_iter().map(|l| l.slug).collect();
@@ -170,7 +224,7 @@ pub async fn gravar(st: &AppState, id: Uuid, p: &Preparo, resposta: &Value) -> a
     let mut tx = st.db.begin().await?;
     sqlx::query(
         "UPDATE conteudo.historias SET titulo = $2, slug = $3, conteudo = $4, estado = 'texto', continua_de = $5,
-                faixa = $6, atualizado_em = now()
+                faixa = $6, memoria = $7, atualizado_em = now()
           WHERE id = $1",
     )
     .bind(id)
@@ -179,6 +233,7 @@ pub async fn gravar(st: &AppState, id: Uuid, p: &Preparo, resposta: &Value) -> a
     .bind(&valor)
     .bind(continua_de)
     .bind(&faixa)
+    .bind(json!(itens_memoria(&resposta["memoria"])))
     .execute(&mut *tx)
     .await?;
     sqlx::query("INSERT INTO conteudo.versoes (historia_id, conteudo) VALUES ($1, $2)")
