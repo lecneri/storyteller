@@ -65,6 +65,61 @@ pub async fn enviar(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>,
     }
 }
 
+/// POST /historias/{id}/musica/pagina — multipart "arquivo": prepara uma música para uma página
+/// (o editor guarda o id na página ao salvar). Não muda a música geral.
+pub async fn enviar_pagina(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>, mut multipart: axum::extract::Multipart) -> Response {
+    match historia_da_familia(&st, s.familia_id, id).await {
+        Ok(true) => {}
+        Ok(false) => return StatusCode::NOT_FOUND.into_response(),
+        Err(e) => return erro_interno(e.into()),
+    }
+    let (mut bytes, mut nome) = (None, None);
+    while let Ok(Some(campo)) = multipart.next_field().await {
+        if campo.name() == Some("arquivo") {
+            nome = campo.file_name().map(|n| n.rsplit_once('.').map(|(a, _)| a).unwrap_or(n).chars().take(60).collect::<String>());
+            match campo.bytes().await {
+                Ok(b) => bytes = Some(b),
+                Err(_) => return erro_json("O arquivo não chegou inteiro. Tente de novo."),
+            }
+        }
+    }
+    let Some(bytes) = bytes.filter(|b| !b.is_empty()) else { return erro_json("Arquivo vazio.") };
+    if bytes.len() > crate::midia::LIMITE_BYTES {
+        return erro_json("Arquivo grande demais (máximo 25 MB).");
+    }
+    match converter(&st, s.familia_id, &bytes).await {
+        Ok((mid, dur)) => Json(json!({ "id": mid, "duracao": dur, "nome": nome.unwrap_or_else(|| "Música enviada".into()) })).into_response(),
+        Err(e) => {
+            tracing::warn!("música da página: {e:#}");
+            erro_json(format!("Não consegui usar essa música: {e}"))
+        }
+    }
+}
+
+/// POST /historias/{id}/musica/pagina-modelo {modelo} — prepara uma música-modelo para uma página (com o crédito).
+pub async fn modelo_pagina(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>, Json(e): Json<EscolherModelo>) -> Response {
+    match historia_da_familia(&st, s.familia_id, id).await {
+        Ok(true) => {}
+        Ok(false) => return StatusCode::NOT_FOUND.into_response(),
+        Err(e) => return erro_interno(e.into()),
+    }
+    let r: Result<Option<(Uuid, String, Option<String>)>, sqlx::Error> = sqlx::query_as(
+        "WITH m AS (SELECT * FROM midia.musicas_modelo WHERE id = $2),
+              a AS (INSERT INTO midia.arquivos (familia_id, caminho, tipo_mime, bytes, sha256)
+                    SELECT $1, caminho, 'audio/mpeg', bytes, sha256 FROM m RETURNING id)
+         SELECT a.id, m.titulo, m.credito FROM a, m",
+    )
+    .bind(s.familia_id)
+    .bind(e.modelo)
+    .fetch_optional(&st.db)
+    .await;
+    match r {
+        Ok(Some((mid, titulo, credito))) => Json(json!({ "id": mid, "nome": titulo, "credito": credito })).into_response(),
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(e) => erro_interno(e.into()),
+    }
+}
+
 #[derive(Deserialize)]
 pub struct Ajuste {
     volume: Option<f32>,

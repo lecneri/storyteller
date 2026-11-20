@@ -83,6 +83,47 @@ pub struct Pagina {
     /// Som da animação ligado (padrão: sim).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub som: Option<bool>,
+    /// Música a partir desta página (sem ela: continua a que estava tocando).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub musica: Option<MusicaPagina>,
+}
+
+/// Música de uma página: "trocar" (por `id`, até outra página mudar), "voltar" (à música geral) ou "silencio".
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct MusicaPagina {
+    pub modo: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<Uuid>,
+    /// Nome para mostrar no editor (título do modelo ou do arquivo).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nome: Option<String>,
+    /// Crédito pedido pela licença (músicas-modelo).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credito: Option<String>,
+}
+
+/// Música que toca em cada página: começa na geral; "trocar" põe outra, "voltar" volta à geral, "silencio" tira;
+/// sem nada, continua a da página anterior. Devolve (id do arquivo, crédito) por página.
+pub fn musicas_das_paginas(paginas: &[Pagina], geral: Option<(Uuid, Option<String>)>) -> Vec<Option<(Uuid, Option<String>)>> {
+    let mut atual = geral.clone();
+    paginas
+        .iter()
+        .map(|p| {
+            if let Some(m) = &p.musica {
+                match m.modo.as_str() {
+                    "trocar" => {
+                        if let Some(id) = m.id {
+                            atual = Some((id, m.credito.clone().filter(|c| !c.trim().is_empty())));
+                        }
+                    }
+                    "voltar" => atual = geral.clone(),
+                    "silencio" => atual = None,
+                    _ => {}
+                }
+            }
+            atual.clone()
+        })
+        .collect()
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -195,6 +236,21 @@ mod testes {
         let v = serde_json::to_value(&c).unwrap();
         assert!(v.get("secundarios").is_none());
         assert!(v["paginas"][0]["blocos"][0].get("voz").is_none());
+    }
+
+    #[test]
+    fn musica_continua_troca_volta_e_silencia() {
+        let (g, a) = (Uuid::from_u128(1), Uuid::from_u128(2));
+        let pag = |m: Option<(&str, Option<Uuid>)>| Pagina {
+            musica: m.map(|(modo, id)| MusicaPagina { modo: modo.into(), id, nome: None, credito: Some("Autor A".into()) }),
+            ..Default::default()
+        };
+        let ps = vec![pag(None), pag(Some(("trocar", Some(a)))), pag(None), pag(Some(("silencio", None))), pag(Some(("voltar", None)))];
+        let ids: Vec<Option<Uuid>> = musicas_das_paginas(&ps, Some((g, None))).into_iter().map(|m| m.map(|x| x.0)).collect();
+        assert_eq!(ids, vec![Some(g), Some(a), Some(a), None, Some(g)]);
+        // Sem música geral: "voltar" é silêncio.
+        let ids: Vec<Option<Uuid>> = musicas_das_paginas(&ps, None).into_iter().map(|m| m.map(|x| x.0)).collect();
+        assert_eq!(ids, vec![None, Some(a), Some(a), None, None]);
     }
 
     #[test]

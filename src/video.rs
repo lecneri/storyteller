@@ -262,17 +262,53 @@ async fn tipo_midia(st: &AppState, url: &str) -> String {
     sqlx::query_scalar("SELECT tipo_mime FROM midia.arquivos WHERE id = $1").bind(id).fetch_optional(&st.db).await.ok().flatten().unwrap_or_default()
 }
 
-/// Mistura a música em loop no vídeo pronto: volume "cheio" sem narração e abaixa sozinha quando há voz
-/// (a própria narração comanda o compressor), com fade no fim.
-pub fn args_musica(video: &str, musica: &CaminhoFs, volume: f64, dur: f64, saida: &str) -> Vec<String> {
+/// Trechos de música do vídeo: junta os segmentos seguidos com a mesma música → (url, início, duração).
+/// Segmento sem música (silêncio) não vira trecho.
+pub fn trechos_musica(segmentos: &[(Option<String>, f64)]) -> Vec<(String, f64, f64)> {
+    let mut v: Vec<(String, f64, f64)> = Vec::new();
+    let (mut t, mut anterior): (f64, Option<&str>) = (0.0, None);
+    for (url, dur) in segmentos {
+        match (url.as_deref(), v.last_mut()) {
+            (Some(u), Some(ultimo)) if anterior == Some(u) => ultimo.2 += dur,
+            (Some(u), _) => v.push((u.to_string(), t, *dur)),
+            (None, _) => {}
+        }
+        anterior = url.as_deref();
+        t += dur;
+    }
+    v
+}
+
+/// Mistura as músicas no vídeo pronto: cada trecho entra e sai aos poucos (1,5 s) no seu tempo, em loop se for curta;
+/// volume "cheio" sem narração e abaixa sozinho quando há voz (a própria narração comanda o compressor); fade no fim.
+pub fn args_musica(video: &str, trechos: &[(PathBuf, f64, f64)], volume: f64, dur: f64, saida: &str) -> Vec<String> {
     let fade = if dur > 4.0 { format!(",afade=t=out:st={:.2}:d=3", dur - 3.0) } else { String::new() };
-    let filtro = format!(
-        "[0:a]asplit=2[voz][chave];[1:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,volume={volume:.3}[m];\
-         [m][chave]sidechaincompress=threshold=0.01:ratio=12:attack=60:release=900[md];\
+    let mut filtro = String::from("[0:a]asplit=2[voz][chave];");
+    for (k, (_, ini, d)) in trechos.iter().enumerate() {
+        let fd = (d / 2.0).min(1.5);
+        let ms = (ini * 1000.0).round() as u64;
+        filtro.push_str(&format!(
+            "[{n}:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,volume={volume:.3},\
+             atrim=0:{d:.3},asetpts=PTS-STARTPTS,afade=t=in:d={fd:.2},afade=t=out:st={fo:.3}:d={fd:.2},adelay={ms}|{ms}[t{k}];",
+            n = k + 1,
+            fo = (d - fd).max(0.0),
+        ));
+    }
+    if trechos.len() == 1 {
+        filtro.push_str("[t0]anull[m];");
+    } else {
+        let ent: String = (0..trechos.len()).map(|k| format!("[t{k}]")).collect();
+        filtro.push_str(&format!("{ent}amix=inputs={}:duration=longest:normalize=0[m];", trechos.len()));
+    }
+    filtro.push_str(&format!(
+        "[m][chave]sidechaincompress=threshold=0.01:ratio=12:attack=60:release=900[md];\
          [voz][md]amix=inputs=2:duration=first:normalize=0{fade}[a]"
-    );
-    let mut a: Vec<String> = ["-y", "-v", "error", "-i", video, "-stream_loop", "-1", "-i"].map(String::from).to_vec();
-    a.push(musica.to_string_lossy().to_string());
+    ));
+    let mut a: Vec<String> = ["-y", "-v", "error", "-i", video].map(String::from).to_vec();
+    for (caminho, ..) in trechos {
+        a.extend(["-stream_loop", "-1", "-i"].map(String::from));
+        a.push(caminho.to_string_lossy().to_string());
+    }
     a.extend(["-filter_complex", &filtro, "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart", saida].map(String::from));
     a
 }
@@ -302,6 +338,9 @@ async fn montar(st: &AppState, id: Uuid, familia: Uuid, tmp: &CaminhoFs) -> anyh
     tokio::fs::write(tmp.join("capa.ass"), ass).await?;
     ffmpeg(tmp, &args_pagina(capa.as_ref().map(|(p, t)| (p.as_path(), t.as_str())), &[], CAPA, "capa.ass", "capa.mp4")).await?;
     lista.push_str("file 'capa.mp4'\n");
+    // Linha do tempo da música: (música, duração) de cada pedaço do vídeo; a capa usa a da primeira página.
+    let mus = |p: &Value| p["musica"].as_str().map(String::from);
+    let mut segmentos: Vec<(Option<String>, f64)> = vec![(paginas.first().and_then(mus), CAPA)];
 
     for (i, p) in paginas.iter().enumerate() {
         marcar(id, Estado { estado: "fazendo", progresso: format!("página {} de {}", i + 1, paginas.len()), erro: None, aviso: None });
@@ -333,11 +372,16 @@ async fn montar(st: &AppState, id: Uuid, familia: Uuid, tmp: &CaminhoFs) -> anyh
         let nome_mp4 = format!("p{i:03}.mp4");
         tokio::fs::write(tmp.join(&nome_ass), ass_pagina(&trechos)).await?;
         let dur = duracao_pagina(&trechos);
+        segmentos.push((mus(p), dur));
         ffmpeg(tmp, &args_pagina(visual.as_ref().map(|(c, t)| (c.as_path(), t.as_str())), &trechos, dur, &nome_ass, &nome_mp4)).await?;
         lista.push_str(&format!("file '{nome_mp4}'\n"));
     }
-    // Música com licença que pede crédito: cartão "Fim" com o crédito.
-    if let Some(credito) = dados["musica"]["credito"].as_str().filter(|c| !c.trim().is_empty()) {
+    // Músicas com licença que pede crédito: cartão "Fim" com os créditos (o fim segue a música da última página).
+    let creditos: Vec<String> = dados["creditos_musica"].as_array().into_iter().flatten().filter_map(|c| c.as_str().map(String::from)).collect();
+    if !creditos.is_empty() {
+        segmentos.push((paginas.last().and_then(mus), CAPA));
+        let credito = creditos.join(" · ");
+        let credito = credito.as_str();
         let ass = format!(
             "{}Dialogue: 0,{},{},Titulo,,0,0,0,,Fim!\\N\\N{{\\fs26\\b0}}Música: {}\n",
             cabecalho_ass(),
@@ -351,21 +395,23 @@ async fn montar(st: &AppState, id: Uuid, familia: Uuid, tmp: &CaminhoFs) -> anyh
     }
     marcar(id, Estado { estado: "fazendo", progresso: "juntando as páginas".into(), erro: None, aviso: None });
     tokio::fs::write(tmp.join("lista.txt"), lista).await?;
-    // Música de fundo (opcional): entra por último, por cima do vídeo já pronto.
-    let musica = match dados["musica"]["url"].as_str() {
-        Some(u) => caminho_midia(st, u).await.filter(|p| p.exists()),
-        None => None,
-    };
-    let juntado = if musica.is_some() { "sem-musica.mp4" } else { "final.mp4" };
+    // Música de fundo (opcional, pode mudar entre as páginas): entra por último, por cima do vídeo já pronto.
+    let mut musica: Vec<(PathBuf, f64, f64)> = Vec::new();
+    for (u, ini, d) in trechos_musica(&segmentos) {
+        if let Some(c) = caminho_midia(st, &u).await.filter(|p| p.exists()) {
+            musica.push((c, ini, d));
+        }
+    }
+    let juntado = if musica.is_empty() { "final.mp4" } else { "sem-musica.mp4" };
     let args: Vec<String> = ["-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", "lista.txt", "-c", "copy", "-movflags", "+faststart", juntado]
         .map(String::from)
         .to_vec();
     ffmpeg(tmp, &args).await?;
-    if let Some(m) = musica {
+    if !musica.is_empty() {
         marcar(id, Estado { estado: "fazendo", progresso: "pondo a música de fundo".into(), erro: None, aviso: None });
         let dur = crate::tts::duracao_arquivo(&tmp.join(juntado)).await.unwrap_or(0.0) as f64;
-        let volume = dados["musica"]["volume"].as_f64().unwrap_or(0.35);
-        ffmpeg(tmp, &args_musica(juntado, &m, volume, dur, "final.mp4")).await?;
+        let volume = dados["musica_volume"].as_f64().unwrap_or(0.35);
+        ffmpeg(tmp, &args_musica(juntado, &musica, volume, dur, "final.mp4")).await?;
     }
     Ok((mudos > 0).then(|| format!("{mudos} trecho(s) sem narração ficaram em silêncio. Gere a narração no editor e faça o vídeo de novo.")))
 }
@@ -531,6 +577,18 @@ async fn servir(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>, req
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    #[test]
+    fn musica_do_video_em_trechos() {
+        let s = |u: Option<&str>, d: f64| (u.map(String::from), d);
+        let v = trechos_musica(&[s(Some("g"), 4.0), s(Some("g"), 10.0), s(Some("a"), 8.0), s(None, 5.0), s(Some("g"), 6.0)]);
+        assert_eq!(v, vec![("g".into(), 0.0, 14.0), ("a".into(), 14.0, 8.0), ("g".into(), 27.0, 6.0)]);
+        let a = args_musica("v.mp4", &[(PathBuf::from("g.mp3"), 0.0, 14.0), (PathBuf::from("a.mp3"), 14.0, 8.0)], 0.35, 22.0, "f.mp4");
+        let f = &a[a.iter().position(|x| x == "-filter_complex").unwrap() + 1];
+        assert!(f.contains("adelay=14000|14000[t1]"));
+        assert!(f.contains("amix=inputs=2:duration=longest"));
+        assert_eq!(a.iter().filter(|x| *x == "-stream_loop").count(), 2);
+    }
 
     fn t(texto: &str, nome: Option<&str>, dur: f64) -> Trecho {
         Trecho { texto: texto.into(), nome: nome.map(String::from), audio: None, dur }

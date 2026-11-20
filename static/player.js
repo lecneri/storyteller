@@ -16,9 +16,10 @@
 
   // ───────────── música de fundo (opcional) ─────────────
   // Toca em loop: volume "cheio" sem narração e abaixa quando alguém fala (sobe de novo devagar nas pausas).
+  // Música ligada/desligada pela pessoa (vale para todas as músicas da história).
+  let ligada = true;
+  try { ligada = localStorage.getItem('musica-ligada') !== 'nao'; } catch (_) { /* */ }
   function criarMusica(m) {
-    let ligada = true;
-    try { ligada = localStorage.getItem('musica-ligada') !== 'nao'; } catch (_) { /* */ }
     const som = new Audio(m.url);
     som.loop = true;
     som.preload = 'auto';
@@ -60,15 +61,35 @@
       },
       fala() { clearTimeout(subir); if (api.tocando) alvo(FUNDO, 0.3); },
       calou() { clearTimeout(subir); subir = setTimeout(() => { if (api.tocando) alvo(CHEIO, 1.2); }, 700); },
-      alternar() {
-        ligada = !ligada;
-        try { localStorage.setItem('musica-ligada', ligada ? 'sim' : 'nao'); } catch (_) { /* */ }
-        if (ligada) { api.tocar(); if (audio && !audio.paused) api.fala(); } else api.parar(0.5);
-      },
     };
     return api;
   }
-  const musica = dados.musica ? criarMusica(dados.musica) : null;
+  // Cada página diz a música que toca nela (a geral, a trocada numa página anterior ou nenhuma).
+  // Ao mudar, a anterior some aos poucos e a nova entra; se é a mesma, segue sem recomeçar.
+  const volumeMusica = dados.musica_volume || (dados.musica && dados.musica.volume) || 0.35;
+  const temMusica = !!dados.musica || dados.paginas.some((p) => p.musica);
+  const sons = {};
+  let musica = null, urlMusica = null;
+  function urlDaPagina(n) {
+    if (n > total) return null;
+    const p = dados.paginas[Math.max(n, 1) - 1];
+    return p ? p.musica || null : null;
+  }
+  function trocarMusica(seg = 1.5) {
+    const url = urlDaPagina(pos);
+    if (url === urlMusica) return;
+    const tocava = musica && musica.tocando;
+    if (musica) musica.parar(seg);
+    urlMusica = url;
+    musica = url ? (sons[url] = sons[url] || criarMusica({ url, volume: volumeMusica })) : null;
+    if (musica && (tocava || narrando)) musica.tocar();
+  }
+  function alternarMusica() {
+    ligada = !ligada;
+    try { localStorage.setItem('musica-ligada', ligada ? 'sim' : 'nao'); } catch (_) { /* */ }
+    if (!musica) return;
+    if (ligada) { if (narrando) { musica.tocar(); if (audio && !audio.paused) musica.fala(); } } else musica.parar(0.5);
+  }
 
   // ───────────── montagem das páginas ─────────────
   function midiaUI(m) {
@@ -104,7 +125,7 @@
             raiz.dataset.voltar !== 'about:blank'
               ? el('button', { type: 'button', class: 'secundario', onclick: () => (location.href = raiz.dataset.voltar) }, '📚 Outra história')
               : null),
-          dados.musica && dados.musica.credito ? el('p', { class: 'credito-musica' }, '🎵 Música: ' + dados.musica.credito) : null,
+          (dados.creditos_musica || []).length ? el('p', { class: 'credito-musica' }, '🎵 Música: ' + dados.creditos_musica.join(' · ')) : null,
           el('p', { class: 'credito-musica' }, el('a', { href: '/creditos', target: '_blank', rel: 'noopener' }, '🌟 Créditos')))));
     }
     const p = dados.paginas[pos - 1];
@@ -117,12 +138,12 @@
   const botaoAnt = el('button', { type: 'button', title: 'Voltar página', onclick: () => { pausar(); irPara(pos - 1, -1); } }, '◀');
   const botaoProx = el('button', { type: 'button', title: 'Próxima página', onclick: () => { pausar(); irPara(pos + 1, 1); } }, '▶▶');
   const botaoMudo = el('button', { type: 'button', title: 'Sons dos efeitos', onclick: () => { mudo = !mudo; botaoMudo.textContent = mudo ? '🔇' : '🔔'; } }, '🔔');
-  const botaoMusica = musica ? el('button', { type: 'button', title: 'Música de fundo', onclick: () => { musica.alternar(); desenharMusica(); } }) : null;
+  const botaoMusica = temMusica ? el('button', { type: 'button', title: 'Música de fundo', onclick: () => { alternarMusica(); desenharMusica(); } }) : null;
   function desenharMusica() {
     if (!botaoMusica) return;
     botaoMusica.textContent = '🎵';
-    botaoMusica.classList.toggle('desligado', !musica.ligada);
-    botaoMusica.title = musica.ligada ? 'Música de fundo: ligada (toque para desligar)' : 'Música de fundo: desligada';
+    botaoMusica.classList.toggle('desligado', !ligada);
+    botaoMusica.title = ligada ? 'Música de fundo: ligada (toque para desligar)' : 'Música de fundo: desligada';
   }
   desenharMusica();
   const botaoTela = el('button', { type: 'button', title: 'Tela cheia', onclick: () => {
@@ -141,7 +162,7 @@
     palco.classList.toggle('narrando', narrando);
     botaoAnt.disabled = pos === 0;
     botaoProx.disabled = pos > total;
-    if (pos > total && musica) musica.parar(3);
+    trocarMusica(pos > total ? 3 : 1.5);
     pontos.replaceChildren(...Array.from({ length: total + 2 }, (_, i) => el('span', { class: 'ponto' + (i === pos ? ' atual' : '') })));
   }
 

@@ -587,6 +587,7 @@
       el('label', {}, 'Cena', cena),
       el('div', {}, el('small', { class: 'suave' }, 'Personagens na cena'), el('div', { class: 'chips' }, naCena, addSel)),
       lugarUI(pag),
+      musicaPaginaUI(pag),
       estado.secundarios.length ? el('div', {}, el('small', { class: 'suave' }, 'Secundários na cena'),
         el('div', { class: 'chips' },
           (pag.secundarios || []).map((nome, i) => el('span', { class: 'chip', title: (secundario(nome) || {}).descricao || '' }, '🎭 ' + nome,
@@ -728,6 +729,67 @@
 
   // Personagens só desta história (sem ficha): nome + aparência fixa, usada nos prompts de imagem.
   // 📍 Onde a cena acontece: um lugar da família (com imagem) ou um só desta história.
+  // 🎵 Música desta página: continuar (padrão), trocar (a partir daqui), voltar à geral ou silêncio.
+  const MODOS_MUSICA = [['', '▶️ Continuar a que está tocando'], ['trocar', '🔁 Trocar a partir daqui'], ['voltar', '↩️ Voltar para a música geral'], ['silencio', '🔇 Silêncio']];
+  function musicaTocando(pag) {
+    // O que toca nesta página, seguindo as anteriores (igual ao leitor).
+    let atual = musica ? 'música geral' : null;
+    for (const p of estado.paginas) {
+      const m = p.musica;
+      if (m && m.modo === 'trocar' && m.id) atual = m.nome || 'música da página';
+      else if (m && m.modo === 'voltar') atual = musica ? 'música geral' : null;
+      else if (m && m.modo === 'silencio') atual = null;
+      if (p === pag) break;
+    }
+    return atual;
+  }
+  function musicaPaginaUI(pag) {
+    const m = pag.musica || {};
+    const modo = el('select', { onchange: (e) => {
+      const v = e.target.value;
+      if (!v) delete pag.musica;
+      else if (v === 'trocar') pag.musica = { modo: 'trocar', id: m.id, nome: m.nome, credito: m.credito };
+      else pag.musica = { modo: v };
+      mudou(); desenhar();
+    } }, MODOS_MUSICA.map(([v, n]) => el('option', { value: v, selected: (m.modo || '') === v }, n)));
+    const tocando = musicaTocando(pag);
+    const info = el('small', { class: 'suave' }, '🎧 Nesta página: ' + (tocando || 'sem música'));
+    let escolha = null;
+    if (m.modo === 'trocar') {
+      const status = el('small', { class: 'suave' });
+      const usar = async (url, opcoes) => {
+        status.textContent = 'Preparando a música…';
+        try {
+          const r = await fetch(location.pathname + url, opcoes);
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.erro || 'erro ' + r.status);
+          pag.musica = { modo: 'trocar', id: j.id, nome: j.nome, credito: j.credito || undefined };
+          mudou(); desenhar();
+        } catch (err) { status.textContent = 'Não deu: ' + err.message; }
+      };
+      const modelos = dados.musicas_modelo || [];
+      const lista = modelos.length ? el('select', { onchange: (e) => {
+        if (e.target.value) usar('/musica/pagina-modelo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ modelo: e.target.value }) });
+      } }, el('option', { value: '' }, '🎼 Música da plataforma…'),
+        (dados.climas || []).map((c) => {
+          const doClima = modelos.filter((x) => x.clima === c.id);
+          return doClima.length ? el('optgroup', { label: c.nome }, doClima.map((x) => el('option', { value: x.id }, x.titulo))) : null;
+        })) : null;
+      const arquivo = el('input', { type: 'file', accept: 'audio/*', hidden: true, onchange: (e) => {
+        const f = e.target.files[0]; if (!f) return;
+        const fd = new FormData(); fd.append('arquivo', f);
+        usar('/musica/pagina', { method: 'POST', body: fd });
+      } });
+      escolha = el('div', { class: 'musica-pagina' },
+        m.id ? el('div', {}, el('strong', {}, '🎵 ' + (m.nome || 'Música')), m.credito ? el('small', { class: 'suave' }, ' · ' + m.credito) : null,
+          el('audio', { src: '/midia/' + m.id, controls: true, preload: 'none' })) : el('small', {}, 'Escolha a música:'),
+        el('div', { class: 'linha' }, lista,
+          el('button', { type: 'button', class: 'pequeno secundario', onclick: () => arquivo.click() }, '📁 Enviar arquivo'), arquivo),
+        status);
+    }
+    return el('div', { class: 'musica-pagina-ed' }, el('small', { class: 'suave' }, '🎵 Música'), modo, escolha, info);
+  }
+
   function lugarUI(pag) {
     if (!lugaresFamilia.length && !estado.lugares.length && !pag.lugar) return null;
     const l = L.lugarDaPagina(pag, ctxImagem());

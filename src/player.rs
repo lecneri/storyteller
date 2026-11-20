@@ -86,8 +86,16 @@ async fn montar(
     let c: Conteudo = serde_json::from_value(h.conteudo.clone()).unwrap_or_default();
     let url = |id: &Uuid| format!("{prefixo_midia}{id}");
 
+    // Música de cada página (a geral, a trocada numa página anterior ou nenhuma) e os créditos de todas que tocam.
+    let musicas = crate::historias::musicas_das_paginas(&c.paginas, h.musica.map(|m| (m, h.musica_credito.clone())));
+    let mut creditos: Vec<String> = Vec::new();
+    for c in h.musica_credito.iter().chain(musicas.iter().flatten().filter_map(|(_, c)| c.as_ref())) {
+        if !c.trim().is_empty() && !creditos.contains(c) {
+            creditos.push(c.clone());
+        }
+    }
     let mut paginas = Vec::new();
-    for p in &c.paginas {
+    for (pi, p) in c.paginas.iter().enumerate() {
         let mut blocos = Vec::new();
         for b in p.blocos.iter().filter(|b| !b.texto.trim().is_empty()) {
             let quem = if h.narracao == "narrador" { "narrador".to_string() } else { b.chave_voz() };
@@ -115,6 +123,7 @@ async fn montar(
             }));
         }
         paginas.push(json!({
+            "musica": musicas[pi].as_ref().map(|(m, _)| url(m)),
             "midia": p.midia.as_ref().map(|m| json!({ "url": url(&m.id), "tipo": m.tipo })),
             "animacao": p.animacao.clone().unwrap_or_else(|| "nenhuma".into()),
             "som": p.som.unwrap_or(true),
@@ -133,7 +142,9 @@ async fn montar(
         h.titulo.clone(),
         json!({ "id": h.id, "titulo": h.titulo, "capa": capa, "narracao": h.narracao,
                 "audio_url": audio_url, "paginas": paginas,
-                "musica": h.musica.map(|m| json!({ "url": url(&m), "volume": h.musica_volume, "credito": h.musica_credito })) }),
+                "musica": h.musica.map(|m| json!({ "url": url(&m), "volume": h.musica_volume, "credito": h.musica_credito })),
+                // Volume comum a todas as músicas (a geral e as das páginas) e os créditos de todas que tocam.
+                "musica_volume": h.musica_volume, "creditos_musica": creditos }),
     )))
 }
 

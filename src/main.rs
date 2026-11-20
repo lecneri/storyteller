@@ -165,6 +165,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/historias/{id}/musica", post(musica::enviar))
         .route("/historias/{id}/musica/ajustar", post(musica::ajustar))
         .route("/historias/{id}/musica/modelo", post(musica::usar_modelo))
+        .route("/historias/{id}/musica/pagina", post(musica::enviar_pagina))
+        .route("/historias/{id}/musica/pagina-modelo", post(musica::modelo_pagina))
         .route("/musicas-modelo/{id}", get(musica::ouvir_modelo))
         .route("/sistema/musicas", get(musica::listar_modelos).post(musica::criar_modelo))
         .route("/sistema/musicas/{id}/apagar", post(musica::apagar_modelo))
