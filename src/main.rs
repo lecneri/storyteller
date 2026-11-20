@@ -148,6 +148,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/historias/{id}/referencia", post(historias::gerar_referencia_rota))
         .route("/historias/{id}/referencia/salvar", post(historias::salvar_referencia))
         .route("/historias/{id}/memoria/salvar", post(historias::salvar_memoria))
+        .route("/historias/{id}/memoria/gerar", post(historias::gerar_memoria_rota))
         .route("/historias/{id}/conteudo", post(historias::salvar))
         .route("/historias/{id}/imagens", get(historias::imagens::estado).post(historias::imagens::pedir))
         .route("/historias/{id}/imagens/parar", post(historias::imagens::parar))

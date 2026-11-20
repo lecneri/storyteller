@@ -13,10 +13,10 @@ use uuid::Uuid;
 use super::Conteudo;
 use crate::{auth::Sessao, ia, web::erro_interno, AppState};
 
-/// Gera (pela IA) e grava a referência de uma história: um resumo curto com os fatos importantes.
-pub async fn gerar_referencia(st: &AppState, historia: Uuid) -> anyhow::Result<String> {
-    let (familia, titulo, conteudo): (Uuid, String, Value) =
-        sqlx::query_as("SELECT familia_id, titulo, conteudo FROM conteudo.historias WHERE id = $1")
+/// Texto da história para a IA ler: uma fala por linha, "[quem] texto".
+async fn texto_da_historia(st: &AppState, historia: Uuid) -> anyhow::Result<(Uuid, String, String, Value)> {
+    let (familia, titulo, conteudo, memoria): (Uuid, String, Value, Value) =
+        sqlx::query_as("SELECT familia_id, titulo, conteudo, memoria FROM conteudo.historias WHERE id = $1")
             .bind(historia)
             .fetch_one(&st.db)
             .await?;
@@ -26,13 +26,18 @@ pub async fn gerar_referencia(st: &AppState, historia: Uuid) -> anyhow::Result<S
         .iter()
         .flat_map(|p| p.blocos.iter().map(|b| format!("[{}] {}", b.nome.as_deref().unwrap_or(&b.quem), b.texto)))
         .collect();
+    Ok((familia, titulo, texto.join("\n"), memoria))
+}
+
+/// Gera (pela IA) e grava a referência de uma história: um resumo curto com os fatos importantes.
+pub async fn gerar_referencia(st: &AppState, historia: Uuid) -> anyhow::Result<String> {
+    let (familia, titulo, texto, _) = texto_da_historia(st, historia).await?;
     let pedido = ia::PedidoTexto {
         sistema: "Você resume histórias para servir de referência em histórias seguintes. Responda só com o JSON pedido.".into(),
         imagens: Vec::new(),
         prompt: format!(
             "Resuma a história \"{titulo}\" em 3 a 6 frases curtas com os fatos que importam para continuações: \
-             quem participou, o que aconteceu, quem venceu ou o que foi descoberto, objetos e lugares novos, piadas internas.\n\n{}",
-            texto.join("\n")
+             quem participou, o que aconteceu, quem venceu ou o que foi descoberto, objetos e lugares novos, piadas internas.\n\n{texto}"
         ),
         schema: json!({ "type": "object", "additionalProperties": false, "required": ["memoria"],
                         "properties": { "memoria": { "type": "string" } } }),
@@ -99,6 +104,51 @@ pub fn itens_memoria(v: &Value) -> Vec<String> {
 }
 
 #[derive(Deserialize)]
+pub struct GerarMemoria {
+    pedido: String,
+}
+
+/// Junta itens novos aos atuais, sem repetir (a ordem dos atuais fica).
+pub fn somar_memoria(atuais: &[String], novos: &[String]) -> Vec<String> {
+    itens_memoria(&json!(atuais.iter().chain(novos.iter()).collect::<Vec<_>>()))
+}
+
+/// POST /historias/{id}/memoria/gerar {pedido}: a IA lê a história e devolve as marcações pedidas
+/// ("as palavras em inglês ensinadas"), somadas às atuais. Não grava: a família revisa e salva.
+pub async fn gerar_memoria_rota(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>, Json(g): Json<GerarMemoria>) -> Response {
+    let pedido_familia = g.pedido.trim();
+    if pedido_familia.is_empty() {
+        return crate::web::erro_json("Escreva o que gravar (ex.: as palavras em inglês ensinadas).");
+    }
+    let (familia, titulo, texto, memoria) = match texto_da_historia(&st, id).await {
+        Ok(x) if x.0 == s.familia_id => x,
+        Ok(_) => return StatusCode::NOT_FOUND.into_response(),
+        Err(e) => return erro_interno(e),
+    };
+    let atuais = itens_memoria(&memoria);
+    let pedido = ia::PedidoTexto {
+        sistema: "Você lê histórias e anota marcações curtas para a memória delas. Responda só com o JSON pedido.".into(),
+        imagens: Vec::new(),
+        prompt: format!(
+            "Leia a história \"{titulo}\" e liste em \"itens\" o que a família pediu para gravar na memória: {pedido_familia}\n\
+             Uma marcação curta por item (ex.: \"apple (maçã)\"), só o que aparece na história; nada inventado. \
+             Já gravado (não repita): {}\n\nHISTÓRIA:\n{texto}",
+            if atuais.is_empty() { "nada".to_string() } else { atuais.join("; ") }
+        ),
+        schema: json!({ "type": "object", "additionalProperties": false, "required": ["itens"],
+                        "properties": { "itens": { "type": "array", "items": { "type": "string" } } } }),
+    };
+    match ia::gerar_texto(&st, familia, &pedido).await {
+        Ok(r) => {
+            let novos = itens_memoria(&r["itens"]);
+            let itens = somar_memoria(&atuais, &novos);
+            Json(json!({ "itens": itens, "novos": itens.len() - atuais.len() })).into_response()
+        }
+        Err(e) => crate::web::erro_json(format!("A IA não conseguiu: {e:#}")),
+    }
+}
+
+#[derive(Deserialize)]
 pub struct SalvarMemoria {
     itens: Value,
 }
@@ -126,5 +176,7 @@ mod testes {
     fn memoria_sem_vazios_nem_repetidos() {
         let v = json!(["  apple  (maçã) ", "", "Apple (maçã)", "red", 3]);
         assert_eq!(itens_memoria(&v), vec!["apple (maçã)", "red"]);
+        let a = vec!["red".to_string()];
+        assert_eq!(somar_memoria(&a, &["Red".into(), "blue".into()]), vec!["red", "blue"]);
     }
 }

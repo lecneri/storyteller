@@ -841,8 +841,25 @@
     const ta = el('textarea', { rows: 4, placeholder: 'Uma marcação por linha, ex.:\napple (maçã)\nred (vermelho)' });
     ta.value = itens().join('\n');
     const st = el('small', { class: 'suave' });
+    const oque = el('input', { placeholder: 'O que gravar? ex.: as palavras em inglês ensinadas' });
     return el('details', { class: 'memoria' }, el('summary', {}, '🧠 Memória' + (itens().length ? ' (' + itens().length + ')' : ' (vazia)')),
       ta,
+      el('div', { class: 'linha' }, oque,
+        el('button', { type: 'button', class: 'pequeno secundario', onclick: async (e) => {
+          if (!oque.value.trim()) { st.textContent = 'Escreva o que gravar.'; oque.focus(); return; }
+          e.target.disabled = true; st.textContent = 'A IA está lendo a história…';
+          const r = await fetch(location.pathname + '/memoria/gerar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pedido: oque.value }) });
+          const j = await r.json().catch(() => ({}));
+          e.target.disabled = false;
+          if (r.ok) {
+            // Soma ao que está no campo (inclusive o que foi digitado e ainda não salvo).
+            const atuais = ta.value.split('\n').map((l) => l.trim()).filter(Boolean);
+            const juntos = atuais.slice();
+            j.itens.forEach((i) => { if (!juntos.some((x) => x.toLowerCase() === i.toLowerCase())) juntos.push(i); });
+            ta.value = juntos.join('\n');
+            st.textContent = (juntos.length - atuais.length) + ' novo(s). Revise e clique em 💾 Salvar memória.';
+          } else st.textContent = 'Erro: ' + (j.erro || r.status);
+        } }, '✨ Gravar com IA')),
       el('div', { class: 'linha' },
         el('button', { type: 'button', class: 'pequeno', onclick: async () => {
           const lista = ta.value.split('\n').map((l) => l.trim()).filter(Boolean);
