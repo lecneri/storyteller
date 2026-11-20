@@ -196,6 +196,7 @@ pub async fn renomear_variante(st: &AppState, familia: Uuid, personagem: &str, d
         .execute(&mut *tx)
         .await?;
     aplicar(&mut tx, familia, Troca::Variante { personagem, de, para }).await?;
+    super::grupos::variante_mudou(&mut tx, pid, de, Some(para)).await?;
     tx.commit().await?;
     Ok(())
 }

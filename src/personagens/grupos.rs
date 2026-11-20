@@ -48,6 +48,58 @@ fn aplicar_variante(atual: &Value, antigo: &str, novo: &str, variante: Option<&s
     m
 }
 
+/// Ficha depois que a variante `de` some (arquivada; `para` = None) ou troca de @ (`para` = Some):
+/// sumiu, o personagem sai dos grupos em que estava com ela; trocou, os grupos passam a usar o @ novo.
+fn ficha_sem_variante(ficha: &Value, de: &str, para: Option<&str>) -> Value {
+    let mut f = ficha.clone();
+    let vs = ficha["grupos_variantes"].as_object().cloned().unwrap_or_default();
+    let afetados: Vec<String> = vs.iter().filter(|(_, v)| v.as_str() == Some(de)).map(|(g, _)| g.clone()).collect();
+    if afetados.is_empty() {
+        return f;
+    }
+    let mut novas = vs.clone();
+    for g in &afetados {
+        match para {
+            Some(p) => {
+                novas.insert(g.clone(), json!(p));
+            }
+            None => {
+                novas.remove(g);
+            }
+        }
+    }
+    f["grupos_variantes"] = Value::Object(novas);
+    if para.is_none() {
+        let grupos: Vec<Value> = ficha["grupos"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|g| !afetados.contains(&util::slug(g.as_str().unwrap_or_default())))
+            .cloned()
+            .collect();
+        f["grupos"] = Value::Array(grupos);
+    }
+    f
+}
+
+/// Aplica `ficha_sem_variante` no personagem (dentro da transação de quem arquiva ou renomeia a variante).
+pub async fn variante_mudou(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    personagem: Uuid,
+    de: &str,
+    para: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    let ficha: Value = sqlx::query_scalar("SELECT COALESCE(ficha, '{}'::jsonb) FROM conteudo.personagens WHERE id = $1")
+        .bind(personagem)
+        .fetch_one(&mut **tx)
+        .await?;
+    let nova = ficha_sem_variante(&ficha, de, para);
+    if nova != ficha {
+        sqlx::query("UPDATE conteudo.personagens SET ficha = $2 WHERE id = $1").bind(personagem).bind(&nova).execute(&mut **tx).await?;
+    }
+    Ok(())
+}
+
 /// POST /personagens/grupos: cria ou salva um grupo (antigo = nome atual, vazio para novo; nome; membros = slugs)
 /// com variante-{slug} = slug da variante (vazio = a atual), ou apaga (acao=apagar).
 pub async fn salvar(State(st): State<AppState>, s: Sessao, corpo: Bytes) -> Response {
@@ -120,6 +172,21 @@ mod testes {
         assert_eq!(aplicar(&g, "", "Escola", false), g);
         // Apagar: sai de todos.
         assert_eq!(aplicar(&g, "Família", "", false), v(&["Pokémon"]));
+    }
+
+    #[test]
+    fn variante_arquivada_tira_do_grupo_e_renomeada_acompanha() {
+        let f = json!({ "grupos": ["Rangers", "Família"], "grupos_variantes": { "rangers": "ranger" }, "aparencia": "x" });
+        assert_eq!(
+            ficha_sem_variante(&f, "ranger", None),
+            json!({ "grupos": ["Família"], "grupos_variantes": {}, "aparencia": "x" })
+        );
+        assert_eq!(
+            ficha_sem_variante(&f, "ranger", Some("power-ranger")),
+            json!({ "grupos": ["Rangers", "Família"], "grupos_variantes": { "rangers": "power-ranger" }, "aparencia": "x" })
+        );
+        // Outra variante: nada muda.
+        assert_eq!(ficha_sem_variante(&f, "gigante", None), f);
     }
 
     #[test]

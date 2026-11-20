@@ -265,6 +265,8 @@ pub async fn alternar_arquivo(
             .bind(vid)
             .execute(&mut *tx)
             .await?;
+            // Arquivada: sai dos grupos em que estava com esta variante.
+            super::grupos::variante_mudou(&mut tx, pid, &vslug, None).await?;
         }
         tx.commit().await
     }
