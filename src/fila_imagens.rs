@@ -307,11 +307,15 @@ const SELECT_SITUACAO: &str = "SELECT i.id, i.alvo, i.chave, i.variante_id, i.lu
              AND (o.prioridade > i.prioridade OR (o.prioridade = i.prioridade AND o.id < i.id))))) ELSE 0 END AS na_frente
    FROM jobs.imagens i";
 
-/// Itens de uma história: os ativos e os que terminaram há pouco.
+/// Itens de uma história: os ativos, os que terminaram há pouco e todos de um lote que ainda está rodando
+/// (senão, num lote longo, as primeiras prontas saíam da conta e o "x/30 prontas" diminuía).
 pub async fn da_historia(st: &AppState, familia: Uuid, historia: Uuid) -> Vec<Situacao> {
     sqlx::query_as(&format!(
         "{SELECT_SITUACAO} WHERE i.familia_id = $1 AND i.historia_id = $2
-            AND (i.estado IN ('pendente', 'rodando') OR i.atualizado_em > now() - interval '30 minutes') ORDER BY i.id"
+            AND (i.estado IN ('pendente', 'rodando') OR i.atualizado_em > now() - interval '30 minutes'
+                 OR i.lote IN (SELECT a.lote FROM jobs.imagens a WHERE a.historia_id = $2 AND a.lote IS NOT NULL
+                                  AND a.estado IN ('pendente', 'rodando')))
+          ORDER BY i.id"
     ))
     .bind(familia)
     .bind(historia)

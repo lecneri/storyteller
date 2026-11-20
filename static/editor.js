@@ -646,6 +646,8 @@
       class: 'tira ' + cor(i) + (i === atual ? ' ativa' : ''), onclick: () => ir(i) },
       midiaEl(p.midia),
       el('span', {}, String(i + 1))));
+    // Depois de desenhada, a barra rola sozinha até a miniatura da página atual.
+    requestAnimationFrame(() => centrarTira(false));
     return el('div', { class: 'carrossel-nav' },
       el('button', { type: 'button', class: 'secundario', disabled: atual === 0, onclick: () => ir(atual - 1) }, '◀'),
       el('div', { class: 'tiras' }, tiras),
@@ -1084,6 +1086,15 @@
   // Modo lista: marca na barra a página que está na tela.
   function marcarAtiva() {
     document.querySelectorAll('.carrossel-nav .tira').forEach((t, i) => t.classList.toggle('ativa', i === atual));
+    centrarTira(true);
+  }
+  // Rola a barra de miniaturas (só na horizontal) para a página atual ficar no meio.
+  function centrarTira(suave) {
+    const tiras = raiz.querySelector('.carrossel-nav .tiras');
+    const ativa = tiras && tiras.querySelector('.tira.ativa');
+    if (!ativa) return;
+    const alvo = ativa.offsetLeft - tiras.offsetLeft - (tiras.clientWidth - ativa.offsetWidth) / 2;
+    tiras.scrollTo({ left: Math.max(0, alvo), behavior: suave ? 'smooth' : 'auto' });
   }
   let observador = null;
   function observarPaginas() {
