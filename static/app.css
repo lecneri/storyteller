@@ -284,6 +284,8 @@ input[type=file] { max-width:100%; }
 .grupo-ed summary { cursor:pointer; }
 .grupo-ed form { margin-top:10px; }
 .membros { display:flex; flex-wrap:wrap; gap:6px 14px; }
+.membros .membro { display:inline-flex; gap:6px; align-items:center; }
+.membros .membro select { width:auto; padding:2px 6px; font-size:.9em; }
 .abas a { padding:6px 12px; border:1px solid var(--borda); border-radius:999px; text-decoration:none; background:var(--cartao); }
 .abas a.ativa { border-color:var(--cor); color:var(--cor); font-weight:700; }
 a.linha-familia { text-decoration:none; color:inherit; }

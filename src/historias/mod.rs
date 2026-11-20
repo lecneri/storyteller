@@ -14,4 +14,4 @@ pub use conteudo::*;
 pub use geracao::executar_geracao;
 pub use referencia::*;
 pub use rotas::*;
-pub use deteccao::grupos as grupos_da_ficha;
+pub use deteccao::{grupos as grupos_da_ficha, variante_no_grupo};

@@ -505,20 +505,27 @@ pub async fn salvar_secundario(State(st): State<AppState>, s: Sessao, Json(p): J
 }
 
 /// GET /mencoes: personagens (para @) e histórias (para #) da família, usados pelo autocompletar do briefing.
-/// Grupos de personagens para o autocompletar: [{slug, nome, membros: [slug]}].
+/// Grupos de personagens para o autocompletar: [{slug, nome, membros: [slug], variantes: {slug: variante}}].
 fn grupos_json(ps: &[super::deteccao::PersonagemIA]) -> Vec<serde_json::Value> {
-    let mut grupos: Vec<(String, String, Vec<String>)> = Vec::new();
+    let mut grupos: Vec<(String, String, Vec<String>, serde_json::Map<String, Value>)> = Vec::new();
     for p in ps {
         for g in super::deteccao::grupos(&p.ficha) {
             let gs = crate::util::slug(&g);
-            match grupos.iter_mut().find(|(s, ..)| *s == gs) {
-                Some((.., m)) => m.push(p.slug.clone()),
-                None => grupos.push((gs, g, vec![p.slug.clone()])),
+            let i = match grupos.iter().position(|(s, ..)| *s == gs) {
+                Some(i) => i,
+                None => {
+                    grupos.push((gs.clone(), g.clone(), Vec::new(), serde_json::Map::new()));
+                    grupos.len() - 1
+                }
+            };
+            grupos[i].2.push(p.slug.clone());
+            if let Some(v) = super::deteccao::variante_no_grupo(&p.ficha, &gs) {
+                grupos[i].3.insert(p.slug.clone(), json!(v));
             }
         }
     }
     grupos.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
-    grupos.into_iter().map(|(slug, nome, membros)| json!({ "slug": slug, "nome": nome, "membros": membros })).collect()
+    grupos.into_iter().map(|(slug, nome, membros, vs)| json!({ "slug": slug, "nome": nome, "membros": membros, "variantes": vs })).collect()
 }
 
 pub async fn mencoes(State(st): State<AppState>, s: Sessao) -> Response {

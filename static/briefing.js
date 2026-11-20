@@ -7,6 +7,16 @@
   if (!caixas.length) return;
   const norm = (t) => (t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
+  // Membros de um grupo com a variante escolhida: "Pedro (Ranger)".
+  function nomesDoGrupo(g, dados) {
+    return g.membros.map((s) => {
+      const p = dados.personagens.find((x) => x.slug === s) || { nome: s, variantes: [] };
+      const vs = (g.variantes || {})[s];
+      const v = vs && (p.variantes || []).find((x) => x.slug === vs);
+      return v ? p.nome + ' (' + v.nome + ')' : p.nome;
+    });
+  }
+
   fetch('/mencoes').then((r) => r.json()).then((dados) => caixas.forEach((ta) => ligar(ta, dados)));
 
   function ligar(ta, dados) {
@@ -31,7 +41,7 @@
           const t = termo.startsWith('grupo:') ? termo.slice(6) : termo;
           for (const g of dados.grupos || []) {
             if (!norm('grupo ' + g.slug + ' ' + g.nome).includes(t)) continue;
-            const nomes = g.membros.map((s) => (dados.personagens.find((p) => p.slug === s) || { nome: s }).nome);
+            const nomes = nomesDoGrupo(g, dados);
             opcoes.push({ txt: '@grupo:' + g.slug, rot: '👥 ' + g.nome + ' (' + nomes.join(', ') + ')' });
           }
         }
@@ -129,7 +139,7 @@
       }
       for (const g of dados.grupos || []) {
         if (!new RegExp('@grupo:' + g.slug + '(?![a-z0-9-])', 'i').test(texto)) continue;
-        const nomes = g.membros.map((s) => (dados.personagens.find((p) => p.slug === s) || { nome: s }).nome);
+        const nomes = nomesDoGrupo(g, dados);
         achados.push({ rot: '👥 ' + g.nome + ': ' + nomes.join(', '), remover: () => { ta.value = ta.value.replace(new RegExp('@grupo:' + g.slug + '\\s?', 'gi'), ''); detectar(); } });
       }
       for (const l of dados.lugares || []) {

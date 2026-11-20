@@ -30,6 +30,35 @@ struct ItemLista {
     /// Para a busca: @, apelidos, nomes e estilos das variantes, relações.
     busca: String,
     grupos: Vec<String>,
+    /// Variantes não arquivadas: [[slug, nome]].
+    variantes: serde_json::Value,
+    /// Variante escolhida em cada grupo: {slug do grupo: slug da variante}.
+    grupos_variantes: serde_json::Value,
+}
+
+impl ItemLista {
+    /// (slug, nome) das variantes, para escolher a do grupo.
+    fn opcoes_variante(&self) -> Vec<(String, String)> {
+        self.variantes
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|v| Some((v[0].as_str()?.to_string(), v[1].as_str()?.to_string())))
+            .collect()
+    }
+    /// Variante deste personagem no grupo (vazia = a atual).
+    fn variante_no_grupo(&self, grupo: &str) -> String {
+        let v = crate::historias::variante_no_grupo(&serde_json::json!({ "grupos_variantes": self.grupos_variantes }), grupo).unwrap_or_default();
+        if self.opcoes_variante().iter().any(|(s, _)| *s == v) { v } else { String::new() }
+    }
+    /// Nome com a variante do grupo, se houver: "Pedro (Ranger)".
+    fn nome_no_grupo(&self, grupo: &str) -> String {
+        let v = self.variante_no_grupo(grupo);
+        match self.opcoes_variante().into_iter().find(|(s, _)| *s == v) {
+            Some((_, n)) => format!("{} ({n})", self.nome),
+            None => self.nome.clone(),
+        }
+    }
 }
 
 impl ItemLista {
@@ -74,7 +103,10 @@ pub(super) async fn lista_com(st: &AppState, s: Sessao, erro: Option<String>) ->
                 , concat_ws(' ', '@' || p.slug, p.ficha->>'relacoes',
                     (SELECT string_agg(x, ' ') FROM jsonb_array_elements_text(COALESCE(p.ficha->'apelidos', '[]')) x),
                     (SELECT string_agg(concat_ws(' ', v.nome, v.estilo), ' ') FROM conteudo.variantes v WHERE v.personagem_id = p.id)) AS busca,
-                ARRAY(SELECT trim(g) FROM jsonb_array_elements_text(COALESCE(p.ficha->'grupos', '[]')) g WHERE trim(g) <> '') AS grupos
+                ARRAY(SELECT trim(g) FROM jsonb_array_elements_text(COALESCE(p.ficha->'grupos', '[]')) g WHERE trim(g) <> '') AS grupos,
+                COALESCE((SELECT jsonb_agg(jsonb_build_array(v.slug, v.nome) ORDER BY v.criado_em) FROM conteudo.variantes v
+                           WHERE v.personagem_id = p.id AND NOT v.arquivada), '[]') AS variantes,
+                COALESCE(p.ficha->'grupos_variantes', '{}') AS grupos_variantes
            FROM conteudo.personagens p
            LEFT JOIN conteudo.variantes va ON va.id = p.variante_atual
           WHERE p.familia_id = $1

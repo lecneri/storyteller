@@ -49,6 +49,11 @@ pub fn grupos(ficha: &Value) -> Vec<String> {
     ficha["grupos"].as_array().into_iter().flatten().filter_map(|g| g.as_str().map(str::trim)).filter(|g| !g.is_empty()).map(String::from).collect()
 }
 
+/// Variante escolhida para o personagem num grupo (ficha.grupos_variantes: {"rangers": "ranger"}); None = a atual.
+pub fn variante_no_grupo(ficha: &Value, grupo: &str) -> Option<String> {
+    ficha["grupos_variantes"][util::slug(grupo)].as_str().map(str::trim).filter(|v| !v.is_empty()).map(String::from)
+}
+
 /// Personagens citados no briefing (`@grupo:familia` cita todos do grupo): `@slug`, `@slug:variante`, ou o nome/apelido escrito normalmente.
 pub fn detectar(briefing: &str, todos: &[PersonagemIA]) -> Vec<NaCena> {
     let mut achados: Vec<NaCena> = Vec::new();
@@ -90,7 +95,11 @@ pub fn detectar(briefing: &str, todos: &[PersonagemIA]) -> Vec<NaCena> {
         if s == "grupo" && !todos.iter().any(|p| p.slug == "grupo") {
             if let Some(g) = v.filter(|g| !g.is_empty()) {
                 for p in todos.iter().filter(|p| grupos(&p.ficha).iter().any(|x| util::slug(x) == g)) {
-                    add(&p.slug, None, None);
+                    // Com a variante escolhida no grupo (se ela ainda existir e não estiver arquivada).
+                    let v = variante_no_grupo(&p.ficha, &g).filter(|v| {
+                        p.variantes.as_array().is_some_and(|a| a.iter().any(|x| x["slug"] == *v && x["arquivada"] != true))
+                    });
+                    add(&p.slug, v, None);
                 }
             }
             continue;
@@ -216,6 +225,17 @@ mod testes {
         assert_eq!(slugs("Os @grupo:pokemon vão ao parque"), vec!["pedro", "henrique"]);
         assert_eq!(slugs("A @grupo:familia e o @noob"), vec!["pedro", "noob"]);
         assert!(slugs("o @grupo:nada").is_empty());
+    }
+
+    #[test]
+    fn grupo_cita_cada_um_na_variante_do_grupo() {
+        let mut a = p("pedro", "Pedro", &[], &["ranger"]);
+        a.ficha["grupos"] = serde_json::json!(["Rangers", "Família"]);
+        a.ficha["grupos_variantes"] = serde_json::json!({ "rangers": "ranger", "familia": "sumiu" });
+        let todos = vec![a];
+        assert_eq!(detectar("@grupo:rangers", &todos)[0].variante.as_deref(), Some("ranger"));
+        // Variante que não existe mais: fica a atual.
+        assert_eq!(detectar("@grupo:familia", &todos)[0].variante, None);
     }
 
     #[test]

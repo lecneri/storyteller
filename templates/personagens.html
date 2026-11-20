@@ -38,7 +38,7 @@
   <datalist id="grupos-familia">{% for (g, _) in grupos %}<option value="{{ g }}">{% endfor %}</datalist>
   <section class="cartao largo" data-aba="grupos">
     <h2>👥 Grupos</h2>
-    <p class="suave">Um personagem pode estar em vários grupos. No briefing, <code>@grupo:nome</code> cita todos do grupo.
+    <p class="suave">Um personagem pode estar em vários grupos, cada um com uma variante (ou a atual). No briefing, <code>@grupo:nome</code> cita todos do grupo, cada um na variante escolhida.
       Apagar um grupo só tira o grupo; os personagens continuam.</p>
     {% if itens.is_empty() %}<p class="suave">Crie personagens primeiro.</p>{% else %}
     <details class="grupo-ed" {% if grupos.is_empty() %}open{% endif %}>
@@ -46,19 +46,19 @@
       <form method="post" action="/personagens/grupos" class="grade-form">
         <input type="hidden" name="antigo" value="">
         <label class="inteiro">Nome <input name="nome" required placeholder="Família, Pokémon, Escola..."></label>
-        <div class="inteiro membros">{% for it in itens %}<label class="check"><input type="checkbox" name="membros" value="{{ it.slug }}"> {{ it.nome }}</label>{% endfor %}</div>
+        <div class="inteiro membros">{% for it in itens %}<span class="membro"><label class="check"><input type="checkbox" name="membros" value="{{ it.slug }}"> {{ it.nome }}</label>{% let ops = it.opcoes_variante() %}{% if ops.len() > 1 %}<select name="variante-{{ it.slug }}" title="Variante neste grupo"><option value="">atual</option>{% for (vs, vn) in ops %}<option value="{{ vs }}">{{ vn }}</option>{% endfor %}</select>{% endif %}</span>{% endfor %}</div>
         <button type="submit">Criar grupo</button>
       </form>
     </details>
     {% for (g, idx) in grupos %}
     <details class="grupo-ed">
       <summary><strong>👥 {{ g }}</strong> <small class="suave">({{ idx.len() }}) · <code>{{ self.arroba_grupo(g) }}</code> ·
-        {% for i in idx %}{% if !loop.first %}, {% endif %}{{ self.item(i).nome }}{% endfor %}</small></summary>
+        {% for i in idx %}{% if !loop.first %}, {% endif %}{{ self.item(i).nome_no_grupo(g) }}{% endfor %}</small></summary>
       <form method="post" action="/personagens/grupos" class="grade-form">
         <input type="hidden" name="antigo" value="{{ g }}">
         <label class="inteiro">Nome <small class="suave">(ao renomear, briefings antigos com {{ self.arroba_grupo(g) }} deixam de achar o grupo)</small>
           <input name="nome" value="{{ g }}" required></label>
-        <div class="inteiro membros">{% for it in itens %}<label class="check"><input type="checkbox" name="membros" value="{{ it.slug }}"{% if self.membro(idx, loop.index0) %} checked{% endif %}> {{ it.nome }}</label>{% endfor %}</div>
+        <div class="inteiro membros">{% for it in itens %}<span class="membro"><label class="check"><input type="checkbox" name="membros" value="{{ it.slug }}"{% if self.membro(idx, loop.index0) %} checked{% endif %}> {{ it.nome }}</label>{% let ops = it.opcoes_variante() %}{% if ops.len() > 1 %}{% let esc = it.variante_no_grupo(g) %}<select name="variante-{{ it.slug }}" title="Variante neste grupo"><option value="">atual</option>{% for (vs, vn) in ops %}<option value="{{ vs }}"{% if vs.as_str() == esc.as_str() %} selected{% endif %}>{{ vn }}</option>{% endfor %}</select>{% endif %}</span>{% endfor %}</div>
         <div class="inteiro linha">
           <button type="submit">💾 Salvar grupo</button>
           <button type="submit" name="acao" value="apagar" class="secundario" formnovalidate
