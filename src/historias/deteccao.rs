@@ -158,19 +158,24 @@ pub enum Citacao {
     Memoria(String),
     /// `#memoria`: a memória de todas as histórias da família.
     TodaMemoria,
-    /// `#estante` (no campo "usar da memória"): a memória das outras histórias da estante.
-    MemoriaEstante,
+    /// `#estante` (no campo "usar da memória"): a memória das outras histórias da estante atual;
+    /// `#estante:slug`: a de outra estante.
+    MemoriaEstante(Option<String>),
 }
 
-/// Campo "usar da memória" da nova história: `#estante`, `#todas` (ou `#memoria`) e `#historia` (a memória dela).
+/// Campo "usar da memória" da nova história: `#estante` (a atual), `#estante:slug`, `#todas` (ou `#memoria`)
+/// e `#historia` (a memória dela).
 pub fn citar_memoria(texto: &str) -> Vec<Citacao> {
     let mut v: Vec<Citacao> = Vec::new();
-    for c in citar_historias(texto) {
-        let c = match c {
-            Citacao::Referencia(s) if s == "estante" => Citacao::MemoriaEstante,
-            Citacao::Referencia(s) if s == "todas" => Citacao::TodaMemoria,
-            Citacao::Referencia(s) => Citacao::Memoria(s),
-            outra => outra,
+    for parte in texto.split('#').skip(1) {
+        let token: String = parte.chars().take_while(|c| c.is_alphanumeric() || *c == '-' || *c == '_' || *c == ':').collect();
+        let (nome, sufixo) = token.split_once(':').unwrap_or((&token, ""));
+        let (s, suf) = (util::slug(nome), util::slug(sufixo));
+        let c = match s.as_str() {
+            "" => continue,
+            "estante" => Citacao::MemoriaEstante(Some(suf).filter(|x| !x.is_empty())),
+            "todas" | "memoria" => Citacao::TodaMemoria,
+            _ => Citacao::Memoria(s),
         };
         if !v.contains(&c) {
             v.push(c);
@@ -287,8 +292,14 @@ mod testes {
             vec![Citacao::Memoria("a-lua".into()), Citacao::TodaMemoria, r("o-mar")]
         );
         assert_eq!(
-            citar_memoria("#estante #a-lua #todas #o-mar:memoria #memoria"),
-            vec![Citacao::MemoriaEstante, Citacao::Memoria("a-lua".into()), Citacao::TodaMemoria, Citacao::Memoria("o-mar".into())]
+            citar_memoria("#estante #a-lua #todas #o-mar:memoria #memoria #estante:Inglês-com-Pedro"),
+            vec![
+                Citacao::MemoriaEstante(None),
+                Citacao::Memoria("a-lua".into()),
+                Citacao::TodaMemoria,
+                Citacao::Memoria("o-mar".into()),
+                Citacao::MemoriaEstante(Some("ingles-com-pedro".into())),
+            ]
         );
         assert!(citar_historias("sem citação # solta").is_empty());
     }

@@ -551,6 +551,9 @@ pub async fn mencoes(State(st): State<AppState>, s: Sessao) -> Response {
                     .map(|v| json!({ "slug": v["slug"], "nome": v["nome"], "lingua": v["lingua"] })).collect::<Vec<_>>()),
             })).collect::<Vec<_>>(),
             "grupos": grupos_json(&p),
+            "estantes": sqlx::query_as::<_, (String, String)>("SELECT slug, nome FROM conteudo.estantes WHERE familia_id = $1 ORDER BY ordem, nome")
+                .bind(s.familia_id).fetch_all(&st.db).await.unwrap_or_default().into_iter()
+                .map(|(slug, nome)| json!({ "slug": slug, "nome": nome })).collect::<Vec<_>>(),
             "lugares": crate::lugares::da_familia(&st, s.familia_id).await.into_iter()
                 .map(|l| json!({ "slug": l.slug, "nome": l.nome })).collect::<Vec<_>>(),
             "historias": h.into_iter().map(|(slug, titulo)| json!({ "slug": slug, "titulo": titulo })).collect::<Vec<_>>(),

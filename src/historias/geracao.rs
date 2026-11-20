@@ -109,12 +109,20 @@ pub async fn preparar(st: &AppState, id: Uuid) -> anyhow::Result<Preparo> {
     let mut citacoes = citar_historias(&briefing);
     citacoes.extend(citar_memoria(h.memoria_usar.as_deref().unwrap_or_default()));
     if h.usar_memoria_estante {
-        citacoes.push(Citacao::MemoriaEstante);
+        citacoes.push(Citacao::MemoriaEstante(None));
     }
-    let mut com_estante = false;
+    let mut estantes: Vec<Uuid> = Vec::new();
     for c in citacoes {
         match c {
-            Citacao::MemoriaEstante => com_estante = true,
+            Citacao::MemoriaEstante(None) => estantes.extend(h.estante_principal),
+            Citacao::MemoriaEstante(Some(slug)) => {
+                let e: Option<Uuid> = sqlx::query_scalar("SELECT id FROM conteudo.estantes WHERE familia_id = $1 AND slug = $2")
+                    .bind(h.familia_id)
+                    .bind(&slug)
+                    .fetch_optional(&st.db)
+                    .await?;
+                estantes.extend(e);
+            }
             Citacao::Referencia(slug) => {
                 let achada: Option<(Uuid, String, Option<String>)> = sqlx::query_as(
                     "SELECT id, titulo, referencia FROM conteudo.historias WHERE familia_id = $1 AND slug = $2 AND id <> $3",
@@ -161,8 +169,9 @@ pub async fn preparar(st: &AppState, id: Uuid) -> anyhow::Result<Preparo> {
             }
         }
     }
-    // #estante (ou a antiga caixa "usar a memória da estante"): a memória das outras histórias da estante principal.
-    if let Some(estante) = h.estante_principal.filter(|_| com_estante) {
+    // #estante (a atual, ou a antiga caixa "usar a memória da estante") e #estante:slug: a memória das outras histórias delas.
+    estantes.dedup();
+    for estante in estantes {
         let da_estante: Vec<(String, Value)> = sqlx::query_as(
             "SELECT h.titulo, h.memoria FROM conteudo.historias h JOIN conteudo.estante_historias eh ON eh.historia_id = h.id
               WHERE eh.estante_id = $1 AND h.id <> $2 AND jsonb_array_length(h.memoria) > 0 ORDER BY h.criado_em",

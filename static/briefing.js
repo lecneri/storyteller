@@ -32,7 +32,7 @@
     function sugestoes() {
       const pos = ta.selectionStart;
       const antes = ta.value.slice(0, pos);
-      const m = antes.match(simples ? /(@)([\p{L}\p{N}_-]*)$/u : memoria ? /(#)([\p{L}\p{N}_-]*)$/u : /([@#])([\p{L}\p{N}_:!-]*)$/u);
+      const m = antes.match(simples ? /(@)([\p{L}\p{N}_-]*)$/u : memoria ? /(#)([\p{L}\p{N}_:-]*)$/u : /([@#])([\p{L}\p{N}_:!-]*)$/u);
       if (!m) { fechar(); return; }
       inicio = pos - m[0].length;
       const termo = norm(m[2]);
@@ -75,7 +75,8 @@
           }
         }
       } else {
-        opcoes = (memoria ? [{ txt: '#estante', rot: '🧠 Memória da estante' }, { txt: '#todas', rot: '🧠 Memória de todas as histórias' }] : [])
+        opcoes = (memoria ? [{ txt: '#estante', rot: '🧠 Memória da estante atual' }, { txt: '#todas', rot: '🧠 Memória de todas as histórias' }]
+          .concat((dados.estantes || []).map((e) => ({ txt: '#estante:' + e.slug, rot: '📚 Memória da estante ' + e.nome }))) : [])
           .filter((o) => norm(o.txt + ' ' + o.rot).includes(termo))
           .concat(dados.historias.filter((h) => norm(h.slug + ' ' + h.titulo).includes(termo))
             .map((h) => ({ txt: '#' + h.slug, rot: '📖 ' + h.titulo })));
@@ -116,7 +117,11 @@
       const t = '-' + norm(texto) + '-';
       const achados = [];
       if (memoria) {
-        if (/#estante(?![a-z0-9-])/i.test(texto)) achados.push({ rot: '🧠 Estante', remover: () => { ta.value = ta.value.replace(/#estante\s?/gi, ''); detectar(); } });
+        if (/#estante(?![a-z0-9:-])/i.test(texto)) achados.push({ rot: '🧠 Estante atual', remover: () => { ta.value = ta.value.replace(/#estante(?![a-z0-9:-])\s?/gi, ''); detectar(); } });
+        for (const e of dados.estantes || []) {
+          if (!new RegExp('#estante:' + e.slug + '(?![a-z0-9-])', 'i').test(texto)) continue;
+          achados.push({ rot: '📚 ' + e.nome, remover: () => { ta.value = ta.value.replace(new RegExp('#estante:' + e.slug + '\\s?', 'gi'), ''); detectar(); } });
+        }
         if (/#(todas|memoria)(?![a-z0-9-])/i.test(texto)) achados.push({ rot: '🧠 Todas', remover: () => { ta.value = ta.value.replace(/#(todas|memoria)\s?/gi, ''); detectar(); } });
       }
       for (const p of memoria ? [] : dados.personagens) {
