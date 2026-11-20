@@ -88,6 +88,8 @@
         <small class="suave">Com foto anexada, o Gemini (agy) é pulado, porque não lê fotos.</small>
       </fieldset>
       <label class="check inteiro"><input type="checkbox" name="chave_sistema" value="1"{% if f.usar_chave_sistema %} checked{% endif %}> Usar a chave do sistema (você paga a API)</label>
+      <label class="check inteiro"><input type="checkbox" name="pagar_sem_perguntar" value="1"{% if f.pagar_sem_perguntar %} checked{% endif %}> 💳 Quando as assinaturas falharem, usar a API paga <strong>sem perguntar</strong>
+        <small class="suave">(desmarcado: a imagem ou o texto espera a família escolher entre API paga e fazer manual)</small></label>
       <label>Limite por semana <small class="suave">(histórias pelas CLIs + chave do sistema; vazio = sem limite)</small>
         <input name="limite" type="number" min="0" value="{% if let Some(l) = f.limite_semana %}{{ l }}{% endif %}" placeholder="∞"></label>
       <button type="submit" class="inteiro">💾 Salvar</button>

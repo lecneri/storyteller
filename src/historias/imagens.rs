@@ -49,7 +49,7 @@ fn pedido_pagina(historia: Uuid, alvo: &'static str, chave: Option<String>, prom
 pub async fn chaves_protegidas(st: &AppState, historia: Uuid) -> Vec<String> {
     sqlx::query_scalar(
         "SELECT DISTINCT chave FROM jobs.imagens WHERE historia_id = $1 AND alvo = 'pagina' AND chave IS NOT NULL
-            AND (estado IN ('pendente', 'rodando') OR (estado = 'feito' AND atualizado_em > now() - interval '2 minutes'))",
+            AND (estado IN ('pendente', 'rodando', 'aguardando') OR (estado = 'feito' AND atualizado_em > now() - interval '2 minutes'))",
     )
     .bind(historia)
     .fetch_all(&st.db)
@@ -124,7 +124,7 @@ pub async fn parar(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) 
     }
     let _ = sqlx::query(
         "UPDATE jobs.imagens SET estado = 'cancelado', atualizado_em = now()
-          WHERE historia_id = $1 AND familia_id = $2 AND lote IS NOT NULL AND estado = 'pendente'",
+          WHERE historia_id = $1 AND familia_id = $2 AND lote IS NOT NULL AND estado IN ('pendente', 'aguardando')",
     )
     .bind(id)
     .bind(s.familia_id)

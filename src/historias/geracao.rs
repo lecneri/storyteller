@@ -210,7 +210,8 @@ pub async fn preparar(st: &AppState, id: Uuid) -> anyhow::Result<Preparo> {
 pub async fn executar_geracao(st: &AppState, payload: &Value) -> anyhow::Result<()> {
     let id: Uuid = payload["historia_id"].as_str().unwrap_or_default().parse()?;
     let p = preparar(st, id).await?;
-    let resposta = ia::gerar_texto(st, p.familia_id, &p.pedido).await?;
+    // "pago": a família escolheu seguir para a API paga depois que as assinaturas falharam.
+    let resposta = ia::gerar_texto_com(st, p.familia_id, &p.pedido, payload["pago"].as_bool() == Some(true)).await?;
     gravar(st, id, &p, &resposta).await
 }
 

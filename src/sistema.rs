@@ -31,6 +31,7 @@ struct LinhaFamilia {
     /// Modelo e esforço por CLI: {"claude": {"modelo": "...", "esforco": "..."}}.
     cli_ajustes: serde_json::Value,
     usar_chave_sistema: bool,
+    pagar_sem_perguntar: bool,
     limite_semana: Option<i64>,
     uso_semana: i64,
     espaco_mb: f64,
@@ -132,7 +133,7 @@ const SELECT_FAMILIA: &str = "SELECT f.id, f.nome, f.slug,
         COALESCE(c.clis, '{}') AS clis, COALESCE(c.modo_cli, 'ordem') AS modo_cli,
         COALESCE(c.clis_imagem, '{}') AS clis_imagem, COALESCE(c.ordem_fontes, '{cli,familia,sistema}') AS ordem_fontes,
         COALESCE(c.cli_ajustes, '{}') AS cli_ajustes,
-        COALESCE(c.usar_chave_sistema, false) AS usar_chave_sistema,
+        COALESCE(c.usar_chave_sistema, false) AS usar_chave_sistema, COALESCE(c.pagar_sem_perguntar, false) AS pagar_sem_perguntar,
         (c.limites->>'historias_semana')::bigint AS limite_semana,
         (SELECT count(*) FROM ia.uso u WHERE u.familia_id = f.id AND u.criado_em > now() - interval '7 days'
             AND u.via IN ('cli', 'chave_sistema')) AS uso_semana,
@@ -431,16 +432,18 @@ pub async fn salvar_familia(State(st): State<AppState>, s: Sessao, Path(id): Pat
     }
     let modo = Some(campo(&form, "modo_cli")).filter(|m| ["ordem", "rodizio", "fixo"].contains(&m.as_str())).unwrap_or_else(|| "ordem".into());
     let chave = form.iter().any(|(k, _)| k == "chave_sistema");
+    let sem_perguntar = form.iter().any(|(k, _)| k == "pagar_sem_perguntar");
     let limite: Option<i64> = campo(&form, "limite").parse().ok().filter(|n: &i64| *n > 0);
     let limites = match limite {
         Some(n) => serde_json::json!({ "historias_semana": n }),
         None => serde_json::json!({}),
     };
     let r = sqlx::query(
-        "INSERT INTO ia.config_familia (familia_id, cli_habilitado, clis, usar_chave_sistema, limites, modo_cli, clis_imagem, ordem_fontes, cli_ajustes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        "INSERT INTO ia.config_familia (familia_id, cli_habilitado, clis, usar_chave_sistema, limites, modo_cli, clis_imagem, ordem_fontes, cli_ajustes,
+                                        pagar_sem_perguntar)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          ON CONFLICT (familia_id) DO UPDATE SET cli_habilitado = $2, clis = $3, usar_chave_sistema = $4, limites = $5, modo_cli = $6,
-                                                clis_imagem = $7, ordem_fontes = $8, cli_ajustes = $9",
+                                                clis_imagem = $7, ordem_fontes = $8, cli_ajustes = $9, pagar_sem_perguntar = $10",
     )
     .bind(id)
     .bind(!clis.is_empty())
@@ -451,6 +454,7 @@ pub async fn salvar_familia(State(st): State<AppState>, s: Sessao, Path(id): Pat
     .bind(&clis_imagem)
     .bind(&fontes)
     .bind(serde_json::Value::Object(ajustes))
+    .bind(sem_perguntar)
     .execute(&st.db)
     .await;
     match r {

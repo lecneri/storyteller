@@ -302,14 +302,22 @@ pub async fn abrir(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) 
     render(PaginaEditor { s, titulo: h.titulo, dados, id })
 }
 
-pub async fn regerar(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) -> Response {
+#[derive(Deserialize)]
+pub struct FormRegerar {
+    /// "1": pode usar a API paga (as assinaturas falharam e a família confirmou).
+    #[serde(default)]
+    pago: Option<String>,
+}
+
+pub async fn regerar(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>, axum::extract::Form(f): axum::extract::Form<FormRegerar>) -> Response {
     let existe = historia_da_familia(&st, s.familia_id, id).await;
     match existe {
         Ok(true) => {}
         Ok(false) => return Redirect::to("/historias").into_response(),
         Err(e) => return erro_interno(e.into()),
     }
-    if let Err(e) = jobs::enfileirar(&st, "gerar_historia", s.familia_id, json!({ "historia_id": id })).await {
+    let payload = json!({ "historia_id": id, "pago": f.pago.is_some() });
+    if let Err(e) = jobs::enfileirar(&st, "gerar_historia", s.familia_id, payload).await {
         return erro_interno(e);
     }
     Redirect::to(&format!("/historias/{id}")).into_response()

@@ -8,7 +8,13 @@
     {% if let Some(e) = erro %}
       <h2>😕 Não deu para gerar</h2>
       <p class="erro">{{ e }}</p>
-      <form method="post" action="/historias/{{ id }}/regerar"><button>Tentar de novo</button></form>
+      <div class="linha" style="justify-content:center">
+        <form method="post" action="/historias/{{ id }}/regerar"><button>Tentar de novo</button></form>
+        {% if e.starts_with(crate::ia::PRECISA_PAGAR) %}
+        <form method="post" action="/historias/{{ id }}/regerar"><input type="hidden" name="pago" value="1"><button class="secundario">💳 Usar a API paga</button></form>
+        <a class="botao secundario" href="#outra-ia">✍️ Fazer manual (outra IA)</a>
+        {% endif %}
+      </div>
     {% else if externo %}
       <h2>📋 Gerar com outra IA</h2>
       <p class="suave">Copie o prompt, cole no ChatGPT, Gemini ou Claude e traga a resposta de volta.</p>

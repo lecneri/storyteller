@@ -112,6 +112,8 @@ struct Item {
     recortar: bool,
     tentadas: Vec<String>,
     erro: Option<String>,
+    /// A família já disse "pode usar a API paga" para este item.
+    pago_ok: bool,
 }
 
 /// Trabalhador de uma fila: um item por vez.
@@ -122,7 +124,7 @@ pub async fn trabalhador(st: AppState, fila: &'static str) {
               WHERE id = (SELECT id FROM jobs.imagens WHERE estado = 'pendente' AND fila = $1
                            ORDER BY prioridade DESC, id FOR UPDATE SKIP LOCKED LIMIT 1)
               RETURNING id, familia_id, familia_slug, alvo, historia_id, chave, variante_id, lugar_id, prompt, refs, pasta, recortar,
-                        tentadas, erro",
+                        tentadas, erro, pago_ok",
         )
         .bind(fila)
         .fetch_optional(&st.db)
@@ -175,6 +177,7 @@ async fn executar(st: &AppState, fila: &str, item: Item) {
 }
 
 /// Falhou nesta fila: tenta a próxima fonte da família que ainda não tentou; sem mais nenhuma, fica com erro.
+/// Se a próxima é a API paga (chaves), espera a família decidir ("aguardando"), salvo se ela já liberou.
 async fn falhou(st: &AppState, item: &Item, fila: &str, erro: &str) -> Result<(), sqlx::Error> {
     tracing::warn!("imagem {} falhou na fila {fila}: {erro}", item.id);
     let mut tentadas = item.tentadas.clone();
@@ -185,17 +188,66 @@ async fn falhou(st: &AppState, item: &Item, fila: &str, erro: &str) -> Result<()
     };
     let filas = crate::imagem::filas(st, item.familia_id).await.unwrap_or_default();
     let proxima = filas.into_iter().find(|f| !tentadas.contains(f));
+    let perguntar = proxima.as_deref() == Some("api") && !item.pago_ok && !pagar_sem_perguntar(st, item.familia_id).await;
+    let novo_estado = match &proxima {
+        None => "erro",
+        Some(_) if perguntar => "aguardando",
+        Some(_) => "pendente",
+    };
     sqlx::query(
-        "UPDATE jobs.imagens SET estado = CASE WHEN $2::text IS NULL THEN 'erro' ELSE 'pendente' END,
-                fila = COALESCE($2, fila), tentadas = $3, erro = $4, atualizado_em = now() WHERE id = $1",
+        "UPDATE jobs.imagens SET estado = $5, fila = COALESCE($2, fila), tentadas = $3, erro = $4, atualizado_em = now() WHERE id = $1",
     )
     .bind(item.id)
     .bind(proxima)
     .bind(&tentadas)
     .bind(&erro)
+    .bind(novo_estado)
     .execute(&st.db)
     .await
     .map(|_| ())
+}
+
+/// A família liberou seguir para a API paga sem perguntar?
+pub async fn pagar_sem_perguntar(st: &AppState, familia: Uuid) -> bool {
+    sqlx::query_scalar("SELECT pagar_sem_perguntar FROM ia.config_familia WHERE familia_id = $1")
+        .bind(familia)
+        .fetch_optional(&st.db)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(false)
+}
+
+#[derive(Deserialize)]
+pub struct Decisao {
+    /// Itens (página do personagem/lugar) ou todos os da história.
+    #[serde(default)]
+    ids: Vec<i64>,
+    #[serde(default)]
+    historia: Option<Uuid>,
+    /// "pagar" (segue para a API paga) ou "manual" (tira da fila).
+    acao: String,
+}
+
+/// POST /imagens/decidir: o que fazer com as imagens que esperam a decisão sobre a API paga.
+pub async fn decidir(State(st): State<AppState>, s: Sessao, Json(d): Json<Decisao>) -> Response {
+    let sql = match d.acao.as_str() {
+        "pagar" => "UPDATE jobs.imagens SET estado = 'pendente', pago_ok = true, atualizado_em = now()",
+        "manual" => "UPDATE jobs.imagens SET estado = 'cancelado', atualizado_em = now()",
+        _ => return crate::web::erro_json("Ação desconhecida."),
+    };
+    let r = sqlx::query(&format!(
+        "{sql} WHERE familia_id = $1 AND estado = 'aguardando' AND (id = ANY($2) OR ($3::uuid IS NOT NULL AND historia_id = $3))"
+    ))
+    .bind(s.familia_id)
+    .bind(&d.ids)
+    .bind(d.historia)
+    .execute(&st.db)
+    .await;
+    match r {
+        Ok(r) => Json(json!({ "ok": true, "itens": r.rows_affected() })).into_response(),
+        Err(e) => crate::web::erro_interno(e.into()),
+    }
 }
 
 /// Põe a imagem pronta no lugar: na página (pela chave), na capa ou nas imagens da variante.
@@ -275,7 +327,7 @@ pub struct Situacao {
 
 impl Situacao {
     pub fn ativo(&self) -> bool {
-        self.estado == "pendente" || self.estado == "rodando"
+        self.estado == "pendente" || self.estado == "rodando" || self.estado == "aguardando"
     }
     /// "⏳ Na fila (2º)" / "🎨 Desenhando… (ChatGPT (Codex))".
     pub fn rotulo(&self) -> String {
@@ -284,6 +336,7 @@ impl Situacao {
             "rodando" => format!("🎨 Desenhando… ({})", crate::imagem::nome_fila(&self.fila)),
             "feito" => "✅ Pronta".into(),
             "cancelado" => "Cancelada".into(),
+            "aguardando" => "💳 Esperando: usar a API paga?".into(),
             _ => {
                 let e = self.erro.as_deref().unwrap_or("erro");
                 let curto: String = e.chars().take(240).collect();
@@ -312,9 +365,9 @@ const SELECT_SITUACAO: &str = "SELECT i.id, i.alvo, i.chave, i.variante_id, i.lu
 pub async fn da_historia(st: &AppState, familia: Uuid, historia: Uuid) -> Vec<Situacao> {
     sqlx::query_as(&format!(
         "{SELECT_SITUACAO} WHERE i.familia_id = $1 AND i.historia_id = $2
-            AND (i.estado IN ('pendente', 'rodando') OR i.atualizado_em > now() - interval '30 minutes'
+            AND (i.estado IN ('pendente', 'rodando', 'aguardando') OR i.atualizado_em > now() - interval '30 minutes'
                  OR i.lote IN (SELECT a.lote FROM jobs.imagens a WHERE a.historia_id = $2 AND a.lote IS NOT NULL
-                                  AND a.estado IN ('pendente', 'rodando')))
+                                  AND a.estado IN ('pendente', 'rodando', 'aguardando')))
           ORDER BY i.id"
     ))
     .bind(familia)
@@ -329,7 +382,7 @@ pub async fn do_personagem(st: &AppState, familia: Uuid, personagem: Uuid) -> Ve
     sqlx::query_as(&format!(
         "{SELECT_SITUACAO} JOIN conteudo.variantes v ON v.id = i.variante_id
           WHERE i.familia_id = $1 AND v.personagem_id = $2
-            AND (i.estado IN ('pendente', 'rodando') OR (i.estado = 'erro' AND i.atualizado_em > now() - interval '15 minutes'))
+            AND (i.estado IN ('pendente', 'rodando', 'aguardando') OR (i.estado = 'erro' AND i.atualizado_em > now() - interval '15 minutes'))
           ORDER BY i.id"
     ))
     .bind(familia)
@@ -343,7 +396,7 @@ pub async fn do_personagem(st: &AppState, familia: Uuid, personagem: Uuid) -> Ve
 pub async fn do_lugar(st: &AppState, familia: Uuid, lugar: Uuid) -> Vec<Situacao> {
     sqlx::query_as(&format!(
         "{SELECT_SITUACAO} WHERE i.familia_id = $1 AND i.lugar_id = $2
-            AND (i.estado IN ('pendente', 'rodando') OR (i.estado = 'erro' AND i.atualizado_em > now() - interval '15 minutes'))
+            AND (i.estado IN ('pendente', 'rodando', 'aguardando') OR (i.estado = 'erro' AND i.atualizado_em > now() - interval '15 minutes'))
           ORDER BY i.id"
     ))
     .bind(familia)

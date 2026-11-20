@@ -104,10 +104,19 @@ fn ordem_clis(clis: &[String], modo: &str, vezes: i64) -> Vec<String> {
 /// Gera texto pela melhor rota disponível para a família:
 /// CLIs liberados para a família (na ordem dela) → chave da família → chave do sistema → chave gratuita do Gemini (GEMINI_CHAVE_GRATIS).
 /// O limite semanal vale para o que o admin paga (CLI e chave do sistema).
+/// Começo da mensagem quando as assinaturas falharam e a API paga ficou esperando a família decidir.
+pub const PRECISA_PAGAR: &str = "💳 As assinaturas falharam";
+
 pub async fn gerar_texto(st: &crate::AppState, familia: uuid::Uuid, p: &PedidoTexto) -> anyhow::Result<Value> {
-    let (clis, modo, sistema, limites, fontes, ajustes): (Vec<String>, String, bool, Value, Vec<String>, Value) = sqlx::query_as(
+    gerar_texto_com(st, familia, p, false).await
+}
+
+/// Como `gerar_texto`; `pago_ok` = a família já disse "pode usar a API paga". Sem isso (e sem "pagar sem perguntar"),
+/// se as assinaturas falharem, as chaves pagas não são usadas e o erro começa com PRECISA_PAGAR.
+pub async fn gerar_texto_com(st: &crate::AppState, familia: uuid::Uuid, p: &PedidoTexto, pago_ok: bool) -> anyhow::Result<Value> {
+    let (clis, modo, sistema, limites, fontes, ajustes, sem_perguntar): (Vec<String>, String, bool, Value, Vec<String>, Value, bool) = sqlx::query_as(
         "SELECT COALESCE(c.clis, '{}'), COALESCE(c.modo_cli, 'ordem'), COALESCE(c.usar_chave_sistema, false), COALESCE(c.limites, '{}'),
-                COALESCE(c.ordem_fontes, '{cli,familia,sistema}'), COALESCE(c.cli_ajustes, '{}')
+                COALESCE(c.ordem_fontes, '{cli,familia,sistema}'), COALESCE(c.cli_ajustes, '{}'), COALESCE(c.pagar_sem_perguntar, false)
            FROM acesso.familias f LEFT JOIN ia.config_familia c ON c.familia_id = f.id WHERE f.id = $1",
     )
     .bind(familia)
@@ -121,6 +130,9 @@ pub async fn gerar_texto(st: &crate::AppState, familia: uuid::Uuid, p: &PedidoTe
     .await?;
     let dentro_do_limite = limites["historias_semana"].as_i64().is_none_or(|l| usado < l);
     let mut erros: Vec<String> = Vec::new();
+    // Alguma assinatura foi tentada e falhou: as chaves pagas só entram com o "pode pagar" da família.
+    let mut cli_falhou = false;
+    let mut pagas_puladas = false;
 
     // Fontes na ordem da família (padrão: assinaturas → chave da família → chave do sistema).
     for fonte in ordem_fontes(&fontes) {
@@ -151,11 +163,16 @@ pub async fn gerar_texto(st: &crate::AppState, familia: uuid::Uuid, p: &PedidoTe
                                 registrar_uso(st, familia, "cli", nome, modelo.as_deref()).await;
                                 return Ok(v);
                             }
-                            Err(e) => erros.push(format!("CLI {e:#}")),
+                            Err(e) => {
+                                cli_falhou = true;
+                                erros.push(format!("CLI {e:#}"));
+                            }
                         }
                     }
                 }
             }
+            "familia" if cli_falhou && !pago_ok && !sem_perguntar => pagas_puladas |= !chaves(st, Some(familia)).await?.is_empty(),
+            "sistema" if cli_falhou && !pago_ok && !sem_perguntar => pagas_puladas |= sistema && dentro_do_limite && !chaves(st, None).await?.is_empty(),
             "familia" => {
                 for (prov, chave, modelo) in chaves(st, Some(familia)).await? {
                     match por_api(&prov, &chave, modelo.as_deref(), p).await {
@@ -192,6 +209,9 @@ pub async fn gerar_texto(st: &crate::AppState, familia: uuid::Uuid, p: &PedidoTe
                 Err(e) => erros.push(format!("Gemini gratuito: {e:#}")),
             }
         }
+    }
+    if pagas_puladas {
+        bail!("{PRECISA_PAGAR} ({}). A API paga não foi usada sem a sua confirmação.", erros.join(" | "));
     }
     if erros.is_empty() {
         if !dentro_do_limite {

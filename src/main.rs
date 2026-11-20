@@ -159,6 +159,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/historias/{id}/imagem-ia", post(historias::imagens::pedir_uma))
         .route("/historias/{id}/fonte-imagem", post(historias::imagens::definir_fonte))
         .route("/imagens/fila", get(fila_imagens::estado))
+        .route("/imagens/decidir", post(fila_imagens::decidir))
         .route("/historias/{id}/bloco-audio", post(narracao::audio_bloco))
         .route("/historias/{id}/narrar", post(narracao::narrar))
         .route("/historias/{id}/gravacao", post(narracao::gravar))

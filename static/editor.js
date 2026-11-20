@@ -334,7 +334,30 @@
   const filaImg = { itens: [], filas: [], fonte: null, carregado: false };
   const acompanhados = new Set(); // ids que o editor viu na fila (só esses são aplicados quando terminam)
   let timerFila = null;
-  const ativo = (i) => i.estado === 'pendente' || i.estado === 'rodando';
+  const ativo = (i) => i.estado === 'pendente' || i.estado === 'rodando' || i.estado === 'aguardando';
+  // Imagens esperando a decisão: as assinaturas falharam e a próxima fonte é a API paga.
+  const avisoPago = el('div', { class: 'aviso-forte aviso-pago', hidden: '' });
+  function atualizarAvisoPago() {
+    const esperando = filaImg.itens.filter((i) => i.estado === 'aguardando');
+    avisoPago.hidden = !esperando.length;
+    if (!esperando.length) return;
+    const motivo = (esperando[0].erro || '').split(' | ').pop().slice(0, 200);
+    const decidir = async (acao, botao) => {
+      botao.disabled = true;
+      try {
+        const r = await fetch('/imagens/decidir', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ historia: dados.id, acao }) });
+        if (!r.ok) throw new Error('erro ' + r.status);
+        aviso(acao === 'pagar' ? 'Seguindo pela API paga.' : 'Tiradas da fila: use o kit de cada página (prompt e referências).', 4000);
+      } catch (e) { aviso('Não deu: ' + e.message); }
+      acompanharImagens();
+    };
+    avisoPago.replaceChildren(
+      el('div', {}, '💳 ' + esperando.length + ' imagem(ns) esperando: as assinaturas falharam' + (motivo ? ' (' + motivo + ')' : '') + '. Usar a API paga?'),
+      el('div', { class: 'linha' },
+        el('button', { type: 'button', onclick: (e) => decidir('pagar', e.currentTarget) }, '💳 Usar API paga'),
+        el('button', { type: 'button', class: 'secundario', onclick: (e) => decidir('manual', e.currentTarget) }, '✍️ Fazer manual')));
+  }
   const itemDaPagina = (pag) => pag.chave ? filaImg.itens.find((i) => ativo(i) && i.alvo === 'pagina' && i.chave === pag.chave) : null;
   const itemDaCapa = () => filaImg.itens.find((i) => ativo(i) && i.alvo === 'capa');
   // Último lote ("gerar todas"): { total, feitas, falhas, ativos, pendentes }.
@@ -432,6 +455,7 @@
     if (bc) { const it = itemDaCapa(); bc.disabled = !!it; bc.textContent = it ? it.rotulo : '✨ Gerar capa com IA'; }
     const bt = raiz.querySelector('[data-gerar-todas]');
     if (bt) bt.textContent = rotuloTodas();
+    atualizarAvisoPago();
   }
   async function acompanharImagens() {
     clearTimeout(timerFila);
@@ -462,6 +486,7 @@
     }
     if (chegou || (filasMudaram && primeiraVez) || (primeiraVez && filaImg.itens.some(ativo))) desenhar();
     else atualizarBotoesFila();
+    atualizarAvisoPago();
     if (filaImg.itens.some(ativo)) timerFila = setTimeout(acompanharImagens, 3500);
   }
   function previaMidia(pag) {
@@ -1322,6 +1347,7 @@
         ? (atual = Math.min(atual, estado.paginas.length - 1),
            [navCarrossel(), inserirPaginaUI(atual), paginaUI(estado.paginas[atual], atual), inserirPaginaUI(atual + 1), navCarrossel()])
         : [estado.paginas.length > 1 ? navCarrossel() : null, inserirPaginaUI(0), estado.paginas.map((p, n) => [paginaUI(p, n), inserirPaginaUI(n + 1)])],
+      avisoPago,
       el('div', { class: 'barra-salvar' },
         el('a', { href: '/ler/' + dados.id, target: '_blank', rel: 'noopener' }, '📖 Abrir no player'),
         el('a', { href: '/compartilhar/historia/' + dados.id }, '🔗 Compartilhar'),
