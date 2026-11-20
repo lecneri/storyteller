@@ -30,6 +30,9 @@
 
   <section class="cartao largo">
     <h2>🤖 IA desta família</h2>
+    {% if f.clis.is_empty() && f.clis_imagem.is_empty() %}
+    <p class="aviso-forte">⚠️ Nenhuma assinatura liberada para esta família: textos e imagens só saem por chave de API (se houver). Marque abaixo as CLIs que ela pode usar.</p>
+    {% endif %}
     <form method="post" action="/sistema/familias/{{ f.id }}" class="grade-form">
       <fieldset class="inteiro">
         <legend>Ordem das fontes de IA (texto e imagem)</legend>

@@ -270,17 +270,26 @@ fn conectado(situacao: &str) -> bool {
 }
 
 /// CLIs para marcar: os da família na ordem dela e depois os outros conectados na plataforma.
-/// Um CLI desconectado só aparece se a família já tinha (para poder desmarcar).
+/// Um CLI desconectado só aparece se a família já tinha (para poder desmarcar); se o ia-cli não respondeu,
+/// todos aparecem (com "sem resposta agora"), para a lista não sumir só porque ele estava ocupado.
+/// "indisponível (ia-cli fora do ar)" vira "⏳ sem resposta agora (…)": a CLI pode estar boa, o ia-cli só não respondeu.
+fn sem_resposta(s: String) -> String {
+    match s.strip_prefix("indisponível") {
+        Some(resto) => format!("⏳ sem resposta agora{resto}"),
+        None => s,
+    }
+}
+
 fn opcoes_cli(da_familia: &[String], situacao: &[(String, String)]) -> Vec<OpcaoCli> {
     let sit = |c: &str| situacao.iter().find(|(n, _)| n == c).map(|(_, s)| s.clone()).unwrap_or_else(|| "não conectado".into());
     let mut v: Vec<OpcaoCli> = da_familia
         .iter()
         .filter(|c| ["claude", "codex", "agy"].contains(&c.as_str()))
-        .map(|c| OpcaoCli { chave: c.clone(), nome: nome_cli(c), situacao: sit(c), marcado: true })
+        .map(|c| OpcaoCli { chave: c.clone(), nome: nome_cli(c), situacao: sem_resposta(sit(c)), marcado: true })
         .collect();
     for (c, st) in situacao {
-        if !v.iter().any(|o| o.chave == *c) && conectado(st) {
-            v.push(OpcaoCli { chave: c.clone(), nome: nome_cli(c), situacao: st.clone(), marcado: false });
+        if !v.iter().any(|o| o.chave == *c) && (conectado(st) || st.starts_with("indisponível")) {
+            v.push(OpcaoCli { chave: c.clone(), nome: nome_cli(c), situacao: sem_resposta(st.clone()), marcado: false });
         }
     }
     v
