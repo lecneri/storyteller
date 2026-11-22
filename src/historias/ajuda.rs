@@ -91,13 +91,7 @@ pub fn processar(p: &Preparo, atual: &Value, resposta: &Value) -> anyhow::Result
     )?;
     let antigas: Vec<Pagina> = serde_json::from_value(atual["paginas"].clone()).unwrap_or_default();
     let origens: Vec<i64> = resposta["paginas"].as_array().into_iter().flatten().map(|pg| pg["origem"].as_i64().unwrap_or(0)).collect();
-    for (pg, o) in c.paginas.iter_mut().zip(origens) {
-        if let Some(a) = usize::try_from(o).ok().filter(|o| *o >= 1).and_then(|o| antigas.get(o - 1)) {
-            pg.midia = a.midia.clone();
-            pg.som = a.som;
-            pg.chave = a.chave.clone();
-        }
-    }
+    herdar_da_origem(&mut c.paginas, &antigas, &origens);
     let mut c = normalizar(c, &p.narracao, &p.citados, &p.todos);
     super::prompt::ajustar_lugares(&mut c, &p.lugares);
     manter_gravacoes(&mut c, &antigas);
@@ -106,6 +100,23 @@ pub fn processar(p: &Preparo, atual: &Value, resposta: &Value) -> anyhow::Result
     }
     let titulo = resposta["titulo"].as_str().map(str::trim).filter(|t| !t.is_empty());
     Ok(json!({ "titulo": titulo, "conteudo": c }))
+}
+
+/// Cada página herda da página de origem o que não é texto: imagem/vídeo, som, chave e música.
+/// Se a IA dividir uma página em várias, a troca de música fica só na primeira (a mídia vai para todas).
+fn herdar_da_origem(paginas: &mut [Pagina], antigas: &[Pagina], origens: &[i64]) {
+    let mut musica_usada: Vec<usize> = Vec::new();
+    for (pg, o) in paginas.iter_mut().zip(origens) {
+        let Some(i) = usize::try_from(*o).ok().filter(|o| *o >= 1).map(|o| o - 1) else { continue };
+        let Some(a) = antigas.get(i) else { continue };
+        pg.midia = a.midia.clone();
+        pg.som = a.som;
+        if !musica_usada.contains(&i) {
+            pg.chave = a.chave.clone();
+            pg.musica = a.musica.clone();
+            musica_usada.push(i);
+        }
+    }
 }
 
 /// A fala que continua igual (mesmo personagem e mesmo texto) mantém a voz gravada.
@@ -225,6 +236,22 @@ pub async fn importar_ajuda(State(st): State<AppState>, s: Sessao, Path(id): Pat
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    #[test]
+    fn pagina_herda_midia_e_musica_da_origem() {
+        let antiga: Pagina = serde_json::from_value(json!({
+            "chave": "k1", "som": false, "midia": { "id": "00000000-0000-0000-0000-000000000001", "tipo": "image/png" },
+            "musica": { "modo": "silencio" }
+        }))
+        .unwrap();
+        let mut novas = vec![Pagina::default(), Pagina::default(), Pagina::default()];
+        herdar_da_origem(&mut novas, &[antiga], &[1, 1, 0]);
+        assert_eq!(novas[0].musica.as_ref().map(|m| m.modo.as_str()), Some("silencio"));
+        assert_eq!(novas[0].chave, "k1");
+        assert_eq!(novas[0].som, Some(false));
+        assert!(novas[1].midia.is_some() && novas[1].musica.is_none() && novas[1].chave.is_empty());
+        assert!(novas[2].midia.is_none() && novas[2].musica.is_none());
+    }
 
     #[test]
     fn schema_de_edicao_pede_a_origem() {
