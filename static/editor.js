@@ -979,6 +979,7 @@
 
   // ───────────── Ajuda da IA para editar ─────────────
   // A IA devolve a história inteira ajustada; o editor mostra, e a família salva ou desfaz.
+  let barraAberta = false;
   const ajuda = { aberto: false, pedido: '', msg: '', ocupado: false, externo: false, prompt: '', resposta: '', backup: null };
   function aplicarAjuda(r) {
     ajuda.backup = JSON.parse(JSON.stringify({ titulo: estado.titulo, paginas: estado.paginas, secundarios: estado.secundarios, lugares: estado.lugares }));
@@ -1350,7 +1351,9 @@
            [navCarrossel(), inserirPaginaUI(atual), paginaUI(estado.paginas[atual], atual), inserirPaginaUI(atual + 1), navCarrossel()])
         : [estado.paginas.length > 1 ? navCarrossel() : null, inserirPaginaUI(0), estado.paginas.map((p, n) => [paginaUI(p, n), inserirPaginaUI(n + 1)])],
       avisoPago,
-      el('div', { class: 'barra-salvar' },
+      el('div', { class: 'barra-salvar' + (barraAberta ? ' aberta' : '') },
+        // No celular, as ações menos usadas ficam em "⋯ Mais" (abre para cima); Salvar fica sempre à vista.
+        el('div', { class: 'barra-mais' },
         el('a', { href: '/ler/' + dados.id, target: '_blank', rel: 'noopener' }, '📖 Abrir no player'),
         el('a', { href: '/compartilhar/historia/' + dados.id }, '🔗 Compartilhar'),
         el('form', { method: 'post', action: location.pathname + '/apagar', class: 'inline',
@@ -1361,7 +1364,10 @@
         dados.imagem_api && estado.paginas.length ? el('button', { type: 'button', class: 'secundario', 'data-gerar-todas': true,
           title: 'Gera com IA a imagem de cada página sem imagem, na fila do servidor (pode fechar a aba)',
           onclick: (e) => gerarTodas(e.currentTarget) }, rotuloTodas()) : null,
-        el('button', { type: 'button', class: 'secundario', onclick: gerarNarracao }, '🎙️ Gerar narração'),
+        el('button', { type: 'button', class: 'secundario', onclick: gerarNarracao }, '🎙️ Gerar narração')),
+        el('button', { type: 'button', class: 'secundario so-celular', 'aria-expanded': String(barraAberta),
+          onclick: (e) => { barraAberta = !barraAberta; const b = e.currentTarget.closest('.barra-salvar');
+            b.classList.toggle('aberta', barraAberta); e.currentTarget.setAttribute('aria-expanded', String(barraAberta)); } }, '⋯ Mais'),
         status, el('button', { type: 'button', onclick: salvar }, '💾 Salvar')),
     ].flat(Infinity).filter(Boolean));
     raiz.querySelectorAll('textarea:not(.prompt):not(.fixa):not(.recolhe)').forEach(ajustar);
