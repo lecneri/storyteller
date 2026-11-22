@@ -31,7 +31,18 @@ pub(crate) async fn ler_multipart(mut mp: Multipart) -> Result<(HashMap<String, 
                 arquivos.push(bytes.to_vec());
             }
         } else {
-            campos.insert(nome, campo.text().await.unwrap_or_default());
+            let t = campo.text().await.unwrap_or_default();
+            // Caixinhas repetidas ("grupo"): junta com vírgula.
+            match campos.get_mut(&nome) {
+                Some(v) if nome == "grupo" => {
+                    let v: &mut String = v;
+                    v.push(',');
+                    v.push_str(&t);
+                }
+                _ => {
+                    campos.insert(nome, t);
+                }
+            }
         }
     }
     Ok((campos, arquivos))
@@ -103,8 +114,15 @@ pub async fn criar_variante(
             return erro_interno(e.into());
         }
     }
-    // ✨ Criar e gerar: já pede o desenho à fila (aparência da ficha + estilo + o que muda; com a foto real se marcada).
+    // Grupos marcados: o personagem entra neles com esta variante.
     let vslug = util::slug(&nome);
+    let marcados = super::grupos::do_texto(&format!("{},{}", campos.get("grupo").map(String::as_str).unwrap_or(""), campos.get("grupo_novo").map(String::as_str).unwrap_or("")));
+    if !marcados.is_empty() {
+        if let Err(e) = super::grupos::variante_nos_grupos(&st.db, p.id, &vslug, &marcados).await {
+            return erro_interno(e.into());
+        }
+    }
+    // ✨ Criar e gerar: já pede o desenho à fila (aparência da ficha + estilo + o que muda; com a foto real se marcada).
     if campos.get("gerar").is_some() && crate::imagem::disponivel(&st, s.familia_id).await {
         if let Err(msg) = super::com_ia::gerar_desenho_variante(&st, &s, &slug, &vslug, campos.contains_key("foto")).await {
             return detalhe_com(&st, s, &slug, Some(format!("A variante foi criada, mas o desenho não entrou na fila: {msg}"))).await;
@@ -278,27 +296,21 @@ pub async fn alternar_arquivo(
 }
 
 
-#[derive(serde::Deserialize)]
-pub struct FormEditarVariante {
-    nome: String,
-    #[serde(default)]
-    arroba: String,
-    #[serde(default)]
-    forma: String,
-    #[serde(default)]
-    estilo: String,
-    #[serde(default)]
-    descricao: String,
-}
-
-/// POST /personagens/{slug}/variantes/{vslug}/editar: nome, @, forma, estilo e descrição da variante.
+/// POST /personagens/{slug}/variantes/{vslug}/editar: nome, @, forma, estilo, descrição e grupos
+/// (caixinhas "grupo" + "grupo_novo") da variante.
 pub async fn editar_variante(
     State(st): State<AppState>,
     s: Sessao,
     Path((slug, vslug)): Path<(String, String)>,
-    axum::extract::Form(f): axum::extract::Form<FormEditarVariante>,
+    corpo: axum::body::Bytes,
 ) -> Response {
-    let nome = f.nome.trim();
+    let form: Vec<(String, String)> = serde_urlencoded::from_bytes(&corpo).unwrap_or_default();
+    let campo = |k: &str| form.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone()).unwrap_or_default();
+    let marcados = super::grupos::do_texto(
+        &form.iter().filter(|(n, _)| n == "grupo" || n == "grupo_novo").map(|(_, v)| v.as_str()).collect::<Vec<_>>().join(","),
+    );
+    let (nome, arroba, forma, estilo, descricao) = (campo("nome"), campo("arroba"), campo("forma"), campo("estilo"), campo("descricao"));
+    let nome = nome.trim();
     if nome.is_empty() {
         return detalhe_com(&st, s, &slug, Some("Dê um nome para a variante.".into())).await;
     }
@@ -312,9 +324,9 @@ pub async fn editar_variante(
     .bind(&slug)
     .bind(&vslug)
     .bind(nome)
-    .bind(texto(&f.forma))
-    .bind(texto(&f.estilo))
-    .bind(texto(&f.descricao))
+    .bind(texto(&forma))
+    .bind(texto(&estilo))
+    .bind(texto(&descricao))
     .execute(&st.db)
     .await;
     match r {
@@ -322,13 +334,25 @@ pub async fn editar_variante(
         Ok(_) => {}
         Err(e) => return erro_interno(e.into()),
     }
-    let novo = util::slug(f.arroba.trim_start_matches('@').rsplit(':').next().unwrap_or_default());
+    let novo = util::slug(arroba.trim_start_matches('@').rsplit(':').next().unwrap_or_default());
     if !novo.is_empty() && novo != vslug {
         if let Err(e) = super::renomear::renomear_variante(&st, s.familia_id, &slug, &vslug, &novo).await {
             return detalhe_com(&st, s, &slug, Some(format!("A variante foi salva, mas não troquei o @: {e:#}"))).await;
         }
     }
-    ir_para(&slug, if !novo.is_empty() { &novo } else { &vslug })
+    let final_slug = if !novo.is_empty() { novo } else { vslug };
+    let pid: Option<Uuid> = sqlx::query_scalar("SELECT id FROM conteudo.personagens WHERE familia_id = $1 AND slug = $2")
+        .bind(s.familia_id)
+        .bind(&slug)
+        .fetch_optional(&st.db)
+        .await
+        .unwrap_or(None);
+    if let Some(pid) = pid {
+        if let Err(e) = super::grupos::variante_nos_grupos(&st.db, pid, &final_slug, &marcados).await {
+            return erro_interno(e.into());
+        }
+    }
+    ir_para(&slug, &final_slug)
 }
 
 /// Volta para a página do personagem já na variante (âncora #v-slug: rola até ela e, no carrossel, abre ela).

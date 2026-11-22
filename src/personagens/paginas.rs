@@ -392,6 +392,10 @@ impl PaginaPersonagem {
     fn falha(&self, v: &Variante) -> Option<String> {
         self.fila.iter().rev().find(|i| i.variante_id == Some(v.id) && i.estado == "erro").map(|i| i.rotulo())
     }
+    /// O personagem está no grupo `g` com esta variante.
+    fn no_grupo(&self, v: &Variante, g: &str) -> bool {
+        self.p.ficha["grupos_variantes"][crate::util::slug(g)].as_str() == Some(v.slug.as_str())
+    }
     fn eh_atual(&self, v: &Variante) -> bool {
         self.p.variante_atual == Some(v.id)
     }

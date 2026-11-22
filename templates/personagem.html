@@ -127,6 +127,10 @@
             <label>Estilo <input name="estilo" value="{% if let Some(e) = v.estilo %}{{ e }}{% endif %}" placeholder="anime do Pokémon, traço Naruto, Pixar..."></label>
             <label>Forma <input name="forma" value="{% if let Some(f) = v.forma %}{{ f }}{% endif %}" placeholder="normal, super, gigante..."></label>
             <label class="inteiro">O que muda <small class="suave">(o resto vem da ficha)</small> <textarea name="descricao" rows="2">{% if let Some(d) = v.descricao %}{{ d }}{% endif %}</textarea></label>
+            <fieldset class="inteiro grupos-variante"><legend>👥 Grupos com esta variante</legend>
+              {% for g in grupos_familia %}<label class="check"><input type="checkbox" name="grupo" value="{{ g }}"{% if self.no_grupo(v, g) %} checked{% endif %}> {{ g }}</label>{% endfor %}
+              <input name="grupo_novo" placeholder="Grupo novo (opcional)" autocomplete="off">
+            </fieldset>
             <p class="inteiro suave">Trocar o @ atualiza as histórias, briefings e estantes que usam esta variante.</p>
             <button type="submit">💾 Salvar variante</button>
           </form>
@@ -143,6 +147,10 @@
       <label class="inteiro">O que muda <small class="suave">(só a diferença: rosto, cabelo e idade já vêm da ficha)</small> <textarea id="desc-variante" name="descricao" rows="2" placeholder="Camiseta azul com pokébola, boné vermelho, mochila..."></textarea></label>
       <label>Forma <input name="forma" placeholder="normal, super, gigante..."></label>
       <label class="check"><input type="checkbox" name="atual" value="1"> Tornar a variante atual</label>
+      <fieldset class="inteiro grupos-variante"><legend>👥 Entrar nos grupos com esta variante</legend>
+        {% for g in grupos_familia %}<label class="check"><input type="checkbox" name="grupo" value="{{ g }}"> {{ g }}</label>{% endfor %}
+        <input name="grupo_novo" placeholder="Grupo novo (opcional)" autocomplete="off">
+      </fieldset>
       <label class="inteiro">📤 Imagem pronta <small class="suave">(opcional: se já tiver o desenho)</small> <input type="file" id="refs-variante" name="refs" accept="image/png,image/jpeg,image/webp,image/gif" multiple></label>
       <span class="inteiro" data-descrever data-alvo="desc-variante" data-nome="{{ p.nome }}" data-personagem="{{ p.slug }}" data-fonte="refs-variante"></span>
       <div class="linha inteiro">

@@ -100,6 +100,49 @@ pub async fn variante_mudou(
     Ok(())
 }
 
+/// Ficha depois de escolher, na variante `vslug`, os grupos em que o personagem entra com ela: entra nos marcados
+/// (com esta variante, no lugar de outra que tivesse) e sai dos que tinham esta variante e foram desmarcados.
+fn ficha_com_grupos_da_variante(ficha: &Value, vslug: &str, marcados: &[String]) -> Value {
+    let mut f = ficha.clone();
+    let mut vs = ficha["grupos_variantes"].as_object().cloned().unwrap_or_default();
+    let marc: Vec<String> = marcados.iter().map(|g| util::slug(g)).collect();
+    let sair: Vec<String> = vs.iter().filter(|(g, v)| v.as_str() == Some(vslug) && !marc.contains(g)).map(|(g, _)| g.clone()).collect();
+    let mut grupos: Vec<String> = ficha["grupos"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|g| g.as_str())
+        .filter(|g| !sair.contains(&util::slug(g)))
+        .map(str::to_string)
+        .collect();
+    for g in &sair {
+        vs.remove(g);
+    }
+    for g in marcados {
+        let gs = util::slug(g);
+        if !grupos.iter().any(|x| util::slug(x) == gs) {
+            grupos.push(g.trim().to_string());
+        }
+        vs.insert(gs, json!(vslug));
+    }
+    f["grupos"] = json!(grupos);
+    f["grupos_variantes"] = Value::Object(vs);
+    f
+}
+
+/// Aplica `ficha_com_grupos_da_variante` no personagem.
+pub async fn variante_nos_grupos(db: &sqlx::PgPool, personagem: Uuid, vslug: &str, marcados: &[String]) -> Result<(), sqlx::Error> {
+    let ficha: Value = sqlx::query_scalar("SELECT COALESCE(ficha, '{}'::jsonb) FROM conteudo.personagens WHERE id = $1")
+        .bind(personagem)
+        .fetch_one(db)
+        .await?;
+    let nova = ficha_com_grupos_da_variante(&ficha, vslug, marcados);
+    if nova != ficha {
+        sqlx::query("UPDATE conteudo.personagens SET ficha = $2 WHERE id = $1").bind(personagem).bind(&nova).execute(db).await?;
+    }
+    Ok(())
+}
+
 /// POST /personagens/grupos: cria ou salva um grupo (antigo = nome atual, vazio para novo; nome; membros = slugs)
 /// com variante-{slug} = slug da variante (vazio = a atual), ou apaga (acao=apagar).
 pub async fn salvar(State(st): State<AppState>, s: Sessao, corpo: Bytes) -> Response {
@@ -199,5 +242,17 @@ mod testes {
         assert_eq!(Value::Object(aplicar_variante(&vs, "Rangers", "Rangers", Some(""))), json!({ "familia": "normal" }));
         // Saiu do grupo ou o grupo foi apagado.
         assert_eq!(Value::Object(aplicar_variante(&vs, "Rangers", "", None)), json!({ "familia": "normal" }));
+    }
+
+    #[test]
+    fn grupos_pela_variante() {
+        let f = json!({ "grupos": ["Família", "Rangers"], "grupos_variantes": { "rangers": "normal", "escola": "ranger" } });
+        let n = ficha_com_grupos_da_variante(&f, "ranger", &v(&["Rangers", "Heróis"]));
+        assert_eq!(n["grupos"], json!(["Família", "Rangers", "Heróis"]));
+        assert_eq!(n["grupos_variantes"], json!({ "rangers": "ranger", "herois": "ranger" }));
+        // Desmarcar tira do grupo que usava esta variante; os outros ficam.
+        let n2 = ficha_com_grupos_da_variante(&n, "ranger", &[]);
+        assert_eq!(n2["grupos"], json!(["Família"]));
+        assert_eq!(n2["grupos_variantes"], json!({}));
     }
 }
