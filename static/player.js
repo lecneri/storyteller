@@ -8,6 +8,9 @@
   // posições: 0 = capa, 1..total = páginas, total+1 = fim
   let pos = 0;
   let narrando = false;
+  // Pausou no meio da página: { pos, bloco } para o ▶ recomeçar desta fala (trocar de página esquece).
+  let retomar = null;
+  let blocoAtual = 0;
   let mudo = false;
   let audio = null;
   let geracao = 0; // invalida narrações antigas ao pausar/trocar de página
@@ -174,6 +177,7 @@
 
   async function irPara(nova, direcao = 1) {
     if (nova < 0 || nova > total + 1 || nova === pos) return;
+    retomar = null;
     const atual = palco.querySelector('.spread');
     if (atual) {
       atual.classList.add(direcao >= 0 ? 'virando-frente' : 'virando-tras');
@@ -233,9 +237,9 @@
     requestAnimationFrame(passo);
   }
 
-  async function narrarPagina(minhaGeracao) {
+  async function narrarPagina(minhaGeracao, inicio = 0) {
     const p = dados.paginas[pos - 1];
-    efeito(p, false);
+    if (!inicio) efeito(p, false);
     // Com música, ela "respira" um pouco na página nova antes da narração.
     if (musica && musica.tocando) {
       musica.calou();
@@ -243,8 +247,9 @@
       if (minhaGeracao !== geracao) return false;
     }
     const trechos = palco.querySelectorAll('.trecho');
-    for (let i = 0; i < p.blocos.length; i++) {
+    for (let i = inicio; i < p.blocos.length; i++) {
       if (minhaGeracao !== geracao) return false;
+      blocoAtual = i;
       trechos.forEach((t, j) => t.classList.toggle('ativo', j === i));
       trechos[i]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       const pedido = audioDoBloco(p.blocos[i]);
@@ -281,8 +286,12 @@
     palco.classList.add('narrando');
     if (musica) musica.tocar();
     if (pos === 0 || pos > total) await irPara(1, 1);
+    // Pausado no meio desta página: recomeça da fala em que parou.
+    let inicio = retomar && retomar.pos === pos ? retomar.bloco : 0;
+    retomar = null;
     while (narrando && minha === geracao && pos >= 1 && pos <= total) {
-      const terminou = await narrarPagina(minha);
+      const terminou = await narrarPagina(minha, inicio);
+      inicio = 0;
       if (!terminou) return;
       await espera(1000);
       if (minha !== geracao) return;
@@ -292,6 +301,7 @@
   }
 
   function pausar() {
+    if (narrando && pos >= 1 && pos <= total) retomar = { pos, bloco: blocoAtual };
     narrando = false;
     geracao++;
     if (audio) { audio.pause(); audio = null; }
