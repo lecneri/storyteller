@@ -1037,7 +1037,7 @@
     botao.disabled = true; botao.textContent = '⏳ Importando…';
     try {
       const r = await fetch(location.pathname + '/ajuda-ia/importar', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ texto: ajuda.resposta }) });
+        body: JSON.stringify({ texto: ajuda.resposta, pedido: ajuda.pedido }) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.erro || 'erro ' + r.status);
       aplicarAjuda(j);
@@ -1047,7 +1047,7 @@
     }
   }
   function ajudaUI() {
-    const pedido = el('textarea', { rows: 3, maxlength: 2000, placeholder: 'Ex.: deixe a página 3 mais engraçada; troque "cachorro" por "dog" nas falas do Noob; acrescente uma página no final com o Pedro dormindo.' });
+    const pedido = el('textarea', { rows: 3, maxlength: 2000, placeholder: 'Ex.: deixe a página 3 mais engraçada; troque "cachorro" por "dog" nas falas do Noob; acrescente uma página no final com @pedro dormindo. Use @ para citar personagem, variante (@noob:super) e grupo.' });
     pedido.value = ajuda.pedido;
     pedido.addEventListener('input', () => { ajuda.pedido = pedido.value; });
     let externo = null;
@@ -1088,6 +1088,8 @@
       ajuda.msg ? el('small', { class: 'suave' }, ajuda.msg) : null,
       externo);
     det.addEventListener('toggle', () => { ajuda.aberto = det.open; });
+    // @personagem:variante, @grupo:, @lugar: e #historia com autocompletar (briefing.js).
+    if (window.St.ligarMencoes) window.St.ligarMencoes(pedido);
     return det;
   }
 

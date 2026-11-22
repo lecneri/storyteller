@@ -4,9 +4,12 @@
 // Caixas com data-mencoes="memoria" (usar da memória) só sugerem #estante, #todas e #história.
 (function () {
   const { el } = window.St;
-  const caixas = document.querySelectorAll('textarea[name="briefing"], textarea[data-mencoes]');
-  if (!caixas.length) return;
   const norm = (t) => (t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const caixas = document.querySelectorAll('textarea[name="briefing"], textarea[data-mencoes]');
+  let dadosP = null;
+  const carregar = () => (dadosP = dadosP || fetch('/mencoes').then((r) => r.json()));
+  // Caixas criadas depois (ex.: "Pedir ajuda à IA" no editor): window.St.ligarMencoes(textarea), já dentro da página.
+  window.St.ligarMencoes = (ta) => carregar().then((dados) => ligar(ta, dados));
 
   // Membros de um grupo com a variante escolhida: "Pedro (Ranger)".
   function nomesDoGrupo(g, dados) {
@@ -18,9 +21,10 @@
     });
   }
 
-  fetch('/mencoes').then((r) => r.json()).then((dados) => caixas.forEach((ta) => ligar(ta, dados)));
+  if (caixas.length) carregar().then((dados) => caixas.forEach((ta) => ligar(ta, dados)));
 
   function ligar(ta, dados) {
+    if (!ta.parentNode) return;
     const lista = el('div', { class: 'autocompletar', hidden: '' });
     const chips = el('div', { class: 'chips detectados' });
     ta.parentNode.insertBefore(lista, ta.nextSibling);

@@ -38,6 +38,12 @@ pub struct Preparo {
 
 /// Monta o pedido à IA a partir do briefing, da estante, dos personagens e das histórias citadas.
 pub async fn preparar(st: &AppState, id: Uuid) -> anyhow::Result<Preparo> {
+    preparar_com(st, id, "").await
+}
+
+/// Como `preparar`, mas também procura citações (@personagem:variante, @grupo:, @lugar:, #historia) em `extra`
+/// (o pedido de ajuda da IA na edição).
+pub async fn preparar_com(st: &AppState, id: Uuid, extra: &str) -> anyhow::Result<Preparo> {
     let h = sqlx::query_as::<_, HistoriaGerar>(
         "SELECT h.familia_id, h.briefing, h.faixa, h.narracao, e.padroes, h.conteudo, h.paginas_pedidas, h.usar_memoria_estante, h.estante_principal,
                 h.memoria_gravar, h.memoria_usar
@@ -57,6 +63,7 @@ pub async fn preparar(st: &AppState, id: Uuid) -> anyhow::Result<Preparo> {
             "\n\n(Tamanho pedido: a história deve ter exatamente {n} páginas; isto vale mais que a quantidade de páginas da faixa etária. As palavras por página seguem a faixa.)"
         ));
     }
+    let texto_citacoes = format!("{briefing}\n\n{extra}");
     let mut citados = detectar(&briefing, &todos);
     // Padrões da estante: seus personagens entram sempre, com a variante da estante
     // (a menos que o briefing peça outra com @slug:variante).
@@ -71,6 +78,25 @@ pub async fn preparar(st: &AppState, id: Uuid) -> anyhow::Result<Preparo> {
             Some(c) if c.variante.is_none() => c.variante = variante,
             Some(_) => {}
             None => citados.push(NaCena { slug: slug.into(), variante, voz: None, misto: false, tambem: Vec::new() }),
+        }
+    }
+    // Citados no pedido de ajuda: entram; a variante pedida soma às da história (não troca a principal).
+    for n in detectar(extra, &todos) {
+        match citados.iter_mut().find(|c| c.slug == n.slug) {
+            Some(c) => {
+                for v in n.variante.into_iter().chain(n.tambem) {
+                    if c.variante.is_none() {
+                        c.variante = Some(v);
+                    } else if c.variante.as_deref() != Some(v.as_str()) && !c.tambem.contains(&v) {
+                        c.tambem.push(v);
+                    }
+                }
+                if c.voz.is_none() && n.voz.is_some() {
+                    c.voz = n.voz;
+                    c.misto = n.misto;
+                }
+            }
+            None => citados.push(n),
         }
     }
     // História já escrita (ajuda da IA na edição): quem já está nas páginas também entra.
@@ -106,7 +132,7 @@ pub async fn preparar(st: &AppState, id: Uuid) -> anyhow::Result<Preparo> {
         }
     };
     // Do briefing (#historia, #historia:memoria, #memoria) e do campo "usar da memória" (#estante, #historia, #todas).
-    let mut citacoes = citar_historias(&briefing);
+    let mut citacoes = citar_historias(&texto_citacoes);
     citacoes.extend(citar_memoria(h.memoria_usar.as_deref().unwrap_or_default()));
     if h.usar_memoria_estante {
         citacoes.push(Citacao::MemoriaEstante(None));
@@ -190,7 +216,7 @@ pub async fn preparar(st: &AppState, id: Uuid) -> anyhow::Result<Preparo> {
     vozes_usadas.extend(vozes.personagens.iter().chain(vozes.extras.iter()).map(|(_, v)| v.id.clone()));
     // Lugares: os citados com @lugar:slug e os que a história já usa (na ajuda da IA).
     let lugares_familia = crate::lugares::da_familia(st, h.familia_id).await;
-    let mut lugares_citados = super::deteccao::lugares_citados(&briefing);
+    let mut lugares_citados = super::deteccao::lugares_citados(&texto_citacoes);
     for pg in h.conteudo["paginas"].as_array().into_iter().flatten() {
         if let Some(l) = pg["lugar"].as_str().filter(|l| !l.is_empty()) {
             if !lugares_citados.iter().any(|x| x == l) {

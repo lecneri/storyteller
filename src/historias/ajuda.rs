@@ -12,7 +12,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use super::geracao::{preparar, prompt_para_copiar, Preparo};
+use super::geracao::{preparar_com, prompt_para_copiar, Preparo};
 use super::prompt::{normalizar, schema_historia};
 use super::{Bloco, Conteudo, Pagina};
 use crate::{
@@ -126,7 +126,7 @@ async fn atual(st: &AppState, id: Uuid) -> anyhow::Result<(String, Value)> {
 pub async fn executar_ajuda(st: &AppState, payload: &Value) -> anyhow::Result<Value> {
     let id: Uuid = payload["historia_id"].as_str().unwrap_or_default().parse()?;
     let pedido = payload["pedido"].as_str().unwrap_or_default();
-    let p = preparar(st, id).await?;
+    let p = preparar_com(st, id, pedido).await?;
     let (titulo, conteudo) = atual(st, id).await?;
     let resposta = ia::gerar_texto(st, p.familia_id, &pedido_edicao(&p, &titulo, &conteudo, pedido)).await?;
     processar(&p, &conteudo, &resposta)
@@ -156,7 +156,7 @@ pub async fn pedir(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>, 
     }
     if f.modo == "prompt" {
         let r = async {
-            let p = preparar(&st, id).await?;
+            let p = preparar_com(&st, id, pedido).await?;
             let (titulo, conteudo) = atual(&st, id).await?;
             anyhow::Ok(prompt_para_copiar(&pedido_edicao(&p, &titulo, &conteudo, pedido)))
         }
@@ -193,6 +193,9 @@ pub async fn ver(State(st): State<AppState>, s: Sessao, Path((id, job)): Path<(U
 #[derive(Deserialize)]
 pub struct ImportarAjuda {
     texto: String,
+    /// O pedido de ajuda (para aceitar os personagens e variantes citados nele).
+    #[serde(default)]
+    pedido: String,
 }
 
 /// POST /historias/{id}/ajuda-ia/importar — resposta de outra IA (colada ou de arquivo) → { titulo, conteudo }.
@@ -208,7 +211,7 @@ pub async fn importar_ajuda(State(st): State<AppState>, s: Sessao, Path(id): Pat
         Err(_) => return erro_json("Não achei um JSON na resposta. Copie a resposta inteira da IA (de { até })."),
     };
     let r = async {
-        let p = preparar(&st, id).await?;
+        let p = preparar_com(&st, id, &f.pedido).await?;
         let (_, conteudo) = atual(&st, id).await?;
         processar(&p, &conteudo, &resposta)
     }
