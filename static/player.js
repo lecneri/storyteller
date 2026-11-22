@@ -101,6 +101,11 @@
     }
     return el('img', { src: m.url, alt: '' });
   }
+  // Imagem inteira (sem cortar): o espaço que sobra ganha a própria imagem desfocada por trás.
+  function comFundo(lado, url) {
+    if (url) { lado.classList.add('com-fundo'); lado.style.setProperty('--fundo-img', 'url("' + url + '")'); }
+    return lado;
+  }
   function palavrasUI(texto) {
     // Cada palavra vira um <span> para o destaque karaokê.
     return texto.split(/(\s+)/).map((t) => (/\S/.test(t) ? el('span', { class: 'palavra' }, t) : t));
@@ -114,7 +119,7 @@
   function spreadUI() {
     if (pos === 0) {
       return el('div', { class: 'spread capa' },
-        el('div', { class: 'lado lado-imagem' }, dados.capa ? el('img', { src: dados.capa, alt: '' }) : el('div', { class: 'sem-imagem' }, '📖')),
+        comFundo(el('div', { class: 'lado lado-imagem' }, dados.capa ? el('img', { src: dados.capa, alt: '' }) : el('div', { class: 'sem-imagem' }, '📖')), dados.capa),
         el('div', { class: 'titulo-capa' }, dados.titulo));
     }
     if (pos > total) {
@@ -129,7 +134,8 @@
           el('p', { class: 'credito-musica' }, el('a', { href: '/creditos', target: '_blank', rel: 'noopener' }, '🌟 Créditos')))));
     }
     const p = dados.paginas[pos - 1];
-    const imagem = el('div', { class: 'lado lado-imagem', onclick: () => efeito(p, true) }, midiaUI(p.midia));
+    const imagem = comFundo(el('div', { class: 'lado lado-imagem', onclick: () => efeito(p, true) }, midiaUI(p.midia)),
+      p.midia && !p.midia.tipo.startsWith('video/') ? p.midia.url : null);
     const texto = el('div', { class: 'lado lado-texto' }, p.blocos.map(trechoUI));
     return el('div', { class: 'spread' }, imagem, texto);
   }

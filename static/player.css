@@ -6,7 +6,9 @@ body.player { margin:0; background:#2b1d14; color:#2b2b2b; height:100dvh; overfl
 .spread::after { content:''; position:absolute; top:0; bottom:0; left:50%; width:40px; transform:translateX(-50%); background:linear-gradient(90deg, transparent, rgba(0,0,0,.12), transparent); pointer-events:none; }
 .lado { position:relative; overflow:hidden; }
 .lado-imagem { background:#f3e6d3; container-type:inline-size; }
-.lado-imagem img, .lado-imagem video { width:100%; height:100%; object-fit:cover; display:block; }
+.lado-imagem img, .lado-imagem video { position:relative; width:100%; height:100%; object-fit:contain; display:block; }
+.lado-imagem video { background:#1c130d; }
+.lado-imagem.com-fundo::before { content:''; position:absolute; inset:-30px; background:var(--fundo-img) center / cover no-repeat; filter:blur(22px) brightness(.9); }
 .lado-imagem .sem-imagem { width:100%; height:100%; display:grid; place-items:center; font-size:72px; background:linear-gradient(160deg,#9bd3ff,#ffe3a3); }
 .lado-texto { display:flex; flex-direction:column; justify-content:flex-start; gap:.7em; padding:6% 7%; font-size:clamp(14px, min(2.4vw, 4.2dvh), 30px); line-height:1.45; overflow:auto; overscroll-behavior:contain; }
 .lado-texto > :first-child { margin-top:auto; }
