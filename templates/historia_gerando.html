@@ -18,6 +18,8 @@
     {% else if externo %}
       <h2>📋 Gerar com outra IA</h2>
       <p class="suave">Copie o prompt, cole no ChatGPT, Gemini ou Claude e traga a resposta de volta.</p>
+      <form method="post" action="/historias/{{ id }}/regerar" class="linha" style="justify-content:center">
+        <button class="secundario" title="A mesma história, com o mesmo briefing e opções">✨ Gerar com a IA do app</button></form>
     {% else %}
       <h2>✨ Escrevendo a história…</h2>
       <p class="suave">Isso leva de 30 segundos a 2 minutos. A página atualiza sozinha.</p>

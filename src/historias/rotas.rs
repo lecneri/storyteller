@@ -141,6 +141,10 @@ pub async fn criar(State(st): State<AppState>, s: Sessao, Form(f): Form<FormNova
     let faixa = faixa_limpa(&f.faixa);
     let narracao = if f.narracao == "narrador" { "narrador" } else { "por-personagem" };
     let manual = f.modo == "manual";
+    // Sem briefing a IA não sabe o que escrever (o formulário já avisa; isto é a garantia).
+    if !manual && f.briefing.trim().is_empty() {
+        return Redirect::to(if f.estante.is_empty() { "/historias".to_string() } else { format!("/estantes/{}", f.estante) }.as_str()).into_response();
+    }
     let id = Uuid::new_v4();
     let conteudo = if manual {
         json!({ "paginas": [ { "cena": "", "personagens": [], "animacao": "nenhuma",

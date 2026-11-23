@@ -44,9 +44,9 @@
         </select>
       </label>
       <div class="inteiro linha">
-        <button type="submit" name="modo" value="ia">✨ Gerar com IA</button>
+        <button type="submit" name="modo" value="ia" onclick="const b = this.form.briefing; if (!b.value.trim()) { b.setCustomValidity('Escreva o briefing: o que vai acontecer na história.'); b.reportValidity(); b.addEventListener('input', () => b.setCustomValidity(''), { once: true }); return false; }">✨ Gerar com IA</button>
         <button type="submit" name="modo" value="manual" class="secundario">✍️ Criar manualmente</button>
-        <button type="submit" name="modo" value="externo" class="secundario" title="Copie o prompt para o ChatGPT, Gemini ou Claude e cole a resposta aqui">📋 Usar outra IA</button>
+        <button type="submit" name="modo" value="externo" class="secundario" onclick="const b = this.form.briefing; if (!b.value.trim()) { b.setCustomValidity('Escreva o briefing: o que vai acontecer na história.'); b.reportValidity(); b.addEventListener('input', () => b.setCustomValidity(''), { once: true }); return false; }" title="Copie o prompt para o ChatGPT, Gemini ou Claude e cole a resposta aqui">📋 Usar outra IA</button>
       </div>
     </form>
   </section>

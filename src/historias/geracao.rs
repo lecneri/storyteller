@@ -114,10 +114,8 @@ pub async fn preparar_com(st: &AppState, id: Uuid, extra: &str) -> anyhow::Resul
             }
         }
     }
-    if citados.is_empty() {
-        // Sem ninguém citado nem estante: a IA pode usar todos os personagens da família.
-        citados = todos.iter().map(|p| NaCena { slug: p.slug.clone(), variante: None, voz: None, misto: false, tambem: Vec::new() }).collect();
-    }
+    // Ninguém citado (nem @, nem pelo nome) e estante sem personagens fixos: a IA não recebe os personagens da família
+    // e cria os da própria história (secundários: alunos, professora...).
     let estilo = padroes["estilo"].as_str().unwrap_or_default();
     let instrucoes = padroes["instrucoes"].as_str().unwrap_or_default();
 
