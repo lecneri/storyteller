@@ -218,8 +218,15 @@ pub async fn importar_ajuda(State(st): State<AppState>, s: Sessao, Path(id): Pat
     }
     let resposta = match ia::extrair_json(&f.texto) {
         Ok(v) if v["paginas"].is_array() => v,
-        Ok(_) => return erro_json("O JSON não tem \"paginas\". Copie a resposta inteira da IA."),
-        Err(_) => return erro_json("Não achei um JSON na resposta. Copie a resposta inteira da IA (de { até })."),
+        Ok(_) => {
+            let msg = "O JSON não tem \"paginas\". Copie a resposta inteira da IA.";
+            crate::importacoes::falhou(&st, s.familia_id, Some(id), "ajuda", &f.texto, msg).await;
+            return erro_json(msg);
+        }
+        Err(e) => {
+            crate::importacoes::falhou(&st, s.familia_id, Some(id), "ajuda", &f.texto, &format!("{e:#}")).await;
+            return erro_json(format!("Não achei um JSON válido na resposta ({e:#}). Copie a resposta inteira da IA (de {{ até }})."));
+        }
     };
     let r = async {
         let p = preparar_com(&st, id, &f.pedido).await?;
@@ -229,7 +236,10 @@ pub async fn importar_ajuda(State(st): State<AppState>, s: Sessao, Path(id): Pat
     .await;
     match r {
         Ok(v) => Json(v).into_response(),
-        Err(e) => erro_json(format!("Não deu para usar a resposta: {e}")),
+        Err(e) => {
+            crate::importacoes::falhou(&st, s.familia_id, Some(id), "ajuda", &f.texto, &format!("{e:#}")).await;
+            erro_json(format!("Não deu para usar a resposta: {e}"))
+        }
     }
 }
 

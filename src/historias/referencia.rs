@@ -171,12 +171,18 @@ pub struct ImportarMemoria {
 }
 
 /// POST /historias/{id}/memoria/importar {texto}: lê os itens da resposta colada de outra IA (não grava).
-pub async fn importar_memoria(Path(_id): Path<Uuid>, _s: Sessao, Json(f): Json<ImportarMemoria>) -> Response {
-    match ia::extrair_json(&f.texto) {
-        Ok(v) if v["itens"].is_array() => Json(json!({ "itens": itens_memoria(&v["itens"]) })).into_response(),
-        Ok(_) => crate::web::erro_json("O JSON não tem \"itens\". Copie a resposta inteira da IA."),
-        Err(_) => crate::web::erro_json("Não achei um JSON na resposta. Copie a resposta inteira da IA (de { até })."),
+pub async fn importar_memoria(State(st): State<AppState>, Path(id): Path<Uuid>, s: Sessao, Json(f): Json<ImportarMemoria>) -> Response {
+    let erro = match ia::extrair_json(&f.texto) {
+        Ok(v) if v["itens"].is_array() => return Json(json!({ "itens": itens_memoria(&v["itens"]) })).into_response(),
+        Ok(_) => ("O JSON não tem \"itens\".".to_string(), "Copie a resposta inteira da IA."),
+        Err(e) => (format!("{e:#}"), "Não achei um JSON válido na resposta. Copie a resposta inteira da IA (de { até })."),
+    };
+    // Só guarda se a história for desta família.
+    let dona: Option<Uuid> = sqlx::query_scalar("SELECT familia_id FROM conteudo.historias WHERE id = $1").bind(id).fetch_optional(&st.db).await.unwrap_or(None);
+    if dona == Some(s.familia_id) {
+        crate::importacoes::falhou(&st, s.familia_id, Some(id), "memoria", &f.texto, &erro.0).await;
     }
+    crate::web::erro_json(format!("{} ({})", erro.1, erro.0))
 }
 
 #[derive(Deserialize)]

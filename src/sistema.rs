@@ -38,12 +38,13 @@ struct LinhaFamilia {
 }
 
 /// Abas da página do sistema: (chave, rótulo).
-const ABAS: [(&str, &str); 5] = [
+const ABAS: [(&str, &str); 6] = [
     ("familias", "👨‍👩‍👧 Famílias"),
     ("assinaturas", "🤖 Assinaturas"),
     ("config", "⚙️ Configurações"),
     ("musicas", "🎵 Músicas"),
     ("manutencao", "🧹 Manutenção"),
+    ("importacoes", "📥 Importações com erro"),
 ];
 const POR_PAGINA: i64 = 20;
 
@@ -75,6 +76,8 @@ struct PaginaSistema {
     clis: Vec<(String, String)>,
     /// Fila de imagens: (fonte, esperando, desenhando).
     fila_imagens: Vec<(String, i64, i64)>,
+    /// Respostas de outra IA que não deu para importar.
+    importacoes: Vec<crate::importacoes::Linha>,
 }
 
 impl PaginaSistema {
@@ -187,7 +190,9 @@ async fn pagina(st: &AppState, s: Sessao, c: Consulta, aviso: Option<String>) ->
     let clis: Vec<(String, String)> =
         if aba == "assinaturas" { crate::ia::situacao_clis().await.into_iter().map(|c| (c.nome, c.situacao)).collect() } else { Vec::new() };
     let fila_imagens = if aba == "assinaturas" { crate::fila_imagens::resumo(st).await } else { Vec::new() };
+    let importacoes = if aba == "importacoes" { crate::importacoes::ultimas(st).await } else { Vec::new() };
     render(PaginaSistema {
+        importacoes,
         clis,
         fila_imagens,
         s,

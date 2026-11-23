@@ -117,6 +117,23 @@
 
   {% endif %}
 
+  {% if aba == "importacoes" %}
+  <section class="cartao largo">
+    <h2>📥 Importações com erro</h2>
+    <p class="suave">Respostas de outra IA (ChatGPT, Gemini, Claude) coladas no site que não deu para importar. Ficam as 20 últimas de cada família, por até 30 dias.</p>
+    {% if importacoes.is_empty() %}<p class="suave">Nenhuma. 🎉</p>{% endif %}
+    {% for i in importacoes %}
+    <details class="importacao">
+      <summary><strong>{{ i.quando }}</strong> · {{ i.rotulo_tipo() }} · {{ i.familia }}{% if let Some(h) = i.historia %} · <em>{{ h }}</em>{% endif %} <small class="suave">({{ i.tamanho() }})</small>
+        <br><span class="erro">{{ i.erro }}</span></summary>
+      <div class="linha-kit"><span>Texto colado</span>
+        <button type="button" class="pequeno" data-copiar-texto="importacao-{{ i.id }}">📋 Copiar</button></div>
+      <textarea id="importacao-{{ i.id }}" class="prompt" readonly>{{ i.texto }}</textarea>
+    </details>
+    {% endfor %}
+  </section>
+  {% endif %}
+
   {% if aba == "manutencao" %}
   <section class="cartao largo">
     <h2>🧹 Manutenção</h2>
@@ -128,6 +145,7 @@
   </section>
   {% endif %}
 </main>
+<script src="/copiar.js?v={{ crate::web::versao() }}" defer></script>
 <script src="/sistema.js?v={{ crate::web::versao() }}" defer></script>
 <script src="/musicas-modelo.js?v={{ crate::web::versao() }}" defer></script>
 {% endblock %}

@@ -10,6 +10,7 @@ mod estantes;
 mod exportar;
 mod familia;
 mod historias;
+mod importacoes;
 mod imprimir;
 mod fila_imagens;
 mod imagem;
