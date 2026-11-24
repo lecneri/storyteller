@@ -53,7 +53,12 @@ pub struct FormConta {
     senha_nova: String,
 }
 
-pub async fn salvar(State(st): State<AppState>, s: Sessao, Form(f): Form<FormConta>) -> Response {
+pub async fn salvar(
+    State(st): State<AppState>,
+    s: Sessao,
+    jar: axum_extra::extract::cookie::CookieJar,
+    Form(f): Form<FormConta>,
+) -> Response {
     let nome = f.nome.trim();
     if nome.is_empty() {
         return pagina(&st, s, Some("O nome não pode ficar vazio.".into())).await;
@@ -80,6 +85,16 @@ pub async fn salvar(State(st): State<AppState>, s: Sessao, Form(f): Form<FormCon
         if let Err(e) = sqlx::query("UPDATE acesso.usuarios SET senha_hash = $2 WHERE id = $1")
             .bind(s.usuario_id)
             .bind(novo)
+            .execute(&st.db)
+            .await
+        {
+            return erro_interno(e.into());
+        }
+        // Senha nova: as outras sessões da conta (outros aparelhos) saem; esta continua.
+        let atual = jar.get(auth::COOKIE_SESSAO).map(|c| auth::hash_token(c.value())).unwrap_or_default();
+        if let Err(e) = sqlx::query("DELETE FROM acesso.sessoes WHERE usuario_id = $1 AND token_hash <> $2")
+            .bind(s.usuario_id)
+            .bind(atual)
             .execute(&st.db)
             .await
         {
@@ -123,7 +138,9 @@ pub async fn esqueci(State(st): State<AppState>, Form(f): Form<FormEsqueci>) -> 
         .fetch_optional(&st.db)
         .await
         .unwrap_or(None);
-    if let Some(uid) = usuario {
+    // No máximo 3 e-mails por hora para o mesmo endereço (ninguém enche a caixa de outra pessoa).
+    let pode = crate::limite::tentar(&format!("esqueci:{}", f.email.trim().to_lowercase()), 3, std::time::Duration::from_secs(3600));
+    if let Some(uid) = usuario.filter(|_| pode) {
         let mut bytes = [0u8; 24];
         rand::thread_rng().fill_bytes(&mut bytes);
         let token = URL_SAFE_NO_PAD.encode(bytes);
@@ -167,21 +184,24 @@ pub async fn redefinir(State(st): State<AppState>, Path(token): Path<String>, Fo
         Ok(h) => h,
         Err(e) => return erro_interno(e),
     };
-    let r = sqlx::query(
+    let r: Result<Option<Uuid>, _> = sqlx::query_scalar(
         "WITH r AS (UPDATE acesso.redefinicoes SET usado_em = now()
                      WHERE token_hash = $1 AND usado_em IS NULL AND expira_em > now() RETURNING usuario_id)
-         UPDATE acesso.usuarios u SET senha_hash = $2 FROM r WHERE u.id = r.usuario_id",
+         UPDATE acesso.usuarios u SET senha_hash = $2 FROM r WHERE u.id = r.usuario_id RETURNING u.id",
     )
     .bind(auth::hash_token(&token))
     .bind(hash)
-    .execute(&st.db)
+    .fetch_optional(&st.db)
     .await;
     match r {
-        Ok(x) if x.rows_affected() == 1 => {
-            // Encerra as sessões antigas da conta.
+        Ok(Some(uid)) => {
+            // Encerra as sessões antigas da conta (quem estava logado com a senha velha sai).
+            if let Err(e) = sqlx::query("DELETE FROM acesso.sessoes WHERE usuario_id = $1").bind(uid).execute(&st.db).await {
+                return erro_interno(e.into());
+            }
             Redirect::to("/entrar").into_response()
         }
-        Ok(_) => render(PaginaEsqueci { enviado: false, token: None, erro: Some("Link inválido ou vencido. Peça outro.".into()) }),
+        Ok(None) => render(PaginaEsqueci { enviado: false, token: None, erro: Some("Link inválido ou vencido. Peça outro.".into()) }),
         Err(e) => erro_interno(e.into()),
     }
 }

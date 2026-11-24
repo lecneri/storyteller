@@ -74,7 +74,7 @@
           <div class="minis imgs-variante">
             {% for ref_id in v.referencias %}<div class="foto-kit">{% include "miniatura.html" %}
               <form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/tirar-ref/{{ ref_id }}" class="inline"
-                    onsubmit="return confirm('Tirar esta imagem da variante {{ v.nome }}? A IA deixa de usar ela como referência.')">
+                    data-confirmar="Tirar esta imagem da variante {{ v.nome }}? A IA deixa de usar ela como referência." onsubmit="return confirm(this.dataset.confirmar)">
                 <button type="submit" class="link" title="Tirar esta imagem">🗑 tirar</button></form>
               {% if recorte %}<form method="post" action="/personagens/{{ p.slug }}/variantes/{{ v.slug }}/recortar/{{ ref_id }}" class="inline"
                     onsubmit="this.querySelector('button').textContent = '⏳'"><button type="submit" class="link" title="Tirar o fundo (fica um PNG transparente no lugar)">✂️ fundo</button></form>{% endif %}</div>{% endfor %}

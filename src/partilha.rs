@@ -457,16 +457,18 @@ pub async fn alternar_vozes_link(
     s: Sessao,
     Path((tipo, id, hash)): Path<(String, Uuid, String)>,
 ) -> Response {
-    let r: Result<Option<bool>, _> = sqlx::query_scalar(
-        "UPDATE partilha.links SET vozes_familia = NOT vozes_familia WHERE token_hash = $1 AND familia_id = $2 RETURNING vozes_familia",
+    let r: Result<Option<(bool, String, Uuid)>, _> = sqlx::query_as(
+        "UPDATE partilha.links SET vozes_familia = NOT vozes_familia WHERE token_hash = $1 AND familia_id = $2
+         RETURNING vozes_familia, item_tipo, item_id",
     )
     .bind(hash)
     .bind(s.familia_id)
     .fetch_optional(&st.db)
     .await;
     match r {
-        Ok(Some(v)) => {
-            narrar_link(&st, s.familia_id, &tipo, id, v).await;
+        // Narra o item do próprio link (não o da URL, que poderia apontar para a história de outra família).
+        Ok(Some((v, item_tipo, item_id))) => {
+            narrar_link(&st, s.familia_id, &item_tipo, item_id, v).await;
             Redirect::to(&format!("/compartilhar/{tipo}/{id}")).into_response()
         }
         Ok(None) => Redirect::to(&format!("/compartilhar/{tipo}/{id}")).into_response(),
@@ -600,6 +602,30 @@ pub async fn publico_midia(State(st): State<AppState>, Path((token, id)): Path<(
     }
 }
 
+/// A chave de voz de uma fala da história com este texto: a pedida, se alguma fala com o texto usa essa voz;
+/// senão a da primeira fala com o texto. None = o texto não está na história.
+async fn quem_da_fala(st: &AppState, historia: Uuid, texto: &str, pedida: &str) -> Option<String> {
+    let (conteudo, narracao): (Value, String) = sqlx::query_as("SELECT conteudo, narracao FROM conteudo.historias WHERE id = $1")
+        .bind(historia)
+        .fetch_optional(&st.db)
+        .await
+        .ok()
+        .flatten()?;
+    let c: crate::historias::Conteudo = serde_json::from_value(conteudo).ok()?;
+    vozes_do_texto(&c, &narracao, texto, pedida)
+}
+
+fn vozes_do_texto(c: &crate::historias::Conteudo, narracao: &str, texto: &str, pedida: &str) -> Option<String> {
+    let chaves: Vec<String> = c
+        .paginas
+        .iter()
+        .flat_map(|p| &p.blocos)
+        .filter(|b| b.texto.trim() == texto.trim())
+        .map(|b| if narracao == "narrador" { "narrador".to_string() } else { b.chave_voz() })
+        .collect();
+    chaves.iter().find(|k| *k == pedida).or(chaves.first()).cloned()
+}
+
 #[derive(Deserialize)]
 pub struct PedidoBloco {
     historia: Uuid,
@@ -615,20 +641,12 @@ pub async fn publico_audio(State(st): State<AppState>, Path(token): Path<String>
     if !historia_no_link(&st, &l, p.historia).await {
         return StatusCode::NOT_FOUND.into_response();
     }
-    // O texto precisa existir na história (não é um TTS aberto para qualquer texto).
-    let existe: bool = sqlx::query_scalar(
-        "SELECT EXISTS (SELECT 1 FROM conteudo.historias h, jsonb_array_elements(h.conteudo->'paginas') pg,
-                               jsonb_array_elements(pg->'blocos') b
-                         WHERE h.id = $1 AND trim(b->>'texto') = trim($2))",
-    )
-    .bind(p.historia)
-    .bind(&p.texto)
-    .fetch_one(&st.db)
-    .await
-    .unwrap_or(false);
-    if !existe {
+    // O texto precisa existir na história e a voz é a que a fala tem lá (não é um TTS aberto para qualquer
+    // texto nem para qualquer voz: cada combinação nova gera um áudio e pode gastar créditos da família).
+    let Some(quem) = quem_da_fala(&st, p.historia, &p.texto, &p.quem).await else {
         return StatusCode::NOT_FOUND.into_response();
-    }
+    };
+    let p = PedidoBloco { quem, ..p };
     let tipo: String = sqlx::query_scalar("SELECT tipo FROM conteudo.personagens WHERE familia_id = $1 AND slug = $2")
         .bind(l.familia_id)
         .bind(tts::separar(&p.quem).0)
@@ -777,5 +795,24 @@ pub async fn copiar_historia(State(st): State<AppState>, s: Sessao, Path(id): Pa
     match r {
         Ok(novo) => Redirect::to(&format!("/historias/{novo}")).into_response(),
         Err(e) => erro_interno(e.into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn link_publico_so_narra_com_a_voz_da_fala() {
+        let c: crate::historias::Conteudo = serde_json::from_value(json!({ "paginas": [{ "cena": "", "blocos": [
+            { "quem": "pedro", "voz": "ingles", "texto": "Hello!" },
+            { "quem": "narrador", "texto": "Era uma vez." },
+            { "quem": "ana", "texto": "Hello!" }
+        ] }] }))
+        .unwrap();
+        assert_eq!(vozes_do_texto(&c, "vozes", "Hello!", "ana").as_deref(), Some("ana"));
+        assert_eq!(vozes_do_texto(&c, "vozes", " Hello! ", "voz:qualquer|60|40").as_deref(), Some("pedro+ingles"));
+        assert_eq!(vozes_do_texto(&c, "narrador", "Hello!", "pedro").as_deref(), Some("narrador"));
+        assert_eq!(vozes_do_texto(&c, "vozes", "Outro texto", "pedro"), None);
     }
 }

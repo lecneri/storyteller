@@ -17,6 +17,7 @@ mod imagem;
 mod lugares;
 mod ia;
 mod jobs;
+mod limite;
 mod limpeza;
 mod midia;
 mod musica;
@@ -225,6 +226,7 @@ async fn main() -> anyhow::Result<()> {
         .layer(middleware::from_fn_with_state(state.clone(), crianca::trava))
         .layer(middleware::from_fn(web::checa_origem))
         .layer(middleware::from_fn(web::paginas_de_erro))
+        .layer(middleware::from_fn(web::cabecalhos_seguros))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 

@@ -127,11 +127,11 @@ pub async fn entrar(State(st): State<AppState>, s: Sessao, jar: CookieJar, Path(
 #[derive(Template)]
 #[template(path = "sair_leitura.html")]
 struct PaginaSair {
-    erro: bool,
+    erro: Option<&'static str>,
 }
 
 pub async fn pagina_sair() -> Response {
-    render(PaginaSair { erro: false })
+    render(PaginaSair { erro: None })
 }
 
 #[derive(Deserialize)]
@@ -145,11 +145,19 @@ pub async fn sair(State(st): State<AppState>, s: Sessao, jar: CookieJar, Form(f)
         .fetch_one(&st.db)
         .await
         .unwrap_or(None);
+    // No máximo 10 tentativas por família a cada 10 minutos (o PIN tem só 4 dígitos).
+    let chave = format!("pin:{}", s.familia_id);
+    if !crate::limite::tentar(&chave, 10, std::time::Duration::from_secs(600)) {
+        return render(PaginaSair { erro: Some("Muitas tentativas. Espere uns 10 minutos.") });
+    }
     let ok = hash.is_some_and(|h| auth::senha_confere(f.pin.trim(), &h));
+    if ok {
+        crate::limite::zerar(&chave);
+    }
     if !ok {
         // Atrasa tentativas erradas (desestimula "chutar" o PIN).
         tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
-        return render(PaginaSair { erro: true });
+        return render(PaginaSair { erro: Some("PIN errado.") });
     }
     let Some(token) = jar.get(auth::COOKIE_SESSAO).map(|c| c.value().to_owned()) else {
         return Redirect::to("/entrar").into_response();

@@ -43,6 +43,17 @@ pub fn render<T: Template>(t: T) -> Response {
     }
 }
 
+/// Cabeçalhos de segurança em toda resposta: o navegador não adivinha o tipo do arquivo, o site não abre
+/// dentro de página de outro site (clickjacking) e o endereço (com token de link público) não vaza para fora.
+pub async fn cabecalhos_seguros(req: Request<Body>, next: Next) -> Response {
+    let mut r = next.run(req).await;
+    let h = r.headers_mut();
+    for (nome, valor) in [("x-content-type-options", "nosniff"), ("x-frame-options", "SAMEORIGIN"), ("referrer-policy", "same-origin")] {
+        h.entry(nome).or_insert(header::HeaderValue::from_static(valor));
+    }
+    r
+}
+
 /// Proteção básica contra CSRF: um POST precisa vir do próprio site.
 pub async fn checa_origem(req: Request<Body>, next: Next) -> Response {
     if req.method() != Method::GET && req.method() != Method::HEAD {
@@ -132,6 +143,11 @@ pub struct FormEntrar {
 }
 
 pub async fn entrar(State(st): State<AppState>, jar: CookieJar, Form(f): Form<FormEntrar>) -> Response {
+    // No máximo 10 tentativas por e-mail a cada 15 minutos (freia quem tenta adivinhar a senha).
+    let chave = format!("entrar:{}", f.email.trim().to_lowercase());
+    if !crate::limite::tentar(&chave, 10, std::time::Duration::from_secs(15 * 60)) {
+        return render(PaginaEntrar { erro: Some("Muitas tentativas. Espere uns 15 minutos e tente de novo.".into()), email: f.email });
+    }
     let usuario: Option<(Uuid, String)> = match sqlx::query_as(
         "SELECT id, senha_hash FROM acesso.usuarios WHERE lower(email) = lower($1)",
     )
@@ -148,6 +164,7 @@ pub async fn entrar(State(st): State<AppState>, jar: CookieJar, Form(f): Form<Fo
         return render(PaginaEntrar { erro: Some("E-mail ou senha incorretos.".into()), email: f.email });
     };
 
+    crate::limite::zerar(&chave);
     match auth::criar_sessao(&st.db, usuario_id, None).await {
         Ok(token) => (jar.add(auth::cookie_sessao(token, st.cookie_seguro)), Redirect::to("/")).into_response(),
         Err(e) => erro_interno(e),

@@ -49,7 +49,7 @@
     </div>
   </section>
   <section class="cartao largo">
-    <form method="post" action="/lugares/{{ l.slug }}/apagar" onsubmit="return confirm('Apagar o lugar {{ l.nome }}? As histórias que já usam ficam só com o nome.')">
+    <form method="post" action="/lugares/{{ l.slug }}/apagar" data-confirmar="Apagar o lugar {{ l.nome }}? As histórias que já usam ficam só com o nome." onsubmit="return confirm(this.dataset.confirmar)">
       <button type="submit" class="link perigo">🗑 Apagar lugar</button></form>
   </section>
 </main>

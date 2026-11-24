@@ -463,7 +463,7 @@ pub async fn enviar_midia(State(st): State<AppState>, s: Sessao, Path(id): Path<
         match mp.next_field().await {
             Ok(Some(campo)) if campo.file_name().is_some() => match campo.bytes().await {
                 Ok(b) => break b,
-                Err(_) => return erro("Arquivo grande demais (máximo 25 MB)."),
+                Err(_) => return erro("Arquivo grande demais (máximo 100 MB)."),
             },
             Ok(Some(_)) => continue,
             Ok(None) => return erro("Nenhum arquivo enviado."),

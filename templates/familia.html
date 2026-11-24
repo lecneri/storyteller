@@ -44,7 +44,7 @@
           <form method="post" action="/familia/membros/{{ m.usuario_id }}/papel" class="inline">
             <input type="hidden" name="papel" value="{% if m.papel == "admin" %}membro{% else %}admin{% endif %}">
             <button class="link">{% if m.papel == "admin" %}tornar membro{% else %}tornar admin{% endif %}</button></form>
-          <form method="post" action="/familia/membros/{{ m.usuario_id }}/remover" class="inline" onsubmit="return confirm('Remover {{ m.nome }} da família?')">
+          <form method="post" action="/familia/membros/{{ m.usuario_id }}/remover" class="inline" data-confirmar="Remover {{ m.nome }} da família?" onsubmit="return confirm(this.dataset.confirmar)">
             <button class="link">remover</button></form>
         </span>
         {% endif %}
@@ -81,7 +81,7 @@
     {% if conectadas.is_empty() %}<p class="suave">Nenhuma conexão ainda.</p>{% endif %}
     {% for (fid, fnome, fslug) in conectadas %}
     <div class="linha" style="justify-content:space-between"><span>✅ <strong>{{ fnome }}</strong> <span class="suave">@{{ fslug }}</span></span>
-      {% if s.admin_familia() %}<form method="post" action="/familia/conexoes/{{ fid }}/remover" class="inline" onsubmit="return confirm('Desconectar de {{ fnome }}?')"><button class="link">desconectar</button></form>{% endif %}
+      {% if s.admin_familia() %}<form method="post" action="/familia/conexoes/{{ fid }}/remover" class="inline" data-confirmar="Desconectar de {{ fnome }}?" onsubmit="return confirm(this.dataset.confirmar)"><button class="link">desconectar</button></form>{% endif %}
     </div>
     {% endfor %}
     {% if s.admin_familia() %}

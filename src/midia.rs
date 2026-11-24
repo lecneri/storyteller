@@ -47,6 +47,10 @@ pub async fn salvar(
     tipo_mime: &str,
     ext: &str,
 ) -> anyhow::Result<Uuid> {
+    // A pasta às vezes leva um trecho vindo da URL (slug do personagem): nunca sai da pasta de dados.
+    if !pasta_segura(pasta) {
+        anyhow::bail!("pasta inválida para guardar arquivo");
+    }
     let id = Uuid::new_v4();
     let relativo = format!("{pasta}/{id}.{ext}");
     let destino = st.data_dir.join(&relativo);
@@ -145,5 +149,24 @@ mod testes {
         assert_eq!((lida.width(), lida.height()), (1568, 1045));
         // Não é imagem: recusa.
         assert!(foto_para_ia(b"nada").is_none());
+    }
+}
+
+/// Caminho relativo simples: sem "..", sem barra invertida, sem começar na raiz e sem trecho vazio.
+fn pasta_segura(pasta: &str) -> bool {
+    !pasta.contains('\\') && !pasta.contains('\0') && pasta.split('/').all(|p| !p.is_empty() && p != "." && p != "..")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pasta_segura;
+
+    #[test]
+    fn pasta_nao_sai_da_pasta_de_dados() {
+        assert!(pasta_segura("familias/neri/personagens/pedro/refs"));
+        assert!(!pasta_segura("familias/neri/personagens/../../../x/refs"));
+        assert!(!pasta_segura("/etc/x"));
+        assert!(!pasta_segura("familias//x"));
+        assert!(!pasta_segura("familias\\..\\x"));
     }
 }

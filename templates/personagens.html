@@ -62,7 +62,7 @@
         <div class="inteiro linha">
           <button type="submit">💾 Salvar grupo</button>
           <button type="submit" name="acao" value="apagar" class="secundario" formnovalidate
-                  onclick="return confirm('Apagar o grupo {{ g }}? Os personagens continuam.')">🗑 Apagar grupo</button>
+                  data-confirmar="Apagar o grupo {{ g }}? Os personagens continuam." onclick="return confirm(this.dataset.confirmar)">🗑 Apagar grupo</button>
         </div>
       </form>
     </details>
