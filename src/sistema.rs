@@ -138,7 +138,7 @@ const SELECT_FAMILIA: &str = "SELECT f.id, f.nome, f.slug,
         COALESCE(c.cli_ajustes, '{}') AS cli_ajustes,
         COALESCE(c.usar_chave_sistema, false) AS usar_chave_sistema, COALESCE(c.pagar_sem_perguntar, false) AS pagar_sem_perguntar,
         (c.limites->>'historias_semana')::bigint AS limite_semana,
-        (SELECT count(*) FROM ia.uso u WHERE u.familia_id = f.id AND u.criado_em > now() - interval '7 days'
+        (SELECT count(*) FROM ia.uso u WHERE u.familia_id = f.id AND u.tarefa = 'texto' AND u.criado_em > now() - interval '7 days'
             AND u.via IN ('cli', 'chave_sistema')) AS uso_semana,
         COALESCE((SELECT sum(a.bytes) FROM midia.arquivos a WHERE a.familia_id = f.id), 0)::float8 / 1048576.0 AS espaco_mb
    FROM acesso.familias f LEFT JOIN ia.config_familia c ON c.familia_id = f.id";

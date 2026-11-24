@@ -135,12 +135,16 @@ pub async fn desconectar(State(st): State<AppState>, s: Sessao, Path(outra): Pat
 // ───────────── regra de visibilidade (item → estante → família) ─────────────
 
 async fn destinos(st: &AppState, tipo: &str, id: Uuid) -> Vec<Uuid> {
+    destinos_ou_erro(st, tipo, id).await.unwrap_or_default()
+}
+
+/// Para decidir quem pode ler: um erro do banco não pode virar "lista vazia" (que significa "todas as conectadas").
+async fn destinos_ou_erro(st: &AppState, tipo: &str, id: Uuid) -> Result<Vec<Uuid>, sqlx::Error> {
     sqlx::query_scalar("SELECT familia_id FROM partilha.destinos WHERE item_tipo = $1 AND item_id = $2")
         .bind(tipo)
         .bind(id)
         .fetch_all(&st.db)
         .await
-        .unwrap_or_default()
 }
 
 /// Um nível explícito libera a leitora? (compartilhado/público com lista vazia = todas as conectadas)
@@ -148,8 +152,14 @@ async fn nivel_libera(st: &AppState, nivel: &str, tipo: &str, id: Uuid, leitora:
     match nivel {
         "privado" => Some(false),
         "compartilhado" | "publico" => {
-            let d = destinos(st, tipo, id).await;
-            Some(d.is_empty() || d.contains(&leitora))
+            // Erro ao consultar: nega (não libera por engano).
+            match destinos_ou_erro(st, tipo, id).await {
+                Ok(d) => Some(d.is_empty() || d.contains(&leitora)),
+                Err(e) => {
+                    tracing::error!("partilha: não li os destinos de {tipo} {id}: {e:#}");
+                    Some(false)
+                }
+            }
         }
         _ => None, // herdar
     }
@@ -185,14 +195,21 @@ pub async fn pode_ler_historia(st: &AppState, leitora: Uuid, historia: Uuid) -> 
         return r; // o item vence o grupo
     }
     // Herdar: basta uma estante liberar.
-    let estantes: Vec<(Uuid, String)> = sqlx::query_as(
+    let estantes: Vec<(Uuid, String)> = match sqlx::query_as(
         "SELECT e.id, e.visibilidade FROM conteudo.estante_historias eh
            JOIN conteudo.estantes e ON e.id = eh.estante_id WHERE eh.historia_id = $1",
     )
     .bind(historia)
     .fetch_all(&st.db)
     .await
-    .unwrap_or_default();
+    {
+        Ok(e) => e,
+        // Erro ao consultar: nega (sem estantes cairia no padrão da família, que pode ser "compartilhado").
+        Err(e) => {
+            tracing::error!("partilha: não li as estantes da história {historia}: {e:#}");
+            return false;
+        }
+    };
     if estantes.is_empty() {
         return padrao_familia(st, dona).await;
     }

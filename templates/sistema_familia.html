@@ -16,7 +16,7 @@
 
   <section class="cartao largo">
     <h2>👨‍👩‍👧 {{ f.nome }} <small class="suave">@{{ f.slug }}</small></h2>
-    <p class="suave">{{ f.historias }} história(s) · 💾 {{ "{:.1}"|format(f.espaco_mb) }} MB · uso pago nos últimos 7 dias: {{ f.uso_semana }}{% if let Some(l) = f.limite_semana %} de {{ l }}{% endif %}</p>
+    <p class="suave">{{ f.historias }} história(s) · 💾 {{ "{:.1}"|format(f.espaco_mb) }} MB · pedidos de texto nos últimos 7 dias: {{ f.uso_semana }}{% if let Some(l) = f.limite_semana %} de {{ l }}{% endif %}</p>
     <h3>Membros</h3>
     {% if membros.is_empty() %}<p class="suave">Ninguém ainda. Mande o convite de admin.</p>{% endif %}
     <ul class="lista-simples">{% for (nome, email, papel) in membros %}
@@ -90,7 +90,7 @@
       <label class="check inteiro"><input type="checkbox" name="chave_sistema" value="1"{% if f.usar_chave_sistema %} checked{% endif %}> Usar a chave do sistema (você paga a API)</label>
       <label class="check inteiro"><input type="checkbox" name="pagar_sem_perguntar" value="1"{% if f.pagar_sem_perguntar %} checked{% endif %}> 💳 Quando as assinaturas falharem, usar a API paga <strong>sem perguntar</strong>
         <small class="suave">(desmarcado: a imagem ou o texto espera a família escolher entre API paga e fazer manual)</small></label>
-      <label>Limite por semana <small class="suave">(histórias pelas CLIs + chave do sistema; vazio = sem limite)</small>
+      <label>Limite por semana <small class="suave">(pedidos de texto à IA pelas CLIs + chave do sistema: história, ajuda, memória; imagens não contam; vazio = sem limite)</small>
         <input name="limite" type="number" min="0" value="{% if let Some(l) = f.limite_semana %}{{ l }}{% endif %}" placeholder="∞"></label>
       <button type="submit" class="inteiro">💾 Salvar</button>
     </form>

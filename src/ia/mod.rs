@@ -123,7 +123,9 @@ pub async fn gerar_texto_com(st: &crate::AppState, familia: uuid::Uuid, p: &Pedi
     .fetch_one(&st.db)
     .await?;
     let usado: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM ia.uso WHERE familia_id = $1 AND criado_em > now() - interval '7 days' AND via IN ('cli', 'chave_sistema')",
+        // Só os pedidos de texto contam neste limite (as imagens têm a conta delas em imagem.rs).
+        "SELECT count(*) FROM ia.uso WHERE familia_id = $1 AND tarefa = 'texto' AND criado_em > now() - interval '7 days'
+            AND via IN ('cli', 'chave_sistema')",
     )
     .bind(familia)
     .fetch_one(&st.db)
@@ -215,7 +217,7 @@ pub async fn gerar_texto_com(st: &crate::AppState, familia: uuid::Uuid, p: &Pedi
     }
     if erros.is_empty() {
         if !dentro_do_limite {
-            bail!("O limite de histórias desta semana foi atingido. Tente de novo em alguns dias ou crie a história manualmente.");
+            bail!("O limite de uso da IA desta semana foi atingido. Tente de novo em alguns dias ou escreva manualmente.");
         }
         bail!("Esta família ainda não tem IA de texto configurada (sem CLI e sem chave de API). Peça ao admin, ou crie a história manualmente.");
     }
