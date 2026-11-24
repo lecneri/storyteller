@@ -270,7 +270,7 @@ pub async fn gravar(st: &AppState, id: Uuid, p: &Preparo, resposta: &Value) -> a
     let mut tx = st.db.begin().await?;
     sqlx::query(
         "UPDATE conteudo.historias SET titulo = $2, slug = $3, conteudo = $4, estado = 'texto', continua_de = $5,
-                faixa = $6, memoria = $7, atualizado_em = now()
+                faixa = $6, memoria = $7, atualizado_em = now(), versao = versao + 1
           WHERE id = $1",
     )
     .bind(id)

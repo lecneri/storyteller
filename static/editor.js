@@ -1141,22 +1141,35 @@
   // Um salvar de cada vez, na ordem pedida (o segundo espera o primeiro). Devolve true se salvou.
   let filaSalvar = Promise.resolve(true);
   function salvar() {
-    filaSalvar = filaSalvar.then(salvarAgora, salvarAgora);
+    filaSalvar = filaSalvar.then(() => salvarAgora(), () => salvarAgora());
     return filaSalvar;
   }
-  async function salvarAgora() {
+  // Versão da história que este editor tem (o servidor recusa salvar por cima de uma mais nova).
+  let versao = dados.versao;
+  async function salvarAgora(porCima = false) {
     status.textContent = 'Salvando…';
     const antes = alteracoes;
     try {
       const r = await fetch(location.pathname + '/conteudo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ titulo: estado.titulo, narracao: estado.narracao, faixa: estado.faixa, conteudo: { paginas: estado.paginas, secundarios: estado.secundarios, lugares: estado.lugares } }),
+        body: JSON.stringify({ titulo: estado.titulo, narracao: estado.narracao, faixa: estado.faixa, versao: porCima ? null : versao,
+          conteudo: { paginas: estado.paginas, secundarios: estado.secundarios, lugares: estado.lugares } }),
       });
       const j = await r.json().catch(() => null);
       // Sem sessão o servidor manda para a tela de entrar: isso não é "salvo".
       if (r.status === 401 || r.redirected || (r.ok && !j)) throw new Error('sua sessão expirou. Entre de novo em outra aba e salve outra vez');
+      if (r.status === 409 && j && j.conflito) {
+        // Outra aba ou outra pessoa salvou depois que esta tela abriu: a pessoa decide qual versão fica.
+        if (confirm('Esta história foi alterada em outra aba ou por outra pessoa depois que você abriu.\n\n' +
+            'OK = salvar a SUA versão por cima (a outra alteração se perde).\n' +
+            'Cancelar = não salvar agora (recarregue a página para ver a outra versão; o que você mudou aqui se perde).')) {
+          return salvarAgora(true);
+        }
+        throw new Error(j.erro);
+      }
       if (!r.ok) throw new Error((j && j.erro) || 'erro ' + r.status);
+      if (j && typeof j.versao === 'number') versao = j.versao;
       // Mudou algo enquanto salvava? Continua "não salvo" (o que foi enviado já está guardado).
       if (alteracoes === antes) { sujo = false; status.textContent = 'Salvo ✓'; } else status.textContent = 'Alterações não salvas';
       return true;

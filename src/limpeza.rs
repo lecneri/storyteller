@@ -53,6 +53,20 @@ async fn audios_em_uso(st: &AppState, familia: Uuid) -> anyhow::Result<HashSet<S
 
 /// Faz a limpeza completa. Devolve (arquivos apagados, bytes liberados).
 pub async fn limpar(st: &AppState) -> anyhow::Result<(u64, i64)> {
+    // 0) Registros que só cresciam: pedidos terminados há tempo, versões antigas e sessões vencidas.
+    for sql in [
+        "DELETE FROM jobs.fila WHERE estado IN ('feito', 'erro') AND atualizado_em < now() - interval '30 days'",
+        "DELETE FROM jobs.imagens WHERE (estado IN ('erro', 'cancelado') AND atualizado_em < now() - interval '30 days')
+            OR (estado = 'feito' AND atualizado_em < now() - interval '90 days')",
+        // De cada história ficam as 20 versões mais novas.
+        "DELETE FROM conteudo.versoes v USING (SELECT id, row_number() OVER (PARTITION BY historia_id ORDER BY id DESC) AS n
+                                                 FROM conteudo.versoes) x WHERE v.id = x.id AND x.n > 20",
+        "DELETE FROM acesso.sessoes WHERE expira_em < now()",
+        "DELETE FROM acesso.redefinicoes WHERE expira_em < now() - interval '7 days'",
+    ] {
+        sqlx::query(sql).execute(&st.db).await?;
+    }
+
     // 1) Áudios de narração que nenhum trecho atual usa.
     let familias: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM acesso.familias").fetch_all(&st.db).await?;
     for f in familias {

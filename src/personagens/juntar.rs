@@ -235,7 +235,7 @@ async fn juntar(st: &AppState, familia: Uuid, origem: &str, destino: &str) -> an
         sqlx::query_as("SELECT id, conteudo FROM conteudo.historias WHERE familia_id = $1").bind(familia).fetch_all(&mut *tx).await?;
     for (hid, mut c) in historias {
         if trocar_no_conteudo(&mut c, origem, destino, &plano.mapa) {
-            sqlx::query("UPDATE conteudo.historias SET conteudo = $2, atualizado_em = now() WHERE id = $1")
+            sqlx::query("UPDATE conteudo.historias SET conteudo = $2, atualizado_em = now(), versao = versao + 1 WHERE id = $1")
                 .bind(hid)
                 .bind(&c)
                 .execute(&mut *tx)

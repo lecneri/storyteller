@@ -296,6 +296,7 @@ pub async fn abrir(State(st): State<AppState>, s: Sessao, Path(id): Path<Uuid>) 
         "vozes_sistema": crate::tts::VOZES.iter().map(|(id, n)| json!({ "id": id, "nome": n })).collect::<Vec<_>>(),
         "animacoes": ANIMACOES, "estilo": h.estilo,
         "referencia": h.referencia, "memoria": h.memoria, "continua": h.continua, "capa": h.capa,
+        "versao": sqlx::query_scalar::<_, i32>("SELECT versao FROM conteudo.historias WHERE id = $1").bind(id).fetch_one(&st.db).await.unwrap_or(0),
         "musica": h.musica.map(|m| json!({ "id": m, "volume": h.musica_volume, "credito": h.musica_credito })),
         "musicas_modelo": crate::musica::modelos(&st).await.unwrap_or_default(),
         "climas": crate::musica::CLIMAS.iter().map(|(id, n)| json!({ "id": id, "nome": n })).collect::<Vec<_>>(),
@@ -372,6 +373,10 @@ pub struct SalvarConteudo {
     /// Faixa etária escolhida no editor (vazio = não muda).
     #[serde(default)]
     faixa: String,
+    /// Versão que o editor abriu; se a do banco já for outra, não salva (alguém salvou no meio).
+    /// Sem ela, salva por cima (a pessoa escolheu isso depois do aviso).
+    #[serde(default)]
+    versao: Option<i32>,
 }
 
 pub async fn salvar(
@@ -415,10 +420,11 @@ pub async fn salvar(
     };
     let r = async {
         let mut tx = st.db.begin().await?;
-        let n = sqlx::query(
+        let nova: Option<i32> = sqlx::query_scalar(
             "UPDATE conteudo.historias SET titulo = $3, slug = $4, narracao = $5, conteudo = $6, faixa = COALESCE($7, faixa),
-                    atualizado_em = now()
-              WHERE id = $1 AND familia_id = $2",
+                    atualizado_em = now(), versao = versao + 1
+              WHERE id = $1 AND familia_id = $2 AND ($8::int IS NULL OR versao = $8)
+          RETURNING versao",
         )
         .bind(id)
         .bind(s.familia_id)
@@ -427,10 +433,10 @@ pub async fn salvar(
         .bind(narracao)
         .bind(&valor)
         .bind(Some(faixa_limpa(&c.faixa)).filter(|f| !f.is_empty()))
-        .execute(&mut *tx)
-        .await?
-        .rows_affected();
-        if n == 1 {
+        .bind(c.versao)
+        .fetch_optional(&mut *tx)
+        .await?;
+        if nova.is_some() {
             sqlx::query("INSERT INTO conteudo.versoes (historia_id, conteudo, criado_por) VALUES ($1, $2, $3)")
                 .bind(id)
                 .bind(&valor)
@@ -439,12 +445,21 @@ pub async fn salvar(
                 .await?;
         }
         tx.commit().await?;
-        Ok::<u64, sqlx::Error>(n)
+        Ok::<Option<i32>, sqlx::Error>(nova)
     }
     .await;
     match r {
-        Ok(1) => Json(json!({ "ok": true })).into_response(),
-        Ok(_) => StatusCode::NOT_FOUND.into_response(),
+        Ok(Some(v)) => Json(json!({ "ok": true, "versao": v })).into_response(),
+        // Não gravou: ou a história não é desta família, ou a versão do editor ficou para trás.
+        Ok(None) => match historia_da_familia(&st, s.familia_id, id).await {
+            Ok(true) if c.versao.is_some() => (
+                StatusCode::CONFLICT,
+                Json(json!({ "conflito": true, "erro": "a história foi alterada em outra aba ou por outra pessoa depois que você abriu" })),
+            )
+                .into_response(),
+            Ok(_) => StatusCode::NOT_FOUND.into_response(),
+            Err(e) => erro_interno(e.into()),
+        },
         Err(e) => erro_interno(e.into()),
     }
 }

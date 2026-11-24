@@ -103,7 +103,7 @@ async fn aplicar(tx: &mut sqlx::PgConnection, familia: Uuid, troca: Troca<'_>) -
         let mudou = trocar_no_conteudo(&mut c, troca);
         let novo_briefing = briefing.as_deref().map(|b| trocar_mencoes(b, troca));
         if mudou || novo_briefing != briefing {
-            sqlx::query("UPDATE conteudo.historias SET conteudo = $2, briefing = $3 WHERE id = $1")
+            sqlx::query("UPDATE conteudo.historias SET conteudo = $2, briefing = $3, versao = versao + 1 WHERE id = $1")
                 .bind(id)
                 .bind(&c)
                 .bind(&novo_briefing)
