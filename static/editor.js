@@ -249,6 +249,22 @@
       if (rodando) timerNarracao = setTimeout(verNarracao, 3000);
     } catch (_) { /* ignora */ }
   }
+  // Apagar fala vale na hora, mas dá para voltar atrás por alguns segundos (os botões são pequenos e vizinhos).
+  function apagarFala(pag, i) {
+    const [b] = pag.blocos.splice(i, 1);
+    mudou(); desenhar();
+    if (!b || !(b.texto || '').trim()) return;
+    const a = document.getElementById('aviso');
+    if (!a) return;
+    a.replaceChildren('Fala apagada · ', el('button', { type: 'button', class: 'link desfazer', onclick: () => {
+      a.hidden = true;
+      pag.blocos.splice(Math.min(i, pag.blocos.length), 0, b);
+      mudou(); desenhar();
+    } }, '↩ Desfazer'));
+    a.hidden = false;
+    clearTimeout(a._t); a._t = setTimeout(() => (a.hidden = true), 8000);
+  }
+
   let timerNarracao = null;
   async function gerarNarracao() {
     if (sujo && !(await salvar())) { aviso('A história não salvou; a narração não foi pedida.', 6000); return; }
@@ -309,7 +325,7 @@
               : el('button', { type: 'button', title: b.gravacao ? 'Gravar de novo com a sua voz' : 'Gravar a sua voz nesta fala (dublar)', onclick: () => gravarFala(b) }, '🎤'),
             el('button', { type: 'button', title: 'Subir', onclick: () => mover(pag.blocos, i, -1) }, '↑'),
             el('button', { type: 'button', title: 'Descer', onclick: () => mover(pag.blocos, i, 1) }, '↓'),
-            el('button', { type: 'button', title: 'Apagar bloco', onclick: () => { pag.blocos.splice(i, 1); mudou(); desenhar(); } }, '✕'))),
+            el('button', { type: 'button', title: 'Apagar fala', 'aria-label': 'Apagar fala', onclick: () => apagarFala(pag, i) }, '✕'))),
         txt, estadoUI(b)));
   }
 

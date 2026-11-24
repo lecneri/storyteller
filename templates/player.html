@@ -12,7 +12,7 @@
 </head>
 <body class="player">
   <div id="livro" data-voltar="{{ voltar }}"></div>
-  <div id="aviso" class="aviso" hidden></div>
+  <div id="aviso" class="aviso" role="status" aria-live="polite" hidden></div>
   <script id="dados" type="application/json">{{ dados|safe }}</script>
   <script src="/comum.js?v={{ crate::web::versao() }}" defer></script>
   <script src="/efeitos.js?v={{ crate::web::versao() }}" defer></script>

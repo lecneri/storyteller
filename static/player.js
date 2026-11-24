@@ -161,7 +161,8 @@
   const pontos = el('div', { class: 'pontos' });
   const palco = el('div', { class: 'palco-livro' });
   raiz.replaceChildren(palco, el('div', { class: 'controles' },
-    el('a', { class: 'voltar', href: raiz.dataset.voltar, title: 'Sair' }, '✕'),
+    // Link público de uma história só: não há para onde sair, então não mostra o ✕.
+    raiz.dataset.voltar !== 'about:blank' && el('a', { class: 'voltar', href: raiz.dataset.voltar, title: 'Sair', 'aria-label': 'Sair' }, '✕'),
     botaoAnt, botaoPlay, botaoProx, pontos, botaoMusica, botaoMudo, botaoTela));
 
   function desenhar(direcao) {
@@ -197,6 +198,7 @@
 
   // ───────────── narração ─────────────
   // Ainda não gerado: pede ao servidor (uma vez só por trecho; a promessa fica guardada).
+  let avisouSemVoz = false;
   function audioDoBloco(b) {
     if (b.audio) return Promise.resolve(b);
     if (!b._pedido) {
@@ -256,8 +258,17 @@
       trechos[i]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       const pedido = audioDoBloco(p.blocos[i]);
       adiantar(pos - 1, i);
+      // A voz ainda está sendo gerada: avisa, para não parecer que travou.
+      const elAviso = document.getElementById('aviso');
+      const demora = setTimeout(() => aviso('🎙️ Preparando a voz…', 30000), 700);
       const b = await pedido;
+      clearTimeout(demora);
+      if (elAviso && elAviso.textContent.startsWith('🎙️ Preparando')) elAviso.hidden = true;
       if (minhaGeracao !== geracao) return false;
+      if (!b.audio && !avisouSemVoz) {
+        avisouSemVoz = true;
+        aviso('Não deu para narrar agora. Dá para seguir lendo; tente o ▶ de novo mais tarde.', 7000);
+      }
       if (b.audio) {
         audio = new Audio(b.audio);
         destacarPalavras(trechos[i], b, audio, minhaGeracao);

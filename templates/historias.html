@@ -6,7 +6,7 @@
   <section class="cartao largo">
     <h2>Nova história</h2>
     <form method="post" action="/historias" class="grade-form">
-      <label class="inteiro">Briefing <small class="suave">(opcional — cite personagens com @, ex.: @{% if let Some(p) = personagens.first() %}{{ p.0 }}{% else %}leo{% endif %}, ou pelo nome)</small>
+      <label class="inteiro">Briefing <small class="suave">(o que acontece na história; só pode ficar vazio em “Criar manualmente” — cite personagens com @, ex.: @{% if let Some(p) = personagens.first() %}{{ p.0 }}{% else %}leo{% endif %}, ou pelo nome)</small>
         <textarea name="briefing" rows="4" placeholder="O Super Léo e o Tito precisam impedir o Zorgo gigante de roubar todos os brinquedos do parque..."></textarea>
       </label>
       <label>Narração

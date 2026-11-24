@@ -43,7 +43,7 @@
     <p class="suave">Os personagens, o estilo e as instruções da estante já entram automaticamente. Cite outros com @ se quiser, e histórias com # (<code>#historia</code> para continuar dela; a memória vai nos campos 🧠 abaixo).</p>
     <form method="post" action="/historias" class="grade-form">
       <input type="hidden" name="estante" value="{{ e.slug }}">
-      <label class="inteiro">Briefing <small class="suave">(opcional)</small>
+      <label class="inteiro">Briefing <small class="suave">(o que acontece na história; só pode ficar vazio em “Criar manualmente”)</small>
         <textarea name="briefing" rows="3" placeholder="O que vai acontecer nesta história?"></textarea></label>
       <label>Narração
         <select name="narracao"><option value="por-personagem">Por personagem</option><option value="narrador">Só narrador</option></select>

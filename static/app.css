@@ -343,3 +343,5 @@ a.linha-familia:hover { border-color:var(--cor); }
 .grupos-variante legend { font-size: .9em; padding: 0 .3rem; }
 .grupos-variante input[name="grupo_novo"] { flex: 1 1 12rem; }
 .importacao { margin:10px 0; } .importacao textarea { width:100%; min-height:10rem; }
+
+.aviso .desfazer { color:inherit; text-decoration:underline; font-weight:700; padding:6px 4px; }
