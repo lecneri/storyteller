@@ -121,8 +121,9 @@ impl FromRequestParts<AppState> for Sessao {
 
     async fn from_request_parts(parts: &mut Parts, st: &AppState) -> Result<Self, Self::Rejection> {
         let jar = CookieJar::from_headers(&parts.headers);
+        let sem = sem_sessao(&parts.headers);
         let Some(token) = jar.get(COOKIE_SESSAO).map(|c| c.value().to_owned()) else {
-            return Err(Redirect::to("/entrar").into_response());
+            return Err(sem);
         };
         // Se a sessão não tiver família escolhida, usa a primeira em que a pessoa é membro.
         let linha = sqlx::query_as::<_, LinhaSessao>(
@@ -167,9 +168,23 @@ impl FromRequestParts<AppState> for Sessao {
                 papel: l.papel,
                 leitor: l.leitor_id.zip(l.leitor_nome),
             }),
-            None => Err(Redirect::to("/entrar").into_response()),
+            None => Err(sem),
         }
     }
+}
+
+/// Sem sessão válida: uma página vai para /entrar; um pedido feito pelo JavaScript (salvar, enviar arquivo)
+/// recebe 401 com a mensagem, para a tela não tomar a página de login por "deu certo".
+fn sem_sessao(h: &axum::http::HeaderMap) -> Response {
+    let quer_pagina = h.get(axum::http::header::ACCEPT).and_then(|a| a.to_str().ok()).is_some_and(|a| a.contains("text/html"));
+    if quer_pagina {
+        return Redirect::to("/entrar").into_response();
+    }
+    (
+        axum::http::StatusCode::UNAUTHORIZED,
+        axum::Json(serde_json::json!({ "erro": "Sua sessão expirou. Entre de novo em outra aba e tente outra vez." })),
+    )
+        .into_response()
 }
 
 /// Na primeira execução, cria o admin do sistema e a família dele a partir das variáveis de ambiente.

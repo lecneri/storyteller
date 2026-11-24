@@ -1,6 +1,6 @@
 // Editor de blocos: páginas → blocos (narrador / fala de personagem). Salva como JSON.
 (function () {
-  const { el, aviso } = window.St;
+  const { el, aviso, postJson } = window.St;
   const dados = JSON.parse(document.getElementById('dados').textContent);
   const raiz = document.getElementById('editor');
   const estado = {
@@ -17,6 +17,8 @@
   const secundario = (nome) => estado.secundarios.find((x) => x.nome === nome);
   const personagens = dados.personagens || [];
   let sujo = false;
+  // Texto digitado nos painéis Referência e Memória que ainda não foi salvo (sobrevive ao redesenho da tela).
+  const rascunho = { referencia: null, memoria: null, oque: '', refAberta: false, memAberta: false };
   // Visualização: "lista" (todas as páginas) ou "carrossel" (uma por vez). Lembrada no navegador.
   let modo = 'lista';
   try { modo = localStorage.getItem('editor-modo') || 'lista'; } catch (_) { /* sem storage */ }
@@ -26,7 +28,9 @@
 
   const ajustar = (t) => { t.style.height = 'auto'; t.style.height = t.scrollHeight + 2 + 'px'; };
   document.addEventListener('input', (e) => { if (e.target.matches('#editor textarea:not(.prompt):not(.fixa):not(.recolhe)')) ajustar(e.target); });
-  const mudou = () => { sujo = true; status.textContent = 'Alterações não salvas'; };
+  // Conta as alterações: um salvar só marca "Salvo" se nada mudou enquanto ele estava no ar.
+  let alteracoes = 0;
+  const mudou = () => { sujo = true; alteracoes++; status.textContent = 'Alterações não salvas'; };
 
   const personagem = (slug) => personagens.find((p) => p.slug === slug);
   const vozesSistema = dados.vozes_sistema || [];
@@ -240,14 +244,23 @@
       const rodando = j.job === 'pendente' || j.job === 'rodando';
       statusNarracao.textContent = '🎙️ ' + j.prontos + '/' + j.total + ' trechos narrados' +
         (rodando ? ' · gerando…' : j.job === 'erro' ? ' · erro: ' + (j.erro || '') : '');
-      if (rodando) setTimeout(verNarracao, 3000);
+      // Um acompanhamento só (várias chamadas não abrem várias cadeias de consulta).
+      clearTimeout(timerNarracao);
+      if (rodando) timerNarracao = setTimeout(verNarracao, 3000);
     } catch (_) { /* ignora */ }
   }
+  let timerNarracao = null;
   async function gerarNarracao() {
-    if (sujo) await salvar();
-    await fetch(location.pathname + '/narrar', { method: 'POST' });
+    if (sujo && !(await salvar())) { aviso('A história não salvou; a narração não foi pedida.', 6000); return; }
+    try {
+      await postJson(location.pathname + '/narrar');
+    } catch (e) {
+      statusNarracao.textContent = '🎙️ não deu para pedir a narração: ' + e.message;
+      return;
+    }
     statusNarracao.textContent = '🎙️ gerando…';
-    setTimeout(verNarracao, 1500);
+    clearTimeout(timerNarracao);
+    timerNarracao = setTimeout(verNarracao, 1500);
   }
 
   function mover(lista, i, d) {
@@ -385,7 +398,7 @@
     try {
       if (!pag.chave) { pag.chave = novaChave(); mudou(); }
       botao.dataset.imgChave = pag.chave;
-      if (sujo) { await salvar(); if (sujo) throw new Error('a história não salvou'); }
+      if (sujo && !(await salvar())) throw new Error('a história não salvou');
       await pedirImagem({ prompt: promptImagem(pag), refs, chave: pag.chave });
       aviso('Imagem na fila: ela aparece aqui quando ficar pronta (pode fechar a página).', 4000);
     } catch (e) {
@@ -411,7 +424,7 @@
     }
     alvo.forEach((p) => { if (!p.chave) { p.chave = novaChave(); mudou(); } });
     try {
-      if (sujo) { await salvar(); if (sujo) throw new Error('a história não salvou'); }
+      if (sujo && !(await salvar())) throw new Error('a história não salvou');
       const r = await fetch(location.pathname + '/imagens', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ paginas: alvo.map((pag) => ({ chave: pag.chave, prompt: promptImagem(pag),
           refs: refsImagem(pag) })) }) });
@@ -905,22 +918,30 @@
   // Referência: resumo usado quando outra história cita esta com #.
   function referenciaUI() {
     const ta = el('textarea', { rows: 3, placeholder: 'Resumo com os fatos importantes (quem venceu, o que descobriram...). Usado quando outra história citar esta com #.' });
-    ta.value = dados.referencia || '';
+    // O que foi digitado e ainda não salvo fica em `rascunho` (o editor redesenha a tela quando chega uma imagem).
+    ta.value = rascunho.referencia ?? (dados.referencia || '');
+    ta.addEventListener('input', () => { rascunho.referencia = ta.value; });
     const st = el('small', { class: 'suave' });
-    return el('details', { class: 'memoria' }, el('summary', {}, '📌 Referência' + (dados.referencia ? '' : ' (vazia)')),
+    const det = el('details', { class: 'memoria' }, el('summary', {}, '📌 Referência' + (dados.referencia ? '' : ' (vazia)')),
       ta,
       el('div', { class: 'linha' },
         el('button', { type: 'button', class: 'pequeno secundario', onclick: async (e) => {
           e.target.disabled = true; st.textContent = 'Gerando com IA…';
-          const r = await fetch(location.pathname + '/referencia', { method: 'POST' });
-          const j = await r.json().catch(() => ({}));
+          try {
+            const j = await postJson(location.pathname + '/referencia');
+            ta.value = dados.referencia = j.referencia; rascunho.referencia = null; st.textContent = 'Gerada ✓';
+          } catch (err) { st.textContent = 'Erro: ' + err.message; }
           e.target.disabled = false;
-          if (r.ok) { ta.value = dados.referencia = j.referencia; st.textContent = 'Gerada ✓'; } else st.textContent = 'Erro: ' + (j.erro || r.status);
         } }, '✨ Gerar com IA'),
         el('button', { type: 'button', class: 'pequeno', onclick: async () => {
-          const r = await fetch(location.pathname + '/referencia/salvar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ referencia: ta.value }) });
-          if (r.ok) { dados.referencia = ta.value; st.textContent = 'Salva ✓'; }
+          try {
+            await postJson(location.pathname + '/referencia/salvar', { referencia: ta.value });
+            dados.referencia = ta.value; rascunho.referencia = null; st.textContent = 'Salva ✓';
+          } catch (err) { st.textContent = 'Não salvou: ' + err.message; }
         } }, '💾 Salvar referência'), st));
+    det.open = !!rascunho.refAberta;
+    det.addEventListener('toggle', () => { rascunho.refAberta = det.open; });
+    return det;
   }
 
   // Memória: marcações (uma por linha) gravadas pela IA quando o briefing pede, ou à mão.
@@ -928,15 +949,18 @@
   function memoriaUI() {
     const itens = () => (Array.isArray(dados.memoria) ? dados.memoria : []);
     const ta = el('textarea', { rows: 4, placeholder: 'Uma marcação por linha, ex.:\napple (maçã)\nred (vermelho)' });
-    ta.value = itens().join('\n');
+    ta.value = rascunho.memoria ?? itens().join('\n');
+    ta.addEventListener('input', () => { rascunho.memoria = ta.value; });
     const st = el('small', { class: 'suave' });
     const oque = el('input', { placeholder: 'O que gravar? ex.: as palavras em inglês ensinadas' });
+    oque.value = rascunho.oque || '';
+    oque.addEventListener('input', () => { rascunho.oque = oque.value; });
     // Soma itens ao que está no campo (inclusive o que foi digitado e ainda não salvo), sem repetir.
     function somar(novos) {
       const atuais = ta.value.split('\n').map((l) => l.trim()).filter(Boolean);
       const juntos = atuais.slice();
       novos.forEach((i) => { if (!juntos.some((x) => x.toLowerCase() === i.toLowerCase())) juntos.push(i); });
-      ta.value = juntos.join('\n');
+      ta.value = rascunho.memoria = juntos.join('\n');
       st.textContent = (juntos.length - atuais.length) + ' novo(s). Revise e clique em 💾 Salvar memória.';
     }
     // Resposta de outra IA (depois de 📋 Copiar prompt).
@@ -947,7 +971,7 @@
         const j = await r.json().catch(() => ({}));
         if (r.ok) { somar(j.itens); resposta.value = ''; } else st.textContent = 'Erro: ' + (j.erro || r.status);
       } }, '📥 Importar resposta'));
-    return el('details', { class: 'memoria' }, el('summary', {}, '🧠 Memória' + (itens().length ? ' (' + itens().length + ')' : ' (vazia)')),
+    const det = el('details', { class: 'memoria' }, el('summary', {}, '🧠 Memória' + (itens().length ? ' (' + itens().length + ')' : ' (vazia)')),
       ta,
       el('div', { class: 'linha' }, oque,
         el('button', { type: 'button', class: 'pequeno secundario', onclick: async (e) => {
@@ -973,8 +997,11 @@
           const lista = ta.value.split('\n').map((l) => l.trim()).filter(Boolean);
           const r = await fetch(location.pathname + '/memoria/salvar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itens: lista }) });
           const j = await r.json().catch(() => ({}));
-          if (r.ok) { dados.memoria = j.itens; ta.value = j.itens.join('\n'); st.textContent = 'Salva ✓'; } else st.textContent = 'Erro: ' + (j.erro || r.status);
+          if (r.ok) { dados.memoria = j.itens; ta.value = j.itens.join('\n'); rascunho.memoria = null; st.textContent = 'Salva ✓'; } else st.textContent = 'Erro: ' + (j.erro || r.status);
         } }, '💾 Salvar memória'), st));
+    det.open = !!rascunho.memAberta;
+    det.addEventListener('toggle', () => { rascunho.memAberta = det.open; });
+    return det;
   }
 
   // ───────────── Ajuda da IA para editar ─────────────
@@ -994,7 +1021,7 @@
   }
   async function antesDePedir() {
     if (!ajuda.pedido.trim()) { aviso('Escreva o que a IA deve mudar.'); return false; }
-    if (sujo) { await salvar(); if (sujo) { aviso('Salve a história antes de pedir ajuda.'); return false; } }
+    if (sujo && !(await salvar())) { aviso('Salve a história antes de pedir ajuda.'); return false; }
     return true;
   }
   async function pedirAjuda() {
@@ -1095,19 +1122,31 @@
   }
 
   const status = el('span', { class: 'suave' }, '');
-  async function salvar() {
+  // Um salvar de cada vez, na ordem pedida (o segundo espera o primeiro). Devolve true se salvou.
+  let filaSalvar = Promise.resolve(true);
+  function salvar() {
+    filaSalvar = filaSalvar.then(salvarAgora, salvarAgora);
+    return filaSalvar;
+  }
+  async function salvarAgora() {
     status.textContent = 'Salvando…';
+    const antes = alteracoes;
     try {
       const r = await fetch(location.pathname + '/conteudo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ titulo: estado.titulo, narracao: estado.narracao, faixa: estado.faixa, conteudo: { paginas: estado.paginas, secundarios: estado.secundarios, lugares: estado.lugares } }),
       });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.erro || 'erro ' + r.status);
-      sujo = false; status.textContent = 'Salvo ✓';
+      const j = await r.json().catch(() => null);
+      // Sem sessão o servidor manda para a tela de entrar: isso não é "salvo".
+      if (r.status === 401 || r.redirected || (r.ok && !j)) throw new Error('sua sessão expirou. Entre de novo em outra aba e salve outra vez');
+      if (!r.ok) throw new Error((j && j.erro) || 'erro ' + r.status);
+      // Mudou algo enquanto salvava? Continua "não salvo" (o que foi enviado já está guardado).
+      if (alteracoes === antes) { sujo = false; status.textContent = 'Salvo ✓'; } else status.textContent = 'Alterações não salvas';
+      return true;
     } catch (e) {
       status.textContent = 'Não salvou: ' + e.message;
+      return false;
     }
   }
 
@@ -1375,7 +1414,7 @@
     observarPaginas();
   }
 
-  window.addEventListener('beforeunload', (e) => { if (sujo) { e.preventDefault(); e.returnValue = ''; } });
+  window.addEventListener('beforeunload', (e) => { if (sujo || rascunho.referencia !== null || rascunho.memoria !== null) { e.preventDefault(); e.returnValue = ''; } });
   document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); salvar(); } });
   desenhar();
   verNarracao();

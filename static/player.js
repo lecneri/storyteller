@@ -239,6 +239,8 @@
 
   async function narrarPagina(minhaGeracao, inicio = 0) {
     const p = dados.paginas[pos - 1];
+    // Já vale para um pause durante a espera abaixo (senão ficaria a fala da página anterior).
+    blocoAtual = inicio;
     if (!inicio) efeito(p, false);
     // Com música, ela "respira" um pouco na página nova antes da narração.
     if (musica && musica.tocando) {
